@@ -1,0 +1,281 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // === ATURAN KEAMANAN DIGISWISS-ROUND (TAHAP 4) ===
+    // Prinsip: Zero-Trust, Default Deny, Keamanan di Aturan Firestore
+
+    // Fungsi Pembantu Otentikasi & Otorisasi
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function isCurrentUserActive() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getUserData(request.auth.uid).active == true;
+    }
+
+    function isAdmin() {
+      return isCurrentUserActive() && getUserData(request.auth.uid).role == 'admin';
+    }
+
+    function isOrganizer() {
+      return isCurrentUserActive() && getUserData(request.auth.uid).role in ['organizer', 'admin'];
+    }
+
+    function isMainAdminDoc(data) {
+      return data.username == 'admindss';
+    }
+
+    // 1. Koleksi Pengguna: users/{uid}
+    match /users/{uid} {
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isCurrentUserActive());
+
+      allow create: if isAuthenticated() && request.auth.uid == uid && (
+        // Kasus A: Pengguna Baru Biasa (Role wajib 'player', active wajib true, username valid & bukan nama yang dicadangkan)
+        (
+          request.resource.data.role == 'player' &&
+          request.resource.data.active == true &&
+          request.resource.data.username != 'admin' &&
+          request.resource.data.username != 'admindss' &&
+          request.resource.data.username.matches('^[a-z0-9._]{3,20}$')
+        )
+        ||
+        // Kasus B: Admin Utama Otomatis (Hanya dibuat SEKALI untuk username "admindss" dan hanya jika meta/bootstrap belum ada)
+        (
+          request.resource.data.username == 'admindss' &&
+          request.resource.data.role == 'admin' &&
+          request.resource.data.active == true &&
+          request.resource.data.mustChangePassword == true &&
+          !exists(/databases/$(database)/documents/meta/bootstrap)
+        )
+      );
+
+      allow update: if isCurrentUserActive() && (
+        // Pengguna memperbarui profil miliknya sendiri
+        (
+          request.auth.uid == uid &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.username == resource.data.username &&
+          request.resource.data.active == resource.data.active
+        )
+        ||
+        // Admin memperbarui akun pengguna lain (bukan admin utama)
+        (
+          isAdmin() &&
+          (
+            !isMainAdminDoc(resource.data) ||
+            (
+              request.resource.data.role == 'admin' &&
+              request.resource.data.active == true &&
+              request.resource.data.username == 'admindss'
+            )
+          ) &&
+          request.resource.data.username == resource.data.username &&
+          (
+            isMainAdminDoc(resource.data) ||
+            request.resource.data.role in ['organizer', 'player']
+          )
+        )
+      );
+
+      allow delete: if false;
+    }
+
+    // 2. Metadata Sistem: meta/bootstrap
+    match /meta/bootstrap {
+      allow read: if true;
+      allow create: if isAuthenticated() && !exists(/databases/$(database)/documents/meta/bootstrap);
+      allow update, delete: if false;
+    }
+
+    match /meta/{docId} {
+      allow read, write: if false;
+    }
+
+    // 3. Jejak Audit: auditLogs/{id}
+    match /auditLogs/{id} {
+      allow read: if isAdmin() || (
+        isOrganizer() &&
+        resource.data.tournamentId != null &&
+        get(/databases/$(database)/documents/tournaments/$(resource.data.tournamentId)).data.organizerId == request.auth.uid
+      );
+      allow create: if isCurrentUserActive() && request.resource.data.actorId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // 4. Koleksi Turnamen: tournaments/{tid}
+    match /tournaments/{tid} {
+      // Pembacaan: Pengguna aktif dapat membaca daftar turnamen
+      allow read: if isAuthenticated() && isCurrentUserActive();
+
+      // Pembuatan: Hanya organizer atau admin yang boleh membuat turnamen baru
+      allow create: if isOrganizer() &&
+        request.resource.data.organizerId == request.auth.uid &&
+        request.resource.data.status == 'registration' &&
+        request.resource.data.format in ['BO1', 'BO3'];
+
+      // Pembaruan: Organizer pemilik turnamen boleh mengubah status atau data turnamennya; Admin juga boleh
+      allow update: if isCurrentUserActive() && (
+        (resource.data.organizerId == request.auth.uid && request.resource.data.organizerId == resource.data.organizerId) ||
+        isAdmin()
+      );
+
+      // Penghapusan: Hanya Admin yang boleh menghapus turnamen
+      allow delete: if isAdmin();
+
+      // Sub-koleksi Peserta: tournaments/{tid}/players/{pid}
+      match /players/{pid} {
+        allow read: if isAuthenticated() && isCurrentUserActive();
+
+        // Pendaftaran:
+        // A. Pemain mendaftar dirinya sendiri saat status turnamen 'registration' (pid == request.auth.uid, status awal 'waiting', manual false)
+        // B. Organizer pemilik turnamen mendaftarkan peserta manual (manual == true, uid == null, status == 'accepted')
+        allow create: if isCurrentUserActive() && (
+          (
+            pid == request.auth.uid &&
+            get(/databases/$(database)/documents/tournaments/$(tid)).data.status == 'registration' &&
+            request.resource.data.uid == request.auth.uid &&
+            request.resource.data.manual == false &&
+            request.resource.data.status == 'waiting'
+          ) ||
+          (
+            get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid &&
+            request.resource.data.manual == true &&
+            request.resource.data.uid == null &&
+            request.resource.data.status == 'accepted'
+          )
+        );
+
+        // Pembaruan status peserta (terima/tolak waiting list, atau tandai dropped saat running):
+        // Hanya organizer pemilik turnamen yang boleh mengubah status peserta
+        allow update: if isCurrentUserActive() &&
+          get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid;
+
+        // Pembatalan pendaftaran / Penghapusan peserta:
+        // A. Pemain membatalkan pendaftaran miliknya sendiri selama turnamen masih 'registration'
+        // B. Organizer pemilik turnamen atau Admin boleh menghapus peserta
+        allow delete: if isCurrentUserActive() && (
+          (
+            pid == request.auth.uid &&
+            get(/databases/$(database)/documents/tournaments/$(tid)).data.status == 'registration'
+          ) ||
+          get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid ||
+          isAdmin()
+        );
+      }
+
+      // Sub-koleksi Ronde & Match: Ronde tahap 5
+      match /rounds/{n} {
+        allow read: if isAuthenticated() && isCurrentUserActive();
+        allow create, update: if isCurrentUserActive() &&
+          get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid;
+        allow delete: if isCurrentUserActive() && (
+          get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid ||
+          isAdmin()
+        );
+      }
+      // Sub-koleksi Pertandingan Meja: tournaments/{tid}/matches/{mid}
+      match /matches/{mid} {
+        allow read: if isAuthenticated() && isCurrentUserActive();
+
+        // Pembuatan: Hanya organizer pemilik turnamen
+        allow create: if isCurrentUserActive() &&
+          get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid;
+
+        // Pembaruan:
+        // A. Organizer pemilik turnamen boleh mengubah dan menimpa apa pun
+        // B. Player peserta pertandingan hanya boleh mengubah skor & status sesuai transisi valid:
+        //    1) pending -> awaiting (oleh pelapor yang mengisi skor)
+        //    2) awaiting -> confirmed atau disputed (oleh lawan pertandingan)
+        allow update: if isCurrentUserActive() && (
+          // Kasus Organizer Pemilik
+          (get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid)
+          ||
+          // Kasus Player Peserta Pertandingan
+          (
+            request.auth.uid in [resource.data.p1Id, resource.data.p2Id] &&
+            request.resource.data.round == resource.data.round &&
+            request.resource.data.table == resource.data.table &&
+            request.resource.data.p1Id == resource.data.p1Id &&
+            request.resource.data.p2Id == resource.data.p2Id &&
+            request.resource.data.p1Name == resource.data.p1Name &&
+            request.resource.data.p2Name == resource.data.p2Name &&
+            (
+              // Transisi 1: pending -> awaiting (Pelapor input skor pertama kali)
+              (
+                resource.data.status == 'pending' &&
+                request.resource.data.status == 'awaiting' &&
+                request.resource.data.reportedBy == request.auth.uid
+              )
+              ||
+              // Transisi 2: awaiting -> confirmed ATAU disputed (Dikonfirmasi / Ditolak oleh Lawan)
+              (
+                resource.data.status == 'awaiting' &&
+                resource.data.reportedBy != request.auth.uid &&
+                request.resource.data.status in ['confirmed', 'disputed'] &&
+                request.resource.data.p1Score == resource.data.p1Score &&
+                request.resource.data.p2Score == resource.data.p2Score &&
+                request.resource.data.reportedBy == resource.data.reportedBy
+              )
+            )
+          )
+        );
+
+        // Penghapusan: Organizer pemilik atau Admin
+        allow delete: if isCurrentUserActive() && (
+          get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid ||
+          isAdmin()
+        );
+      }
+    }
+
+    // 5. Koleksi Partisipasi & Statistik: participations/{participationId}
+    match /participations/{participationId} {
+      allow read: if isAuthenticated() && isCurrentUserActive();
+
+      // Pembuatan: Organizer pemilik turnamen saat finalisasi hasil atau Admin
+      allow create: if isCurrentUserActive() && (
+        get(/databases/$(database)/documents/tournaments/$(request.resource.data.tournamentId)).data.organizerId == request.auth.uid ||
+        isAdmin()
+      );
+
+      // Pembaruan:
+      // A. Organizer pemilik turnamen atau Admin boleh mengoreksi atau mengisi untuk semua peserta
+      // B. Player hanya boleh mengubah field deckName dan deckColors pada dokumennya sendiri
+      allow update: if isCurrentUserActive() && (
+        (get(/databases/$(database)/documents/tournaments/$(resource.data.tournamentId)).data.organizerId == request.auth.uid || isAdmin())
+        ||
+        (
+          resource.data.uid == request.auth.uid &&
+          request.resource.data.tournamentId == resource.data.tournamentId &&
+          request.resource.data.playerId == resource.data.playerId &&
+          request.resource.data.uid == resource.data.uid &&
+          request.resource.data.rank == resource.data.rank &&
+          request.resource.data.points == resource.data.points &&
+          request.resource.data.wins == resource.data.wins &&
+          request.resource.data.losses == resource.data.losses &&
+          request.resource.data.gamesWon == resource.data.gamesWon &&
+          request.resource.data.gamesLost == resource.data.gamesLost &&
+          request.resource.data.omw == resource.data.omw &&
+          request.resource.data.gw == resource.data.gw &&
+          request.resource.data.ogw == resource.data.ogw
+        )
+      );
+
+      // Penghapusan: Hanya Admin
+      allow delete: if isAdmin();
+    }
+
+    // Default deny untuk seluruh dokumen lainnya
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
