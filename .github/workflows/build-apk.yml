@@ -37,10 +37,10 @@ jobs:
         uses: actions/checkout@v4
 
       # 2. Node.js (package-lock.json tersedia, jadi cache npm aktif)
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       # 3. Java 17 (syarat minimum Android Gradle Plugin 9)
