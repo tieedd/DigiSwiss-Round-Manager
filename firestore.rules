@@ -35,7 +35,7 @@ service cloud.firestore {
 
     // 1. Koleksi Pengguna: users/{uid}
     match /users/{uid} {
-      allow read: if isAuthenticated() && (request.auth.uid == uid || isCurrentUserActive());
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
 
       allow create: if isAuthenticated() && request.auth.uid == uid && (
         // Kasus A: Pengguna Baru Biasa (Role wajib 'player', active wajib true, username valid & bukan nama yang dicadangkan)
@@ -106,7 +106,14 @@ service cloud.firestore {
         resource.data.tournamentId != null &&
         get(/databases/$(database)/documents/tournaments/$(resource.data.tournamentId)).data.organizerId == request.auth.uid
       );
-      allow create: if isCurrentUserActive() && request.resource.data.actorId == request.auth.uid;
+      allow create: if isCurrentUserActive() &&
+        request.resource.data.actorId == request.auth.uid &&
+        (
+          !('tournamentId' in request.resource.data) ||
+          request.resource.data.tournamentId == null ||
+          get(/databases/$(database)/documents/tournaments/$(request.resource.data.tournamentId)).data.organizerId == request.auth.uid ||
+          isAdmin()
+        );
       allow update, delete: if false;
     }
 
@@ -207,6 +214,7 @@ service cloud.firestore {
             request.resource.data.p2Id == resource.data.p2Id &&
             request.resource.data.p1Name == resource.data.p1Name &&
             request.resource.data.p2Name == resource.data.p2Name &&
+            request.resource.data.archived == resource.data.archived &&
             (
               // Transisi 1: pending -> awaiting (Pelapor input skor pertama kali)
               (
@@ -254,18 +262,11 @@ service cloud.firestore {
         ||
         (
           resource.data.uid == request.auth.uid &&
-          request.resource.data.tournamentId == resource.data.tournamentId &&
-          request.resource.data.playerId == resource.data.playerId &&
-          request.resource.data.uid == resource.data.uid &&
-          request.resource.data.rank == resource.data.rank &&
-          request.resource.data.points == resource.data.points &&
-          request.resource.data.wins == resource.data.wins &&
-          request.resource.data.losses == resource.data.losses &&
-          request.resource.data.gamesWon == resource.data.gamesWon &&
-          request.resource.data.gamesLost == resource.data.gamesLost &&
-          request.resource.data.omw == resource.data.omw &&
-          request.resource.data.gw == resource.data.gw &&
-          request.resource.data.ogw == resource.data.ogw
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deckName', 'deckColors']) &&
+          request.resource.data.deckName is string &&
+          request.resource.data.deckName.size() <= 40 &&
+          request.resource.data.deckColors is list &&
+          request.resource.data.deckColors.size() <= 7
         )
       );
 

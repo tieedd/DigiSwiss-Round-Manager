@@ -1,6 +1,7 @@
 import React from 'react';
 import { Card } from '../components/common/Card';
 import { Shield, Sparkles, Layers, FileCode, CheckCircle2 } from 'lucide-react';
+import { CURRENT_APP_VERSION } from '../services/versionService';
 
 interface SettingsViewProps {
   onNavigateConnection: () => void;
@@ -30,7 +31,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigateConnection
                 DigiSwiss-Round
               </h3>
               <p className="text-caption text-dark-muted">
-                Versi 1.0.0 (Tahap 1: Kerangka & Inisialisasi)
+                Versi {CURRENT_APP_VERSION}
               </p>
             </div>
           </div>

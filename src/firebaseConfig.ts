@@ -38,28 +38,3 @@ try {
 }
 
 export const db = firestoreInstance;
-
-/**
- * Mengubah username menjadi email semu sesuai aturan sistem:
- * <username-huruf-kecil>@digiswiss.app
- */
-export function usernameToEmail(username: string): string {
-  const clean = username.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
-  return `${clean}@digiswiss.app`;
-}
-
-/**
- * Mengambil nama pengguna dari email semu @digiswiss.app
- */
-export function emailToUsername(email: string | null | undefined): string {
-  if (!email) return '';
-  return email.replace(/@digiswiss\.app$/i, '');
-}
-
-/**
- * Validasi username (hanya huruf, angka, titik, strip bawah, panjang 3-20)
- */
-export function isValidUsername(username: string): boolean {
-  const clean = username.trim();
-  return /^[a-zA-Z0-9._-]{3,20}$/.test(clean);
-}

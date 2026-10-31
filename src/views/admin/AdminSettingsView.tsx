@@ -3,6 +3,7 @@ import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { AuditLog } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { CURRENT_APP_VERSION } from '../../services/versionService';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { BottomSheet } from '../../components/common/BottomSheet';
@@ -35,8 +36,8 @@ export const AdminSettingsView: React.FC = () => {
   const fetchAuditLogs = async () => {
     setLoadingLogs(true);
     try {
-      // Query audit logs terbaru dengan limit hemat kuota
-      const q = query(collection(db, 'auditLogs'), orderBy('createdAt', 'desc'), limit(100));
+      // Query audit logs terbaru dengan limit hemat kuota (maksimal 200)
+      const q = query(collection(db, 'auditLogs'), orderBy('createdAt', 'desc'), limit(200));
       const snap = await getDocs(q);
       const list: AuditLog[] = [];
       snap.forEach((d) => {
@@ -84,7 +85,7 @@ export const AdminSettingsView: React.FC = () => {
                 DigiSwiss-Round
               </h3>
               <p className="text-caption text-dark-muted">
-                Versi 1.0.0 &bull; Akun: @{userProfile?.username}
+                Versi {CURRENT_APP_VERSION} &bull; Akun: @{userProfile?.username}
               </p>
             </div>
           </div>

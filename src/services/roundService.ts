@@ -6,6 +6,7 @@ import {
   query,
   where,
   orderBy,
+  limit,
   writeBatch,
   updateDoc,
   serverTimestamp
@@ -489,25 +490,36 @@ export async function revertTournamentToRound(
 }
 
 /**
- * Mengambil log audit khusus turnamen tertentu untuk organizer dan admin
+ * Mengambil log audit khusus turnamen tertentu untuk organizer dan admin (dibatasi 200)
  */
 export async function getTournamentAuditLogs(tournamentId: string): Promise<AuditLog[]> {
   const auditCol = collection(db, 'auditLogs');
   const q = query(
     auditCol,
     where('tournamentId', '==', tournamentId),
-    orderBy('createdAt', 'desc')
+    orderBy('createdAt', 'desc'),
+    limit(200)
   );
   try {
     const snap = await getDocs(q);
     return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as AuditLog));
   } catch (err) {
     // Fallback jika query index belum siap
-    const allSnap = await getDocs(query(auditCol, orderBy('createdAt', 'desc')));
+    const allSnap = await getDocs(query(auditCol, orderBy('createdAt', 'desc'), limit(200)));
     return allSnap.docs
       .map((d) => ({ id: d.id, ...(d.data() as any) } as AuditLog))
       .filter((l) => l.tournamentId === tournamentId);
   }
+}
+
+/**
+ * Mengambil log audit sistem untuk admin dengan batas limit(200)
+ */
+export async function getAdminAuditLogs(maxLogs: number = 200): Promise<AuditLog[]> {
+  const auditCol = collection(db, 'auditLogs');
+  const q = query(auditCol, orderBy('createdAt', 'desc'), limit(maxLogs));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as AuditLog));
 }
 
 /**

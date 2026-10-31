@@ -5,7 +5,8 @@ import {
   updatePassword,
   reauthenticateWithCredential,
   EmailAuthProvider,
-  User
+  User,
+  deleteUser
 } from 'firebase/auth';
 import {
   doc,
@@ -264,9 +265,18 @@ export async function registerUser(
       lastLoginAt: now,
     };
 
-    await setDoc(doc(db, 'users', uid), profileData);
-
-    return profileData;
+    try {
+      await setDoc(doc(db, 'users', uid), profileData);
+      return profileData;
+    } catch (setDocErr) {
+      console.error('Gagal menyimpan profil pengguna ke Firestore:', setDocErr);
+      try {
+        await deleteUser(cred.user);
+      } catch (delErr) {
+        console.warn('Gagal menghapus akun setelah setDoc profil gagal:', delErr);
+      }
+      throw new Error('Gagal menyimpan profil pengguna. Pendaftaran dibatalkan, silakan coba kembali.');
+    }
   } catch (err: any) {
     if (err?.code === 'auth/email-already-in-use') {
       throw new Error('Username sudah digunakan. Silakan pilih username lain.');

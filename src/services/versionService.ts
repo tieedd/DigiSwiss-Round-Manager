@@ -15,8 +15,8 @@ export const CURRENT_APP_VERSION = '1.0.0';
  * Gagal diam-diam jika perangkat sedang offline atau API tidak terjangkau.
  */
 export async function checkLatestRelease(
-  repoOwner: string = 'darryhafidh',
-  repoName: string = 'digiswiss-round'
+  repoOwner: string = 'tieedd',
+  repoName: string = 'DigiSwiss-Round-Manager'
 ): Promise<AppReleaseInfo> {
   const defaultResult: AppReleaseInfo = {
     hasUpdate: false,
