@@ -1,8 +1,17 @@
 name: Build APK
 
 # Simpan file ini sebagai: .github/workflows/build-apk.yml
-# Proyek ini adalah proyek Android native (Kotlin + WebView) yang memuat hasil build web
-# dari app/src/main/assets/dist. Jadi urutannya: build web lalu build Gradle (bukan Capacitor).
+#
+# ATURAN NOMOR VERSI (format MAYOR.MINOR.PATCH, contoh 1.2.3):
+#   a. Perbaikan bug  -> PATCH naik       (1.0.4 -> 1.0.5)
+#   b. Fitur baru     -> MINOR naik, PATCH kembali 0   (1.0.5 -> 1.1.0)
+#   c. Perubahan besar (jarang) -> MAYOR naik          (1.4.2 -> 2.0.0)
+# Jenis update dibaca dari PESAN COMMIT (awalan di depan pesan):
+#   fix: ...   atau pesan lain apa pun   -> perbaikan bug
+#   feat: ...  atau  fitur: ...  atau mengandung [fitur] -> fitur baru
+#   feat!: ... atau  major: ...          -> perubahan besar
+# Jika beberapa commit sekaligus, jenis TERTINGGI yang dipakai (besar > fitur > perbaikan).
+# Untuk memaksa jenis tertentu: Actions > Build APK > Run workflow > pilih "jenis_update".
 
 on:
   push:
@@ -13,6 +22,16 @@ on:
       - 'firestore.rules'
       - 'firestore.indexes.json'
   workflow_dispatch:
+    inputs:
+      jenis_update:
+        description: 'Jenis update (otomatis = dibaca dari pesan commit)'
+        type: choice
+        default: otomatis
+        options:
+          - otomatis
+          - perbaikan
+          - fitur
+          - besar
 
 permissions:
   contents: write
@@ -21,22 +40,108 @@ concurrency:
   group: build-apk-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Nomor versi otomatis: 1.0.1, 1.0.2, dst. mengikuti nomor run
-  APP_VERSION: 1.0.${{ github.run_number }}
-
 jobs:
+  # ------------------------------------------------------------------
+  # Tahap 1: hitung nomor versi baru dari tag rilis terakhir
+  # ------------------------------------------------------------------
+  versi:
+    name: Tentukan Nomor Versi
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.hitung.outputs.version }}
+      jenis: ${{ steps.hitung.outputs.jenis }}
+      prev_tag: ${{ steps.hitung.outputs.prev_tag }}
+      skip: ${{ steps.hitung.outputs.skip }}
+    steps:
+      - name: Checkout Kode (dengan riwayat commit dan tag)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Hitung nomor versi
+        id: hitung
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_JENIS: ${{ inputs.jenis_update }}
+        run: |
+          set -eu
+
+          # Jika commit ini sudah punya tag rilis dan dipicu push (misalnya re-run), jangan rilis ulang
+          TAG_DI_HEAD=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+          if [ -n "$TAG_DI_HEAD" ] && [ "$EVENT" = "push" ]; then
+            echo "Commit ini sudah dirilis sebagai ${TAG_DI_HEAD}. Dilewati."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+          # Versi rilis terakhir (hanya tag berformat vX.Y.Z)
+          PREV_TAG=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+          if [ -n "$PREV_TAG" ]; then
+            BASE="${PREV_TAG#v}"
+            MSGS=$(git log "${PREV_TAG}..HEAD" --pretty=%s)
+          else
+            BASE="1.0.0"
+            MSGS=$(git log --pretty=%s)
+          fi
+          MAJOR=$(echo "$BASE" | cut -d. -f1)
+          MINOR=$(echo "$BASE" | cut -d. -f2)
+          PATCH=$(echo "$BASE" | cut -d. -f3)
+
+          # Tentukan jenis update
+          JENIS="perbaikan"
+          if [ -n "${INPUT_JENIS:-}" ] && [ "$INPUT_JENIS" != "otomatis" ]; then
+            JENIS="$INPUT_JENIS"
+          elif printf '%s\n' "$MSGS" | grep -qiE '^(major|breaking)|^[a-z]+(\([^)]*\))?!:'; then
+            JENIS="besar"
+          elif printf '%s\n' "$MSGS" | grep -qiE '^(feat|feature|fitur)(\([^)]*\))?[:!]|\[fitur\]'; then
+            JENIS="fitur"
+          fi
+
+          # Naikkan nomor versi
+          case "$JENIS" in
+            besar) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            fitur) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            *)     PATCH=$((PATCH + 1)) ;;
+          esac
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+          if git rev-parse -q --verify "refs/tags/v${VERSION}" > /dev/null; then
+            echo "::error::Tag v${VERSION} sudah ada"
+            exit 1
+          fi
+
+          echo "Versi sebelumnya : ${PREV_TAG:-belum ada}"
+          echo "Jenis update     : ${JENIS}"
+          echo "Versi baru       : ${VERSION}"
+          {
+            echo "version=${VERSION}"
+            echo "jenis=${JENIS}"
+            echo "prev_tag=${PREV_TAG}"
+          } >> "$GITHUB_OUTPUT"
+
+  # ------------------------------------------------------------------
+  # Tahap 2: bangun APK dan buat Release
+  # ------------------------------------------------------------------
   build-apk:
     name: Bangun APK dan Rilis
+    needs: versi
+    if: needs.versi.outputs.skip != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    env:
+      APP_VERSION: ${{ needs.versi.outputs.version }}
+      JENIS_UPDATE: ${{ needs.versi.outputs.jenis }}
+      PREV_TAG: ${{ needs.versi.outputs.prev_tag }}
 
     steps:
-      # 1. Ambil kode
+      # 1. Ambil kode (riwayat commit dibutuhkan untuk catatan rilis)
       - name: Checkout Kode
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # 2. Node.js (package-lock.json tersedia, jadi cache npm aktif)
+      # 2. Node.js 22 (tes mengimpor file .ts langsung, hanya didukung Node 22.18 ke atas)
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
@@ -59,8 +164,10 @@ jobs:
         run: npm test
 
       # 6. Samakan nomor versi di aplikasi dan di Gradle dengan nomor rilis
+      #    versionCode memakai nomor run agar SELALU naik (syarat Android untuk update)
       - name: Atur nomor versi
         run: |
+          echo "Versi ${APP_VERSION} (${JENIS_UPDATE}), versionCode ${{ github.run_number }}"
           sed -i "s/export const CURRENT_APP_VERSION = '.*';/export const CURRENT_APP_VERSION = '${APP_VERSION}';/" src/services/versionService.ts
           sed -i "s/versionCode = [0-9]*/versionCode = ${{ github.run_number }}/" app/build.gradle.kts
           sed -i "s/versionName = \".*\"/versionName = \"${APP_VERSION}\"/" app/build.gradle.kts
@@ -79,9 +186,7 @@ jobs:
       - name: Terima lisensi Android SDK
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
-      # 9. File debug.keystore diwajibkan oleh app/build.gradle.kts tetapi tidak ada di repo.
-      #    Jika secret DEBUG_KEYSTORE_BASE64 diisi, kunci tetap itu dipakai (update APK bisa menimpa versi lama).
-      #    Jika tidak, dibuat kunci sementara (update harus uninstall dulu).
+      # 9. Kunci tanda tangan. Isi secret DEBUG_KEYSTORE_BASE64 agar APK baru bisa menimpa versi lama tanpa uninstall.
       - name: Siapkan keystore debug
         env:
           KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
@@ -97,7 +202,7 @@ jobs:
             echo "::warning::Keystore sementara dipakai. Isi secret DEBUG_KEYSTORE_BASE64 agar update APK tidak perlu uninstall."
           fi
 
-      # 10. Gradle versi 9.3.1 sesuai gradle-wrapper.properties (gradlew tidak ada di repo)
+      # 10. Gradle 9.3.1 sesuai gradle-wrapper.properties (gradlew tidak ada di repo)
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -111,10 +216,35 @@ jobs:
       - name: Siapkan file APK
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk "DigiSwiss-Round-v${APP_VERSION}.apk"
-          ls -lh DigiSwiss-Round-v${APP_VERSION}.apk
-          echo "APK_SHA256=$(sha256sum DigiSwiss-Round-v${APP_VERSION}.apk | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          ls -lh "DigiSwiss-Round-v${APP_VERSION}.apk"
+          echo "APK_SHA256=$(sha256sum "DigiSwiss-Round-v${APP_VERSION}.apk" | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
-      # 13. Cadangan sebagai artifact
+      # 13. Susun catatan rilis dari pesan commit sejak rilis sebelumnya
+      - name: Susun catatan rilis
+        run: |
+          case "$JENIS_UPDATE" in
+            besar) LABEL="Pembaruan besar" ;;
+            fitur) LABEL="Fitur baru" ;;
+            *)     LABEL="Perbaikan bug" ;;
+          esac
+          {
+            echo "**Jenis update:** ${LABEL}"
+            echo
+            echo "**Perubahan:**"
+            if [ -n "$PREV_TAG" ]; then
+              git log "${PREV_TAG}..HEAD" --pretty='- %s' | head -n 30
+            else
+              git log --pretty='- %s' | head -n 30
+            fi
+            echo
+            echo "**Cara pasang:** unduh file .apk di bagian Assets, buka di HP Android,"
+            echo "lalu aktifkan \"Pasang dari sumber tidak dikenal\" jika diminta."
+            echo
+            echo "SHA-256: \`${APK_SHA256}\`"
+          } > catatan-rilis.md
+          cat catatan-rilis.md
+
+      # 14. Cadangan sebagai artifact
       - name: Unggah artifact
         uses: actions/upload-artifact@v4
         with:
@@ -122,20 +252,13 @@ jobs:
           path: DigiSwiss-Round-v${{ env.APP_VERSION }}.apk
           retention-days: 14
 
-      # 14. Buat Release dan lampirkan APK
+      # 15. Buat Release dan lampirkan APK
       - name: Buat GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.APP_VERSION }}
           name: DigiSwiss-Round v${{ env.APP_VERSION }}
           target_commitish: ${{ github.sha }}
-          generate_release_notes: true
+          body_path: catatan-rilis.md
           make_latest: true
-          body: |
-            APK otomatis dari commit ${{ github.sha }}.
-
-            Cara pasang: unduh file .apk di bagian Assets, buka di HP Android,
-            lalu aktifkan "Pasang dari sumber tidak dikenal" jika diminta.
-
-            SHA-256: `${{ env.APK_SHA256 }}`
           files: DigiSwiss-Round-v${{ env.APP_VERSION }}.apk
