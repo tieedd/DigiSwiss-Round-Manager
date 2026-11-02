@@ -102,7 +102,7 @@ export const StatsView: React.FC = () => {
   }, [currentUser?.uid, role]);
 
   return (
-    <div className="flex flex-col gap-4 pb-24">
+    <div className="flex flex-col gap-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

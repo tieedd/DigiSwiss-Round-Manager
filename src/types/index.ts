@@ -52,6 +52,8 @@ export interface RoundTimer {
   remainingMs: number;
 }
 
+export type RoundStatus = 'active' | 'completed';
+
 export interface TournamentRound {
   number: number;
   status: RoundStatus;

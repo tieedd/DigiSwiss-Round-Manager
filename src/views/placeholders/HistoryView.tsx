@@ -5,7 +5,7 @@ import { History } from 'lucide-react';
 
 export const HistoryView: React.FC = () => {
   return (
-    <div className="flex flex-col gap-4 pb-20">
+    <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-section-title text-dark-text font-semibold">
           Riwayat Turnamen

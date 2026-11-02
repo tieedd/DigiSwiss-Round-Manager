@@ -200,10 +200,21 @@ service cloud.firestore {
         // A. Organizer pemilik turnamen boleh mengubah dan menimpa apa pun
         // B. Player peserta pertandingan hanya boleh mengubah skor & status sesuai transisi valid:
         //    1) pending -> awaiting (oleh pelapor yang mengisi skor)
-        //    2) awaiting -> confirmed atau disputed (oleh lawan pertandingan)
         allow update: if isCurrentUserActive() && (
-          // Kasus Organizer Pemilik
-          (get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid)
+          // Kasus Organizer Pemilik:
+          // Hanya boleh mengubah pertandingan ronde aktif (currentRound) saat turnamen 'running',
+          // ATAU hanya mengubah field archived (untuk alur Revert Ronde)
+          (
+            get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid &&
+            (
+              (
+                get(/databases/$(database)/documents/tournaments/$(tid)).data.status == 'running' &&
+                resource.data.round == get(/databases/$(database)/documents/tournaments/$(tid)).data.currentRound
+              )
+              ||
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['archived'])
+            )
+          )
           ||
           // Kasus Player Peserta Pertandingan
           (
@@ -214,7 +225,7 @@ service cloud.firestore {
             request.resource.data.p2Id == resource.data.p2Id &&
             request.resource.data.p1Name == resource.data.p1Name &&
             request.resource.data.p2Name == resource.data.p2Name &&
-            request.resource.data.archived == resource.data.archived &&
+            request.resource.data.get('archived', false) == resource.data.get('archived', false) &&
             (
               // Transisi 1: pending -> awaiting (Pelapor input skor pertama kali)
               (
@@ -262,11 +273,14 @@ service cloud.firestore {
         ||
         (
           resource.data.uid == request.auth.uid &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deckName', 'deckColors']) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deckName', 'deckColors', 'updatedAt']) &&
           request.resource.data.deckName is string &&
+          request.resource.data.deckName.size() >= 1 &&
           request.resource.data.deckName.size() <= 40 &&
           request.resource.data.deckColors is list &&
-          request.resource.data.deckColors.size() <= 7
+          request.resource.data.deckColors.size() >= 1 &&
+          request.resource.data.deckColors.size() <= 7 &&
+          request.resource.data.deckColors.hasOnly(['Merah', 'Biru', 'Kuning', 'Hijau', 'Hitam', 'Ungu', 'Putih'])
         )
       );
 

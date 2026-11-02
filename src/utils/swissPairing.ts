@@ -223,7 +223,7 @@ export function generateSwissPairing(
       // Jika tidak ada kandidat terendah yang menghasilkan pairing valid sempurna,
       // pilih kandidat pertama dan lakukan fallback
       chosenBye = shuffledLowest[0];
-      const rest = playersToPair.filter((p) => p.id !== chosenBye.id);
+      const rest = playersToPair.filter((p) => p.id !== chosenBye!.id);
       const orderedRest = orderPlayersForPairing(roundNumber, rest, rng);
       successfulPairs = fallbackGreedyPairing(orderedRest, pastMatches);
     }
@@ -252,9 +252,9 @@ export function generateSwissPairing(
     // Tambahkan BYE match (otomatis menang, status confirmed)
     matches.push({
       table: tableNumber++,
-      p1Id: byePlayer.id,
+      p1Id: byePlayer!.id,
       p2Id: null,
-      p1Name: byePlayer.name,
+      p1Name: byePlayer!.name,
       p2Name: 'BYE',
       p1Score: format === 'BO1' ? 1 : 2,
       p2Score: 0,
@@ -271,7 +271,7 @@ export function generateSwissPairing(
       warning: hasRematch
         ? 'Tidak ditemukan solusi pairing otomatis tanpa tanding ulang. Anda dapat menukar pairing secara manual.'
         : undefined,
-      byePlayerId: byePlayer.id,
+      byePlayerId: byePlayer!.id,
     };
   }
 

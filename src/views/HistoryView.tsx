@@ -1,20 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Tournament, Participation } from '../types';
+import { Tournament, Participation, DeckColor } from '../types';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
-import { Input } from '../components/common/Input';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { EmptyState } from '../components/common/EmptyState';
 import {
   getAllTournaments,
   getOrganizerTournaments
 } from '../services/tournamentService';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { PlayerMatchDetailsModal } from './history/PlayerMatchDetailsModal';
 import { TournamentDetailModal } from './tournaments/TournamentDetailModal';
+import { DeckRegistrationModal } from './tournaments/DeckRegistrationModal';
 import { DECK_COLOR_STYLES } from '../utils/deckExportLogic';
+import { countUnfilledDecks } from '../utils/finalStandingsLogic';
 import {
   History,
   Search,
@@ -24,10 +25,10 @@ import {
   Layers,
   ChevronLeft,
   ChevronRight,
-  Filter,
   RefreshCw,
   Eye,
-  AlertCircle
+  AlertCircle,
+  Edit2
 } from 'lucide-react';
 
 const PAGE_SIZE = 6;
@@ -55,6 +56,13 @@ export const HistoryView: React.FC = () => {
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
   const [tournamentModalOpen, setTournamentModalOpen] = useState(false);
 
+  // Deck Registration Modal untuk Player
+  const [deckModalOpen, setDeckModalOpen] = useState(false);
+  const [deckTargetParticipation, setDeckTargetParticipation] = useState<Participation | null>(null);
+
+  // Peta Juara 1 untuk Organizer/Admin
+  const [championsMap, setChampionsMap] = useState<Record<string, { name: string; deckName?: string }>>({});
+
   const fetchData = async () => {
     if (!currentUser) return;
     setLoading(true);
@@ -69,12 +77,13 @@ export const HistoryView: React.FC = () => {
         const orgTourneys = await getOrganizerTournaments(currentUser.uid);
         setTournaments(orgTourneys);
       } else {
-        // Player: Partisipasi miliknya
+        // Player: Partisipasi miliknya (query terindeks: uid + createdAt desc, limit 30)
         const partsCol = collection(db, 'participations');
         const q = query(
           partsCol,
           where('uid', '==', currentUser.uid),
-          orderBy('createdAt', 'desc')
+          orderBy('createdAt', 'desc'),
+          limit(30)
         );
         const snap = await getDocs(q);
         const list = snap.docs.map((d) => d.data() as Participation);
@@ -91,6 +100,14 @@ export const HistoryView: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, [currentUser?.uid, role]);
+
+  // Daftar turnamen di mana player belum mengisi deck
+  const unfilledDecksList = useMemo(() => {
+    if (role !== 'player' || !currentUser) return [];
+    return participations.filter(
+      (p) => p.uid === currentUser.uid && (!p.deckName || p.deckName.trim() === '')
+    );
+  }, [participations, currentUser?.uid, role]);
 
   // Filter & Paginasi untuk Player
   const filteredParticipations = useMemo(() => {
@@ -139,6 +156,39 @@ export const HistoryView: React.FC = () => {
     return filteredTournaments.slice(start, start + PAGE_SIZE);
   }, [filteredTournaments, currentPage]);
 
+  // Ambil Juara 1 untuk turnamen finished pada halaman aktif organizer/admin
+  useEffect(() => {
+    if (!isAdmin && !isOrganizer) return;
+    const finishedWithoutChamp = paginatedTournaments.filter(
+      (t) => t.status === 'finished' && !championsMap[t.id]
+    );
+    if (finishedWithoutChamp.length === 0) return;
+
+    finishedWithoutChamp.forEach(async (t) => {
+      try {
+        const q = query(
+          collection(db, 'participations'),
+          where('tournamentId', '==', t.id),
+          orderBy('rank', 'asc'),
+          limit(1)
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const first = snap.docs[0].data() as Participation;
+          setChampionsMap((prev) => ({
+            ...prev,
+            [t.id]: {
+              name: first.name,
+              deckName: first.deckName
+            }
+          }));
+        }
+      } catch (err) {
+        // Gagal diam-diam
+      }
+    });
+  }, [paginatedTournaments, isAdmin, isOrganizer, championsMap]);
+
   const handleOpenPlayerMatchDetails = (p: Participation) => {
     setSelectedParticipation(p);
     setDetailModalOpen(true);
@@ -149,8 +199,13 @@ export const HistoryView: React.FC = () => {
     setTournamentModalOpen(true);
   };
 
+  const handleOpenDeckModal = (p: Participation) => {
+    setDeckTargetParticipation(p);
+    setDeckModalOpen(true);
+  };
+
   return (
-    <div className="flex flex-col gap-4 pb-24">
+    <div className="flex flex-col gap-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -174,6 +229,51 @@ export const HistoryView: React.FC = () => {
           title="Segarkan"
         />
       </div>
+
+      {/* Kartu "Deck belum diisi (N)" untuk Player */}
+      {role === 'player' && unfilledDecksList.length > 0 && (
+        <Card variant="surface" className="border-l-4 border-l-status-yellow p-3.5 flex flex-col gap-2.5 animate-fade-in">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Layers size={17} className="text-status-yellow flex-shrink-0" />
+              <span className="text-body font-semibold text-dark-text">
+                Deck belum diisi ({unfilledDecksList.length})
+              </span>
+            </div>
+            <span className="text-[10px] font-mono font-semibold text-status-yellow bg-status-yellow/10 px-2 py-0.5 rounded border border-status-yellow/20">
+              Perlu Dilengkapi
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-2 pt-0.5">
+            {unfilledDecksList.map((p) => (
+              <div
+                key={p.id}
+                className="p-2.5 rounded-btn bg-dark-bg/60 border border-dark-border flex items-center justify-between gap-2 text-caption"
+              >
+                <div className="min-w-0 flex-1">
+                  <span className="font-semibold text-dark-text block truncate">
+                    {p.tournamentName}
+                  </span>
+                  <div className="flex items-center gap-2 text-[11px] text-dark-muted">
+                    <span>{p.date}</span>
+                    <span>&bull;</span>
+                    <span className="font-mono text-accent">Peringkat #{p.rank}</span>
+                  </div>
+                </div>
+
+                <Button
+                  variant="primary"
+                  className="!min-h-[30px] !px-3 !text-[11px] flex-shrink-0"
+                  onClick={() => handleOpenDeckModal(p)}
+                >
+                  Isi Deck
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Filter & Pencarian */}
       <Card variant="surface" className="p-3 flex flex-col gap-2.5">
@@ -247,6 +347,8 @@ export const HistoryView: React.FC = () => {
           {role === 'player' &&
             paginatedParticipations.map((p) => {
               const isTop3 = p.rank <= 3;
+              const isOwnDoc = p.uid === currentUser?.uid;
+
               return (
                 <Card
                   key={p.id}
@@ -298,28 +400,63 @@ export const HistoryView: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Deck Info & Tombol Detail */}
+                  {/* Deck Info & Tombol Aksi */}
                   <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-dark-border/60 text-caption">
-                    <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
                       <Layers size={13} className="text-accent flex-shrink-0" />
-                      <span className="text-dark-text font-medium truncate">
-                        {p.deckName || 'Deck belum diisi'}
-                      </span>
-                      <div className="flex items-center gap-1 flex-wrap">
-                        {p.deckColors?.map((c) => {
-                          const s = DECK_COLOR_STYLES[c];
-                          return (
-                            <span
-                              key={c}
-                              className={`text-[8px] px-1 rounded-full border ${
-                                s ? `${s.bg} ${s.text} ${s.border}` : ''
-                              }`}
+                      {p.deckName ? (
+                        <>
+                          <span className="text-dark-text font-medium truncate">
+                            {p.deckName}
+                          </span>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {p.deckColors?.map((c) => {
+                              const s = DECK_COLOR_STYLES[c];
+                              return (
+                                <span
+                                  key={c}
+                                  className={`text-[8px] px-1 rounded-full border ${
+                                    s ? `${s.bg} ${s.text} ${s.border}` : ''
+                                  }`}
+                                >
+                                  {c}
+                                </span>
+                              );
+                            })}
+                          </div>
+                          {isOwnDoc && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDeckModal(p);
+                              }}
+                              className="text-[10px] text-accent hover:underline flex items-center gap-0.5 ml-1"
+                              title="Ubah Deck"
                             >
-                              {c}
-                            </span>
-                          );
-                        })}
-                      </div>
+                              <Edit2 size={11} />
+                              <span>Ubah</span>
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-dark-muted italic">Deck belum diisi</span>
+                          {isOwnDoc && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDeckModal(p);
+                              }}
+                              className="text-[10px] text-accent font-semibold hover:underline flex items-center gap-0.5 ml-1"
+                            >
+                              <Edit2 size={11} />
+                              <span>Isi</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <button
@@ -386,6 +523,17 @@ export const HistoryView: React.FC = () => {
                   />
                 </div>
 
+                {/* Juara 1 jika turnamen finished */}
+                {t.status === 'finished' && championsMap[t.id] && (
+                  <div className="flex items-center gap-1.5 mt-2 text-[11px] text-accent/90 bg-accent/5 px-2 py-1 rounded border border-accent/20">
+                    <Trophy size={13} className="text-accent flex-shrink-0" />
+                    <span className="truncate">
+                      Juara 1: <strong className="text-accent">{championsMap[t.id].name}</strong>
+                      {championsMap[t.id].deckName ? ` (${championsMap[t.id].deckName})` : ''}
+                    </span>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-dark-border/60 text-caption">
                   <span className="text-dark-muted">
                     Total: <strong className="text-dark-text">{t.totalRounds || '-'} Ronde</strong>
@@ -451,6 +599,7 @@ export const HistoryView: React.FC = () => {
           setSelectedParticipation(null);
         }}
         participation={selectedParticipation}
+        onDeckChanged={fetchData}
       />
 
       {/* Modal Detail Turnamen untuk Organizer / Admin */}
@@ -463,6 +612,22 @@ export const HistoryView: React.FC = () => {
         }}
         onTournamentUpdated={fetchData}
         onTournamentDeleted={fetchData}
+      />
+
+      {/* Modal Pendaftaran / Ubah Deck untuk Player */}
+      <DeckRegistrationModal
+        isOpen={deckModalOpen}
+        onClose={() => {
+          setDeckModalOpen(false);
+          setDeckTargetParticipation(null);
+        }}
+        participation={deckTargetParticipation}
+        actorId={currentUser?.uid || ''}
+        actorName={userProfile?.displayName || userProfile?.username || 'Player'}
+        isOrganizer={isOrganizer || isAdmin}
+        onDeckUpdated={() => {
+          fetchData();
+        }}
       />
     </div>
   );

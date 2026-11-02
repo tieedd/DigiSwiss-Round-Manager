@@ -35,7 +35,11 @@ import { RevertRoundModal } from '../rounds/RevertRoundModal';
 import { TournamentAuditLogModal } from '../rounds/TournamentAuditLogModal';
 import { RoundTimerCard } from '../../components/rounds/RoundTimerCard';
 import { FinalResultsSection } from '../tournaments/FinalResultsSection';
+import { finalizeTournamentResults } from '../../services/participationService';
+import { BottomSheet } from '../../components/common/BottomSheet';
 import { PastMatchRecord } from '../../utils/swissPairing';
+import { isRoundLocked } from '../../utils/roundLockLogic';
+import { getSessionTournament, setSessionTournament } from '../../utils/sessionStore';
 import {
   Timer,
   Play,
@@ -48,7 +52,9 @@ import {
   ChevronRight,
   History,
   ShieldAlert,
-  RotateCcw
+  RotateCcw,
+  Lock,
+  Clock
 } from 'lucide-react';
 
 export const RoundsView: React.FC = () => {
@@ -58,25 +64,26 @@ export const RoundsView: React.FC = () => {
 
   // Tournaments
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
+  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(() => getSessionTournament());
   const [loadingTournaments, setLoadingTournaments] = useState(true);
 
   // Rounds & Matches
   const [rounds, setRounds] = useState<TournamentRound[]>([]);
-  const [activeRoundNumber, setActiveRoundNumber] = useState<number>(1);
+  const [activeRoundNumber, setActiveRoundNumber] = useState<number | null>(null);
   const [matches, setMatches] = useState<TournamentMatch[]>([]);
   const [allMatches, setAllMatches] = useState<TournamentMatch[]>([]);
   const [loadingRounds, setLoadingRounds] = useState(false);
   const [pairingLoading, setPairingLoading] = useState(false);
   const [pairingNotice, setPairingNotice] = useState<string | null>(null);
 
-  // Revert & Peringatan Koreksi Tanpa Revert
-  const [unrevertedNotice, setUnrevertedNotice] = useState<{
-    round: number;
-    nextRound: number;
-  } | null>(null);
+  // Revert & Modals
   const [revertModalTarget, setRevertModalTarget] = useState<number | null>(null);
   const [auditLogModalOpen, setAuditLogModalOpen] = useState(false);
+
+  // Akhiri Turnamen Confirmation BottomSheet
+  const [finishConfirmModalOpen, setFinishConfirmModalOpen] = useState(false);
+  const [finishingTournament, setFinishingTournament] = useState(false);
+  const [finishError, setFinishError] = useState<string | null>(null);
 
   // Modals
   const [scoreModalMatch, setScoreModalMatch] = useState<TournamentMatch | null>(null);
@@ -102,10 +109,12 @@ export const RoundsView: React.FC = () => {
 
       setTournaments(sorted);
 
-      // Jika belum ada turnamen terpilih, pilih turnamen running pertama
-      if (sorted.length > 0 && !selectedTournament) {
-        const runningTourney = sorted.find((t) => t.status === 'running') || sorted[0];
-        setSelectedTournament(runningTourney);
+      if (sorted.length > 0) {
+        const sessionTourney = getSessionTournament();
+        const matched = sessionTourney ? sorted.find((t) => t.id === sessionTourney.id) : null;
+        const chosen = matched || sorted.find((t) => t.status === 'running') || sorted[0];
+        setSelectedTournament(chosen);
+        setSessionTournament(chosen);
       }
     } catch (err) {
       console.error('Gagal memuat turnamen untuk ronde:', err);
@@ -119,7 +128,7 @@ export const RoundsView: React.FC = () => {
   }, [currentUser, isAdmin]);
 
   // 2. Muat data ronde & pertandingan turnamen terpilih (hanya non-archived secara default)
-  const fetchRoundData = async (tourneyId: string, preferredRound?: number) => {
+  const fetchRoundData = async (tourneyId: string, preferredRound?: number | null) => {
     setLoadingRounds(true);
     try {
       const fetchedRounds = await getTournamentRounds(tourneyId, false);
@@ -129,18 +138,20 @@ export const RoundsView: React.FC = () => {
       setAllMatches(fetchedAllMatches);
 
       if (fetchedRounds.length > 0) {
-        const targetRound =
-          preferredRound ||
-          (fetchedRounds.some((r) => r.number === activeRoundNumber)
-            ? activeRoundNumber
-            : fetchedRounds[fetchedRounds.length - 1].number);
+        // Saat turnamen dibuka atau tab Ronde dibuka kembali, ronde yang tampil harus selalu
+        // selectedTournament.currentRound (cadangan: nomor ronde terbesar yang tidak diarsipkan), bukan 1.
+        const activeRound =
+          selectedTournament?.currentRound ||
+          fetchedRounds[fetchedRounds.length - 1].number;
+
+        const targetRound = preferredRound != null ? preferredRound : activeRound;
 
         setActiveRoundNumber(targetRound);
         const roundMatches = fetchedAllMatches.filter((m) => m.round === targetRound);
         setMatches(roundMatches);
       } else {
         setMatches([]);
-        setActiveRoundNumber(1);
+        setActiveRoundNumber(null);
       }
     } catch (err) {
       console.error('Gagal memuat ronde:', err);
@@ -179,7 +190,6 @@ export const RoundsView: React.FC = () => {
     if (selectedTournament) {
       fetchRoundData(selectedTournament.id);
       setPairingNotice(null);
-      setUnrevertedNotice(null);
     }
   }, [selectedTournament?.id]);
 
@@ -208,6 +218,14 @@ export const RoundsView: React.FC = () => {
         setPairingNotice(result.warning);
       }
 
+      const updatedTourney = {
+        ...selectedTournament,
+        currentRound: roundToCreate,
+        status: 'running' as const
+      };
+      setSelectedTournament(updatedTourney);
+      setSessionTournament(updatedTourney);
+
       await fetchRoundData(selectedTournament.id, roundToCreate);
     } catch (err: any) {
       alert(err.message || 'Gagal membuat pairing ronde.');
@@ -227,6 +245,15 @@ export const RoundsView: React.FC = () => {
     const targetMatch = matches.find((m) => m.id === matchId);
     if (!targetMatch) return;
 
+    const currentTourneyRound = selectedTournament.currentRound || 1;
+    const totalRounds = selectedTournament.totalRounds || 3;
+
+    // Ronde sebelumnya terkunci: cegah pengeditan langsung tanpa revert
+    if (isRoundLocked(targetMatch.round, currentTourneyRound, selectedTournament.status)) {
+      alert(`Ronde ${targetMatch.round} telah terkunci. Gunakan tombol Revert ke Ronde ${targetMatch.round} untuk mengoreksi skor.`);
+      return;
+    }
+
     const organizerInfo = {
       uid: currentUser.uid,
       name: userProfile.displayName || userProfile.username,
@@ -241,20 +268,6 @@ export const RoundsView: React.FC = () => {
       organizerInfo
     );
 
-    const currentTourneyRound = selectedTournament.currentRound || 1;
-    const totalRounds = selectedTournament.totalRounds || 3;
-
-    // Skenario A: Mengoreksi ronde yang sudah selesai tanpa revert (X < currentRound)
-    if (targetMatch.round < currentTourneyRound) {
-      setUnrevertedNotice({
-        round: targetMatch.round,
-        nextRound: targetMatch.round + 1,
-      });
-      await fetchRoundData(selectedTournament.id, targetMatch.round);
-      return;
-    }
-
-    // Skenario B: Mengoreksi ronde aktif saat ini (X === currentRound)
     // Ambil data pertandingan terbaru di ronde ini
     const updatedRoundMatches = await getMatchesForRound(
       selectedTournament.id,
@@ -284,6 +297,14 @@ export const RoundsView: React.FC = () => {
           setPairingNotice(
             `Pairing Ronde ${targetMatch.round + 1} telah otomatis dibuat ulang berdasarkan klasemen terbaru tanpa tanding ulang.`
           );
+          const updatedTourney = {
+            ...selectedTournament,
+            currentRound: targetMatch.round + 1,
+            status: 'running' as const
+          };
+          setSelectedTournament(updatedTourney);
+          setSessionTournament(updatedTourney);
+
           await fetchRoundData(selectedTournament.id, targetMatch.round + 1);
           return;
         } catch (err: any) {
@@ -292,14 +313,20 @@ export const RoundsView: React.FC = () => {
       }
     }
 
-    // Skenario C: Ronde terakhir
+    // Cek jika seluruh turnamen selesai pada ronde terakhir
     const finishCheck = await checkAndFinishTournamentIfComplete(
       selectedTournament.id,
       targetMatch.round,
       totalRounds
     );
     if (finishCheck.tournamentFinished) {
-      setSelectedTournament((prev) => (prev ? { ...prev, status: 'finished' } : null));
+      const finishedTourney = {
+        ...selectedTournament,
+        status: 'finished' as const,
+        finishedAt: Date.now()
+      };
+      setSelectedTournament(finishedTourney);
+      setSessionTournament(finishedTourney);
     }
 
     await fetchRoundData(selectedTournament.id, targetMatch.round);
@@ -322,15 +349,77 @@ export const RoundsView: React.FC = () => {
       organizerInfo
     );
 
-    setSelectedTournament((prev) =>
-      prev ? { ...prev, currentRound: targetRound, status: 'running' } : null
-    );
-    setUnrevertedNotice(null);
+    const revertedTourney = {
+      ...selectedTournament,
+      currentRound: targetRound,
+      status: 'running' as const
+    };
+    setSelectedTournament(revertedTourney);
+    setSessionTournament(revertedTourney);
+
     setPairingNotice(
       `Turnamen telah di-revert ke Ronde ${targetRound}. Anda dapat mengoreksi skor sebelum pairing Ronde ${targetRound + 1} dibuat ulang.`
     );
 
     await fetchRoundData(selectedTournament.id, targetRound);
+  };
+
+  // 6. Eksekusi Akhiri Turnamen dari Kartu Aksi Ronde Terakhir
+  const handleFinishTournament = async () => {
+    if (!selectedTournament) return;
+    setFinishingTournament(true);
+    setFinishError(null);
+    try {
+      const totalRounds = selectedTournament.totalRounds || 3;
+      const res = await checkAndFinishTournamentIfComplete(
+        selectedTournament.id,
+        totalRounds,
+        totalRounds
+      );
+      if (res.tournamentFinished) {
+        const finishedTourney = {
+          ...selectedTournament,
+          status: 'finished' as const,
+          finishedAt: Date.now(),
+          finalized: true
+        };
+
+        // Otomatis finalisasi hasil saat turnamen diakhiri (idempoten)
+        try {
+          if (currentUser) {
+            const playersToFinalize =
+              tournamentPlayers.length > 0
+                ? tournamentPlayers
+                : await getTournamentPlayers(selectedTournament.id);
+            const matchesToFinalize =
+              allMatches.length > 0
+                ? allMatches
+                : await getAllTournamentMatches(selectedTournament.id, false);
+
+            await finalizeTournamentResults(
+              finishedTourney,
+              playersToFinalize,
+              matchesToFinalize,
+              currentUser.uid,
+              userProfile?.displayName || userProfile?.username || 'Organizer'
+            );
+          }
+        } catch (finErr) {
+          console.warn('Finalisasi otomatis turnamen:', finErr);
+        }
+
+        setSelectedTournament(finishedTourney);
+        setSessionTournament(finishedTourney);
+        setFinishConfirmModalOpen(false);
+        await fetchTournaments();
+      } else {
+        setFinishError('Belum semua pertandingan ronde terakhir terkonfirmasi.');
+      }
+    } catch (err: any) {
+      setFinishError(err?.message || 'Gagal mengakhiri turnamen. Pastikan koneksi internet stabil.');
+    } finally {
+      setFinishingTournament(false);
+    }
   };
 
   // 6. Penukaran Pairing Manual
@@ -363,19 +452,38 @@ export const RoundsView: React.FC = () => {
     totalMatchesInRound > 0 && confirmedMatchesCount === totalMatchesInRound;
 
   const totalRounds = selectedTournament?.totalRounds || 3;
+  const currentTourneyRound = selectedTournament?.currentRound || rounds.length || 1;
+  const tourneyStatus = selectedTournament?.status || 'registration';
+
+  const isCurrentRoundLocked = isRoundLocked(
+    activeRoundNumber || currentTourneyRound,
+    currentTourneyRound,
+    tourneyStatus
+  );
+
+  const hasNoScoresYet =
+    matches.length > 0 &&
+    matches.every(
+      (m) => m.p2Id === null || (m.status === 'pending' && m.p1Score === 0 && m.p2Score === 0)
+    );
+
+  const isOrganizerOwner = Boolean(
+    isOrganizer && selectedTournament && (selectedTournament.organizerId === currentUser?.uid || isAdmin)
+  );
+
   const canCreateNextRound =
-    selectedTournament?.status === 'running' &&
+    tourneyStatus === 'running' &&
     rounds.length < totalRounds &&
     (rounds.length === 0 || isAllMatchesConfirmed);
 
   const nextRoundNumberToCreate = rounds.length + 1;
 
   const pastMatchRecords: PastMatchRecord[] = allMatches
-    .filter((m) => m.round < activeRoundNumber && !m.archived)
+    .filter((m) => m.round < (activeRoundNumber || currentTourneyRound) && !m.archived)
     .map((m) => ({ round: m.round, p1Id: m.p1Id, p2Id: m.p2Id }));
 
   return (
-    <div className="flex flex-col gap-4 pb-24">
+    <div className="flex flex-col gap-4">
       {/* Header Halaman */}
       <div className="flex items-center justify-between">
         <div>
@@ -401,7 +509,7 @@ export const RoundsView: React.FC = () => {
             <Button
               variant="secondary"
               className="!min-h-[36px] !px-2.5 !text-caption"
-              onClick={() => fetchRoundData(selectedTournament.id, activeRoundNumber)}
+              onClick={() => fetchRoundData(selectedTournament.id, activeRoundNumber ?? undefined)}
               icon={<RefreshCw size={15} className={loadingRounds ? 'animate-spin' : ''} />}
             />
           )}
@@ -428,7 +536,10 @@ export const RoundsView: React.FC = () => {
               value={selectedTournament?.id || ''}
               onChange={(e) => {
                 const found = tournaments.find((t) => t.id === e.target.value);
-                if (found) setSelectedTournament(found);
+                if (found) {
+                  setSelectedTournament(found);
+                  setSessionTournament(found);
+                }
               }}
               className="w-full bg-dark-surface border border-dark-border rounded-btn px-3 py-2 text-caption text-dark-text focus:outline-none focus:border-accent"
             >
@@ -489,35 +600,6 @@ export const RoundsView: React.FC = () => {
           {/* Jika turnamen berstatus running atau finished */}
           {selectedTournament && selectedTournament.status !== 'registration' && (
             <div className="flex flex-col gap-3 mt-1">
-              {/* Notifikasi Peringatan Koreksi Tanpa Revert */}
-              {unrevertedNotice && isOrganizer && (
-                <div className="p-3 rounded-card bg-status-yellow/10 border border-status-yellow/30 text-caption text-status-yellow flex flex-col gap-2">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle size={17} className="flex-shrink-0 mt-0.5" />
-                    <span>
-                      Skor Ronde {unrevertedNotice.round} telah diperbarui, namun <strong>pairing ronde berikutnya ({unrevertedNotice.nextRound}) tidak berubah secara otomatis</strong> karena turnamen belum di-revert.
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 pt-1">
-                    <Button
-                      variant="primary"
-                      className="!min-h-[32px] !px-3 !text-[11px]"
-                      onClick={() => setRevertModalTarget(unrevertedNotice.round)}
-                      icon={<RotateCcw size={13} />}
-                    >
-                      Revert dan Buat Ulang Pairing
-                    </Button>
-                    <button
-                      type="button"
-                      onClick={() => setUnrevertedNotice(null)}
-                      className="text-[11px] text-dark-muted hover:underline"
-                    >
-                      Abaikan
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {/* Notifikasi Pairing / Revert Notice */}
               {pairingNotice && (
                 <div className="p-3 rounded bg-accent/10 border border-accent/30 text-caption text-accent flex items-start justify-between gap-2">
@@ -541,6 +623,7 @@ export const RoundsView: React.FC = () => {
                   <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none flex-1">
                     {rounds.map((r) => {
                       const isCurrentTab = r.number === activeRoundNumber;
+                      const isLockedTab = isRoundLocked(r.number, currentTourneyRound, tourneyStatus);
                       return (
                         <button
                           key={r.number}
@@ -553,7 +636,8 @@ export const RoundsView: React.FC = () => {
                           }`}
                         >
                           <span>Ronde {r.number}</span>
-                          {r.status === 'completed' && <CheckCircle2 size={13} />}
+                          {isLockedTab && <Lock size={12} className={isCurrentTab ? 'text-dark-bg' : 'text-dark-muted'} />}
+                          {r.status === 'completed' && !isLockedTab && <CheckCircle2 size={13} />}
                         </button>
                       );
                     })}
@@ -564,12 +648,12 @@ export const RoundsView: React.FC = () => {
                 {isOrganizer && rounds.length > 1 && (
                   <button
                     type="button"
-                    onClick={() => setRevertModalTarget(activeRoundNumber)}
+                    onClick={() => setRevertModalTarget(activeRoundNumber || currentTourneyRound)}
                     className="flex-shrink-0 text-[11px] font-medium text-status-yellow hover:text-status-yellow/80 flex items-center gap-1 px-2.5 py-1.5 rounded bg-status-yellow/10 border border-status-yellow/30 transition-colors"
-                    title={`Revert ke Ronde ${activeRoundNumber}`}
+                    title={`Revert ke Ronde ${activeRoundNumber || currentTourneyRound}`}
                   >
                     <History size={13} />
-                    <span>Revert ke R{activeRoundNumber}</span>
+                    <span>Revert ke R{activeRoundNumber || currentTourneyRound}</span>
                   </button>
                 )}
               </div>
@@ -601,14 +685,13 @@ export const RoundsView: React.FC = () => {
                 </Card>
               )}
 
-              {/* Jika masih ada pertandingan belum confirmed di ronde terakhir */}
+              {/* Progres ronde (muncul untuk ronde yang belum seluruh pertandingannya terkonfirmasi) */}
               {rounds.length > 0 &&
-                rounds.length < totalRounds &&
                 !isAllMatchesConfirmed &&
                 selectedTournament.status === 'running' && (
                   <div className="p-2.5 rounded bg-dark-surface border border-dark-border text-caption text-dark-muted flex items-center justify-between">
                     <span>
-                      Progres Ronde {activeRoundNumber}:{' '}
+                      Progres Ronde {activeRoundNumber || currentTourneyRound}:{' '}
                       <strong className="text-accent">
                         {confirmedMatchesCount} dari {totalMatchesInRound}
                       </strong>{' '}
@@ -617,14 +700,50 @@ export const RoundsView: React.FC = () => {
                   </div>
                 )}
 
-              {/* Komponen Timer Ronde (Angka 48px+ Tabular, Real-time bagi Semua Pengguna, Kontrol Organizer) */}
+              {/* Kartu Aksi: Akhiri Turnamen pada Ronde Terakhir */}
+              {selectedTournament.status === 'running' &&
+                rounds.length === totalRounds &&
+                isAllMatchesConfirmed && (
+                  <Card variant="surface" className="flex flex-col gap-2 p-3.5 border-accent/40 bg-accent/5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <span className="text-body font-semibold text-dark-text flex items-center gap-1.5">
+                          <CheckCircle2 size={16} className="text-status-green" />
+                          Semua pertandingan ronde terakhir sudah terkonfirmasi
+                        </span>
+                        <span className="text-caption text-dark-muted">
+                          {isOrganizerOwner
+                            ? 'Turnamen siap diakhiri untuk membuka finalisasi peringkat akhir dan pengisian deck.'
+                            : 'Menunggu organizer mengakhiri turnamen'}
+                        </span>
+                      </div>
+                      {isOrganizerOwner ? (
+                        <Button
+                          variant="primary"
+                          className="!min-h-[40px] !px-4 !text-caption whitespace-nowrap"
+                          onClick={() => setFinishConfirmModalOpen(true)}
+                          icon={<Trophy size={15} />}
+                        >
+                          Akhiri Turnamen
+                        </Button>
+                      ) : (
+                        <div className="text-caption font-medium text-status-yellow flex items-center gap-1.5 bg-status-yellow/10 px-3 py-1.5 rounded-btn border border-status-yellow/30 w-fit">
+                          <Clock size={14} />
+                          <span>Menunggu organizer mengakhiri turnamen</span>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                )}
+
+              {/* Komponen Timer Ronde */}
               {rounds.length > 0 && (
                 <RoundTimerCard
                   tournamentId={selectedTournament.id}
-                  round={rounds.find((r) => r.number === activeRoundNumber) || null}
+                  round={rounds.find((r) => r.number === (activeRoundNumber || currentTourneyRound)) || null}
                   isOrganizer={isOrganizer}
                   format={selectedTournament.format}
-                  onTimerUpdated={() => fetchRoundData(selectedTournament.id, activeRoundNumber)}
+                  onTimerUpdated={() => fetchRoundData(selectedTournament.id, activeRoundNumber ?? undefined)}
                 />
               )}
 
@@ -658,11 +777,11 @@ export const RoundsView: React.FC = () => {
                 </div>
               )}
 
-              {/* Kontrol Tukar Pairing Manual */}
-              {isOrganizer && matches.length > 1 && selectedTournament.status === 'running' && (
+              {/* Kontrol Tukar Pairing Manual (hanya untuk ronde aktif yang belum ada skornya) */}
+              {isOrganizer && matches.length > 1 && selectedTournament.status === 'running' && !isCurrentRoundLocked && hasNoScoresYet && (
                 <div className="flex items-center justify-between px-1">
                   <span className="text-caption text-dark-muted font-medium">
-                    Meja Pertandingan (Ronde {activeRoundNumber}):
+                    Meja Pertandingan (Ronde {activeRoundNumber || currentTourneyRound}):
                   </span>
                   <button
                     type="button"
@@ -687,7 +806,7 @@ export const RoundsView: React.FC = () => {
                     message={
                       rounds.length === 0
                         ? 'Belum ada ronde yang dibuat. Klik tombol Buat Pairing Ronde 1 di atas.'
-                        : `Tidak ada data pertandingan aktif untuk Ronde ${activeRoundNumber}.`
+                        : `Tidak ada data pertandingan aktif untuk Ronde ${activeRoundNumber || currentTourneyRound}.`
                     }
                   />
                 </Card>
@@ -702,10 +821,12 @@ export const RoundsView: React.FC = () => {
                         key={match.id}
                         variant="surface"
                         className={`p-3.5 transition-colors ${
-                          isOrganizer ? 'cursor-pointer hover:border-accent/40' : ''
+                          !isCurrentRoundLocked && isOrganizer && !isBye
+                            ? 'cursor-pointer hover:border-accent/40'
+                            : 'cursor-default'
                         } ${match.status === 'disputed' ? 'border-status-red/60 bg-status-red/5' : ''}`}
                         onClick={() => {
-                          if (isOrganizer && !isBye) {
+                          if (isOrganizer && !isBye && !isCurrentRoundLocked) {
                             setScoreModalMatch(match);
                           }
                         }}
@@ -715,32 +836,40 @@ export const RoundsView: React.FC = () => {
                           <span className="text-caption font-mono font-semibold text-accent">
                             {isBye ? 'BYE (Tanpa Lawan)' : `Meja #${match.table}`}
                           </span>
-                          <StatusBadge
-                            label={
-                              match.status === 'confirmed'
-                                ? 'Terkonfirmasi'
-                                : match.status === 'awaiting'
-                                ? 'Menunggu Konfirmasi'
-                                : match.status === 'disputed'
-                                ? 'Bermasalah (Disputed)'
-                                : 'Belum Selesai'
-                            }
-                            variant={
-                              match.status === 'confirmed'
-                                ? 'green'
-                                : match.status === 'awaiting'
-                                ? 'yellow'
-                                : match.status === 'disputed'
-                                ? 'red'
-                                : 'neutral'
-                            }
-                          />
+                          <div className="flex items-center gap-1.5">
+                            {isCurrentRoundLocked && (
+                              <span className="text-[10px] font-mono text-dark-muted flex items-center gap-1 bg-dark-surface-high border border-dark-border px-1.5 py-0.5 rounded">
+                                <Lock size={11} />
+                                Terkunci
+                              </span>
+                            )}
+                            <StatusBadge
+                              label={
+                                match.status === 'confirmed'
+                                  ? 'Terkonfirmasi'
+                                  : match.status === 'awaiting'
+                                  ? 'Menunggu Konfirmasi'
+                                  : match.status === 'disputed'
+                                  ? 'Bermasalah (Disputed)'
+                                  : 'Belum Selesai'
+                              }
+                              variant={
+                                match.status === 'confirmed'
+                                  ? 'green'
+                                  : match.status === 'awaiting'
+                                  ? 'yellow'
+                                  : match.status === 'disputed'
+                                  ? 'red'
+                                  : 'neutral'
+                              }
+                            />
+                          </div>
                         </div>
 
                         {/* Konten Pertandingan: Pemain 1 VS Pemain 2 */}
                         <div className="grid grid-cols-5 items-center py-3">
                           {/* Pemain 1 */}
-                          <div className="col-span-2 flex flex-col">
+                          <div className="col-span-2 flex flex-col min-w-0">
                             <span className="text-body font-semibold text-dark-text truncate">
                               {match.p1Name}
                             </span>
@@ -759,7 +888,7 @@ export const RoundsView: React.FC = () => {
                           </div>
 
                           {/* Pemain 2 */}
-                          <div className="col-span-2 flex flex-col items-end text-right">
+                          <div className="col-span-2 flex flex-col items-end text-right min-w-0">
                             <span className={`text-body font-semibold truncate ${isBye ? 'text-dark-muted italic' : 'text-dark-text'}`}>
                               {match.p2Name}
                             </span>
@@ -772,12 +901,21 @@ export const RoundsView: React.FC = () => {
                         {/* Petunjuk Interaksi Organizer */}
                         {isOrganizer && !isBye && (
                           <div className="pt-2 border-t border-dark-border/40 flex items-center justify-between text-[11px] text-dark-muted">
-                            <span>
-                              {isConfirmed
-                                ? 'Klik kartu untuk koreksi / timpa skor'
-                                : 'Klik kartu untuk input skor & konfirmasi'}
-                            </span>
-                            <ChevronRight size={13} className="text-dark-muted" />
+                            {isCurrentRoundLocked ? (
+                              <span className="text-dark-muted italic flex items-center gap-1">
+                                <Lock size={12} className="text-dark-muted" />
+                                Ronde terkunci. Untuk mengubah skor, gunakan Revert ke Ronde {activeRoundNumber || currentTourneyRound}.
+                              </span>
+                            ) : (
+                              <>
+                                <span>
+                                  {isConfirmed
+                                    ? 'Klik kartu untuk koreksi / timpa skor'
+                                    : 'Klik kartu untuk input skor & konfirmasi'}
+                                </span>
+                                <ChevronRight size={13} className="text-dark-muted" />
+                              </>
+                            )}
                           </div>
                         )}
                       </Card>
@@ -824,6 +962,52 @@ export const RoundsView: React.FC = () => {
         tournamentId={selectedTournament?.id || ''}
         tournamentName={selectedTournament?.name || ''}
       />
+
+      {/* BottomSheet Konfirmasi Akhiri Turnamen */}
+      <BottomSheet
+        isOpen={finishConfirmModalOpen}
+        onClose={() => !finishingTournament && setFinishConfirmModalOpen(false)}
+        title="Akhiri Turnamen"
+      >
+        <div className="flex flex-col gap-4 py-2 pb-6">
+          <div className="p-3.5 rounded-card bg-status-green/10 border border-status-green/30 text-status-green flex items-start gap-2.5">
+            <CheckCircle2 size={20} className="flex-shrink-0 mt-0.5" />
+            <div className="text-caption text-dark-text">
+              <span className="font-bold text-body block mb-0.5 text-status-green">
+                Seluruh {totalRounds} Ronde Telah Selesai
+              </span>
+              <span>
+                Semua pertandingan ronde terakhir telah terkonfirmasi. Mengakhiri turnamen akan mengubah status turnamen menjadi <strong>Selesai</strong> dan langsung membuka bagian Finalisasi Hasil serta pengisian Deck untuk seluruh peserta.
+              </span>
+            </div>
+          </div>
+
+          {finishError && (
+            <div className="p-3 bg-status-red/10 border border-status-red/30 rounded-card text-caption text-status-red flex items-start gap-2">
+              <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+              <span>{finishError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2.5 pt-2">
+            <Button
+              variant="secondary"
+              onClick={() => setFinishConfirmModalOpen(false)}
+              disabled={finishingTournament}
+            >
+              Batal
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleFinishTournament}
+              isLoading={finishingTournament}
+              icon={<Trophy size={16} />}
+            >
+              Akhiri Sekarang
+            </Button>
+          </div>
+        </div>
+      </BottomSheet>
     </div>
   );
 };

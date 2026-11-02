@@ -34,7 +34,7 @@ interface BottomNavProps {
 interface NavItemConfig {
   key: NavTabKey;
   label: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: React.ComponentType<{ size?: number | string; className?: string }>;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({ role, activeTab, onTabChange }) => {

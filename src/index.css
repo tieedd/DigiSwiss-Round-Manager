@@ -9,6 +9,31 @@
   }
 }
 
+/* Animasi teks berjalan (marquee) kontinu */
+@keyframes marquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee-track {
+  display: inline-flex;
+  white-space: nowrap;
+  animation-name: marquee;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+
+.marquee-track:hover,
+.marquee-track:active,
+.marquee-container:active .marquee-track {
+  animation-play-state: paused;
+}
+
 /* Animations respect prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
@@ -17,4 +42,26 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+
+  /* Pastikan aturan reduced-motion tidak membuat teks terhenti di posisi setengah jalan */
+  .marquee-container {
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+    overflow: visible !important;
+  }
+
+  .marquee-track {
+    animation: none !important;
+    transform: none !important;
+    white-space: normal !important;
+    display: block !important;
+  }
+
+  .marquee-duplicate {
+    display: none !important;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }

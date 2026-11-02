@@ -40,6 +40,17 @@ export async function finalizeTournamentResults(
     throw new Error('Tidak ada data peserta untuk difinalisasi.');
   }
 
+  // Ambil partisipasi yang mungkin sudah ada (idempoten: jangan buat ulang / jangan menimpa deck yang sudah terisi)
+  let existingMap = new Map<string, Participation>();
+  try {
+    const existing = await getTournamentParticipations(tournament.id);
+    existing.forEach((p) => {
+      existingMap.set(p.playerId, p);
+    });
+  } catch (err) {
+    console.warn('Gagal mengecek partisipasi lama, melanjutkan pembuatan batch baru:', err);
+  }
+
   const batch = writeBatch(db);
   const now = Date.now();
   const createdParticipations: Participation[] = [];
@@ -48,6 +59,7 @@ export async function finalizeTournamentResults(
     const originalPlayer = players.find((p) => p.id === s.playerId);
     const participationId = `${tournament.id}_${s.playerId}`;
     const partDocRef = doc(db, 'participations', participationId);
+    const existing = existingMap.get(s.playerId);
 
     const partData: Participation = {
       id: participationId,
@@ -56,7 +68,7 @@ export async function finalizeTournamentResults(
       date: tournament.date,
       format: tournament.format,
       playerId: s.playerId,
-      uid: originalPlayer?.uid || null,
+      uid: originalPlayer?.uid || existing?.uid || null,
       organizerId: tournament.organizerId,
       name: s.playerName,
       rank: s.rank,
@@ -68,10 +80,11 @@ export async function finalizeTournamentResults(
       omw: s.omw,
       gw: s.gw,
       ogw: s.ogw,
-      deckName: '',
-      deckColors: [],
-      isManual: originalPlayer?.manual ?? false,
-      createdAt: now,
+      // Pertahankan deck dan warna yang sudah diisi bila sebelumnya sudah ada
+      deckName: existing?.deckName || '',
+      deckColors: existing?.deckColors || [],
+      isManual: originalPlayer?.manual ?? existing?.isManual ?? false,
+      createdAt: existing?.createdAt || now,
       updatedAt: now
     };
 
@@ -89,16 +102,20 @@ export async function finalizeTournamentResults(
   // Commit batch secara atomik
   await batch.commit();
 
-  // Catat Audit Log
-  await recordAuditLog(
-    actorId,
-    actorName,
-    'FINALIZE_TOURNAMENT',
-    `Turnamen ${tournament.name} (${createdParticipations.length} peserta)`,
-    null,
-    `Finalized dengan ${createdParticipations.length} dokumen partisipasi`,
-    tournament.id
-  );
+  // Catat Audit Log (non-blocking)
+  try {
+    await recordAuditLog(
+      actorId,
+      actorName,
+      'FINALIZE_TOURNAMENT',
+      `Turnamen ${tournament.name} (${createdParticipations.length} peserta)`,
+      null,
+      `Finalized dengan ${createdParticipations.length} dokumen partisipasi`,
+      tournament.id
+    );
+  } catch (auditErr) {
+    console.warn('Gagal mencatat audit log finalisasi (non-blocking):', auditErr);
+  }
 
   return {
     success: true,
@@ -185,14 +202,18 @@ export async function updateParticipationDeck(
     updatedAt: now
   });
 
-  // Catat Audit Log jika diubah
-  await recordAuditLog(
-    actorId,
-    actorName,
-    'UPDATE_PARTICIPATION_DECK',
-    `Peserta ${prevData.name} di turnamen ${prevData.tournamentName}`,
-    prevData.deckName ? `${prevData.deckName} [${(prevData.deckColors || []).join('/')}]` : 'Belum diisi',
-    `${deckName.trim()} [${deckColors.join('/')}]`,
-    tournamentId || prevData.tournamentId
-  );
+  // Catat Audit Log jika diubah (non-blocking)
+  try {
+    await recordAuditLog(
+      actorId,
+      actorName,
+      'UPDATE_PARTICIPATION_DECK',
+      `Peserta ${prevData.name} di turnamen ${prevData.tournamentName}`,
+      prevData.deckName ? `${prevData.deckName} [${(prevData.deckColors || []).join('/')}]` : 'Belum diisi',
+      `${deckName.trim()} [${deckColors.join('/')}]`,
+      tournamentId || prevData.tournamentId
+    );
+  } catch (auditErr) {
+    console.warn('Gagal mencatat audit log deck (non-blocking):', auditErr);
+  }
 }

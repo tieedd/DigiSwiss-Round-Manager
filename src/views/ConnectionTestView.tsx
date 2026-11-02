@@ -12,7 +12,7 @@ interface TestItem {
   description: string;
   status: 'pending' | 'success' | 'error';
   details: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: React.ComponentType<{ size?: number | string; className?: string }>;
 }
 
 export const ConnectionTestView: React.FC = () => {
@@ -151,7 +151,7 @@ export const ConnectionTestView: React.FC = () => {
   const allPassed = tests.every((t) => t.status === 'success');
 
   return (
-    <div className="flex flex-col gap-4 pb-20">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-section-title text-dark-text font-semibold">

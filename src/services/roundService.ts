@@ -19,7 +19,7 @@ import {
   MatchStatus,
   AuditLog
 } from '../types';
-import { getClockOffset } from './authService';
+import { getClockOffset, recordAuditLog } from './authService';
 import { calculateRemainingTime } from '../utils/timerLogic';
 import {
   generateSwissPairing,

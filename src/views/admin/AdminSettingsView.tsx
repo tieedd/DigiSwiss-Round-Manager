@@ -41,7 +41,7 @@ export const AdminSettingsView: React.FC = () => {
       const snap = await getDocs(q);
       const list: AuditLog[] = [];
       snap.forEach((d) => {
-        list.push({ id: d.id, ...(d.data() as AuditLog) });
+        list.push({ ...(d.data() as AuditLog), id: d.id });
       });
       setLogs(list);
     } catch (err) {
@@ -63,7 +63,7 @@ export const AdminSettingsView: React.FC = () => {
   }, [logs, currentLogsPage]);
 
   return (
-    <div className="flex flex-col gap-4 pb-20">
+    <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-section-title text-dark-text font-semibold">
           Pengaturan Admin
@@ -84,8 +84,8 @@ export const AdminSettingsView: React.FC = () => {
               <h3 className="text-body font-semibold text-dark-text">
                 DigiSwiss-Round
               </h3>
-              <p className="text-caption text-dark-muted">
-                Versi {CURRENT_APP_VERSION} &bull; Akun: @{userProfile?.username}
+              <p className="text-caption text-dark-muted font-mono">
+                Versi aplikasi: v{CURRENT_APP_VERSION} &bull; Akun: @{userProfile?.username}
               </p>
             </div>
           </div>

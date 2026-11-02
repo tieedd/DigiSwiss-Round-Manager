@@ -85,7 +85,7 @@ export async function getRegistrationTournaments(searchQuery?: string): Promise<
   const snap = await getDocs(q);
   const list: Tournament[] = [];
   snap.forEach((d) => {
-    list.push({ id: d.id, ...(d.data() as Tournament) });
+    list.push({ ...(d.data() as Tournament), id: d.id });
   });
 
   if (!searchQuery || !searchQuery.trim()) return list;
@@ -110,7 +110,7 @@ export async function getOrganizerTournaments(organizerId: string): Promise<Tour
   const snap = await getDocs(q);
   const list: Tournament[] = [];
   snap.forEach((d) => {
-    list.push({ id: d.id, ...(d.data() as Tournament) });
+    list.push({ ...(d.data() as Tournament), id: d.id });
   });
   return list;
 }
@@ -123,7 +123,7 @@ export async function getAllTournaments(): Promise<Tournament[]> {
   const snap = await getDocs(q);
   const list: Tournament[] = [];
   snap.forEach((d) => {
-    list.push({ id: d.id, ...(d.data() as Tournament) });
+    list.push({ ...(d.data() as Tournament), id: d.id });
   });
   return list;
 }
@@ -157,7 +157,7 @@ export async function getTournamentPlayers(tid: string): Promise<TournamentPlaye
   const snap = await getDocs(playersCol);
   const list: TournamentPlayer[] = [];
   snap.forEach((d) => {
-    list.push({ id: d.id, ...(d.data() as TournamentPlayer) });
+    list.push({ ...(d.data() as TournamentPlayer), id: d.id });
   });
   // Urutkan berdasarkan waktu bergabung
   return list.sort((a, b) => a.joinedAt - b.joinedAt);

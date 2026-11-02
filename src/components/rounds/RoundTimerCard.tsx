@@ -315,7 +315,7 @@ export const RoundTimerCard: React.FC<RoundTimerCardProps> = ({
 
             {/* Reset */}
             <Button
-              variant="ghost"
+              variant="secondary"
               className="!min-h-[36px] !px-2 !text-caption border border-dark-border hover:bg-dark-surface"
               onClick={handleReset}
               disabled={actionLoading}

@@ -243,7 +243,7 @@ export const AdminUsersView: React.FC<{ onNavigateHome?: () => void }> = ({ onNa
   };
 
   return (
-    <div className="flex flex-col gap-4 pb-20">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-section-title text-dark-text font-semibold">

@@ -9,7 +9,7 @@ interface SettingsViewProps {
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigateConnection }) => {
   return (
-    <div className="flex flex-col gap-4 pb-20">
+    <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-section-title text-dark-text font-semibold">
           Pengaturan & Informasi
@@ -30,8 +30,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigateConnection
               <h3 className="text-body font-semibold text-dark-text">
                 DigiSwiss-Round
               </h3>
-              <p className="text-caption text-dark-muted">
-                Versi {CURRENT_APP_VERSION}
+              <p className="text-caption text-dark-muted font-mono">
+                Versi aplikasi: v{CURRENT_APP_VERSION}
               </p>
             </div>
           </div>

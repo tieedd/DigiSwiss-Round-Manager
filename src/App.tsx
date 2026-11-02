@@ -131,7 +131,10 @@ const MainAppContent: React.FC = () => {
       <Header title={getPageTitle(activeTab)} />
       <UpdateNotificationBanner />
 
-      <main className="flex-1 w-full max-w-md mx-auto px-4 py-4">
+      <main
+        className="flex-1 w-full max-w-md mx-auto px-4 pt-4"
+        style={{ paddingBottom: 'calc(4rem + env(safe-area-inset-bottom, 0px) + 1.5rem)' }}
+      >
         {renderContent()}
       </main>
 

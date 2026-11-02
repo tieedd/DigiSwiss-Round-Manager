@@ -172,7 +172,7 @@ export function calculatePlayerStats(participations: Participation[]): PlayerSta
       tournamentName: p.tournamentName,
       date: p.date,
       rank: p.rank,
-      points: p.points
+      points: p.points ?? 0
     });
 
     // Deck stats

@@ -16,7 +16,8 @@ import {
   Layers,
   History,
   Check,
-  AlertCircle
+  AlertCircle,
+  CheckCircle2
 } from 'lucide-react';
 
 interface DeckRegistrationModalProps {
@@ -44,6 +45,7 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Inisialisasi data dari participation
   useEffect(() => {
@@ -51,6 +53,7 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
       setDeckName(participation.deckName || '');
       setSelectedColors((participation.deckColors as DeckColor[]) || []);
       setErrorMsg(null);
+      setSuccessMsg(null);
 
       // Ambil riwayat jika ada UID pemain
       if (participation.uid) {
@@ -76,17 +79,26 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
         return [...prev, color];
       }
     });
+    setSuccessMsg(null);
   };
 
-  // Pilih dari riwayat deck (otomatis mengisi nama dan warnanya)
+  // Pilih dari riwayat deck (otomatis mengisi nama dan warnanya, tetap dapat diedit)
   const handleSelectFromHistory = (item: PlayerDeckHistory) => {
     setDeckName(item.deckName);
     setSelectedColors([...item.deckColors]);
+    setSuccessMsg(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+    setSuccessMsg(null);
+
+    // Pemain manual tanpa UID hanya boleh diisi organizer
+    if (!isOrganizer && !participation.uid) {
+      setErrorMsg('Deck untuk pemain manual hanya dapat diisi atau diubah oleh organizer.');
+      return;
+    }
 
     const validation = validateDeckSubmission(deckName, selectedColors);
     if (!validation.valid) {
@@ -104,10 +116,21 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
         actorName,
         participation.tournamentId
       );
+      // Perbarui kartu Klasemen Akhir lewat callback tanpa menutup modal
       onDeckUpdated();
-      onClose();
+      setSuccessMsg('Deck berhasil disimpan.');
     } catch (err: any) {
-      setErrorMsg(err.message || 'Gagal menyimpan data deck.');
+      const code = err?.code || '';
+      const msg = err?.message || '';
+      if (
+        code === 'permission-denied' ||
+        msg.includes('permission-denied') ||
+        msg.includes('insufficient permissions')
+      ) {
+        setErrorMsg('Deck tidak dapat disimpan. Hubungi organizer.');
+      } else {
+        setErrorMsg(msg || 'Gagal menyimpan data deck.');
+      }
     } finally {
       setSaving(false);
     }
@@ -146,20 +169,48 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
             </div>
           )}
 
-          {/* Riwayat Deck Sebelumnya (Jika ada) */}
+          {successMsg && (
+            <div className="p-2.5 rounded bg-status-green/10 border border-status-green/30 text-status-green text-caption flex items-center gap-2">
+              <CheckCircle2 size={15} className="flex-shrink-0" />
+              <span>{successMsg}</span>
+            </div>
+          )}
+
+          {/* Dropdown Riwayat Deck Sebelumnya (Jika ada) */}
           {deckHistory.length > 0 && (
             <div className="flex flex-col gap-1.5 p-2.5 rounded bg-dark-bg/60 border border-dark-border">
               <span className="text-[11px] font-medium text-dark-muted flex items-center gap-1.5">
                 <History size={13} className="text-accent" />
                 Pilih dari Riwayat Deck:
               </span>
-              <div className="flex flex-wrap gap-1.5 mt-1 max-h-24 overflow-y-auto">
+
+              <select
+                defaultValue=""
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val) {
+                    const item = deckHistory.find((d) => d.deckName === val);
+                    if (item) handleSelectFromHistory(item);
+                  }
+                }}
+                className="w-full bg-dark-surface border border-dark-border rounded-btn px-2.5 py-1.5 text-caption text-dark-text focus:outline-none focus:border-accent"
+              >
+                <option value="" disabled>-- Pilih Deck yang Pernah Digunakan --</option>
+                {deckHistory.map((item, idx) => (
+                  <option key={idx} value={item.deckName}>
+                    {item.deckName} ({item.deckColors.join('/')}) &bull; {item.tournamentName}
+                  </option>
+                ))}
+              </select>
+
+              {/* Chip pilihan cepat */}
+              <div className="flex flex-wrap gap-1.5 mt-1 max-h-20 overflow-y-auto">
                 {deckHistory.map((item, idx) => (
                   <button
                     key={idx}
                     type="button"
                     onClick={() => handleSelectFromHistory(item)}
-                    className="text-[11px] px-2 py-1 rounded bg-dark-surface border border-dark-border hover:border-accent text-dark-text flex items-center gap-1.5 transition-colors"
+                    className="text-[11px] px-2 py-0.5 rounded bg-dark-surface border border-dark-border hover:border-accent text-dark-text flex items-center gap-1 transition-colors"
                   >
                     <span>{item.deckName}</span>
                     <span className="text-[10px] text-accent font-mono">
@@ -178,25 +229,26 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
             </label>
             <input
               type="text"
-              value={deckName}
-              onChange={(e) => setDeckName(e.target.value)}
-              placeholder="Contoh: Red Hybrid, MirageGaogamon, BloomHydra"
+              required
               maxLength={40}
-              className="w-full bg-dark-bg border border-dark-border rounded-btn px-3 py-2 text-caption text-dark-text placeholder:text-dark-muted/60 focus:outline-none focus:border-accent"
+              value={deckName}
+              onChange={(e) => {
+                setDeckName(e.target.value);
+                setSuccessMsg(null);
+              }}
+              placeholder="Contoh: WarGreymon OTK, MirageGaogamon"
+              className="w-full bg-dark-bg border border-dark-border rounded-btn px-3 py-2 text-body text-dark-text placeholder:text-dark-muted/60 focus:outline-none focus:border-accent"
             />
+            <span className="text-[11px] text-dark-muted">
+              {deckName.length} / 40 karakter
+            </span>
           </div>
 
           {/* Pemilihan Warna Deck (Chip Toggle) */}
           <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-caption font-medium text-dark-muted">
-                Warna Deck: <span className="text-status-red">*</span>
-              </label>
-              <span className="text-[11px] text-dark-muted">
-                (Boleh lebih dari 1, minimal 1)
-              </span>
-            </div>
-
+            <label className="text-caption font-medium text-dark-muted">
+              Warna Deck: <span className="text-status-red">*</span> (Boleh lebih dari 1)
+            </label>
             <div className="flex flex-wrap gap-2 pt-1">
               {OFFICIAL_DECK_COLORS.map((color) => {
                 const isSelected = selectedColors.includes(color);
@@ -230,7 +282,7 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
               disabled={saving}
               className="!min-h-[38px] !px-4"
             >
-              Batal
+              {successMsg ? 'Tutup' : 'Batal'}
             </Button>
             <Button
               type="submit"

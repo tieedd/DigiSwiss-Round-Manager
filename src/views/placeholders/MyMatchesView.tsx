@@ -3,7 +3,8 @@ import {
   Tournament,
   TournamentMatch,
   TournamentFormat,
-  MatchStatus
+  MatchStatus,
+  Participation
 } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
@@ -20,8 +21,10 @@ import {
   checkAndFinishTournamentIfComplete
 } from '../../services/roundService';
 import { calculateMatchPoints } from '../../utils/standingsLogic';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, getDocs } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
+import { DeckRegistrationModal } from '../tournaments/DeckRegistrationModal';
+import { DECK_COLOR_STYLES } from '../../utils/deckExportLogic';
 import {
   Swords,
   Flame,
@@ -31,17 +34,22 @@ import {
   Clock,
   Trophy,
   RefreshCw,
-  HelpCircle
+  HelpCircle,
+  Layers,
+  Edit2
 } from 'lucide-react';
+import { getSessionTournament, setSessionTournament } from '../../utils/sessionStore';
 
 export const MyMatchesView: React.FC = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, userProfile } = useAuth();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
+  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(() => getSessionTournament());
   const [myMatches, setMyMatches] = useState<TournamentMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [myFinishedParticipation, setMyFinishedParticipation] = useState<Participation | null>(null);
+  const [deckModalOpen, setDeckModalOpen] = useState(false);
 
   // 1. Cari turnamen yang sedang aktif / baru selesai di mana pemain mungkin berpartisipasi
   const fetchMyTournaments = async () => {
@@ -55,8 +63,14 @@ export const MyMatchesView: React.FC = () => {
       );
       setTournaments(runningAndFinished);
 
-      if (runningAndFinished.length > 0 && !selectedTournament) {
-        setSelectedTournament(runningAndFinished[0]);
+      if (runningAndFinished.length > 0) {
+        const sessionTourney = getSessionTournament();
+        const matched = sessionTourney
+          ? runningAndFinished.find((t) => t.id === sessionTourney.id)
+          : null;
+        const chosen = matched || runningAndFinished[0];
+        setSelectedTournament(chosen);
+        setSessionTournament(chosen);
       }
     } catch (err) {
       console.error('Gagal memuat turnamen pemain:', err);
@@ -82,7 +96,10 @@ export const MyMatchesView: React.FC = () => {
           const m = docSnap.data() as TournamentMatch;
           // Filter hanya pertandingan yang melibatkan currentUser.uid
           if (m.p1Id === currentUser.uid || m.p2Id === currentUser.uid) {
-            matchesList.push(m);
+            matchesList.push({
+              ...m,
+              hasPendingWrite: docSnap.metadata.hasPendingWrites,
+            } as any);
           }
         });
 
@@ -97,6 +114,33 @@ export const MyMatchesView: React.FC = () => {
 
     return () => unsub();
   }, [selectedTournament?.id, currentUser?.uid]);
+
+  // Muat status partisipasi pemain untuk turnamen finished
+  const fetchMyParticipationForFinished = async () => {
+    if (!selectedTournament || !currentUser || selectedTournament.status !== 'finished') {
+      setMyFinishedParticipation(null);
+      return;
+    }
+    try {
+      const q = query(
+        collection(db, 'participations'),
+        where('tournamentId', '==', selectedTournament.id),
+        where('uid', '==', currentUser.uid)
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        setMyFinishedParticipation(snap.docs[0].data() as Participation);
+      } else {
+        setMyFinishedParticipation(null);
+      }
+    } catch (e) {
+      console.warn('Gagal memuat partisipasi player:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchMyParticipationForFinished();
+  }, [selectedTournament?.id, selectedTournament?.status, currentUser?.uid]);
 
   // 3. Player input skor dengan tombol skor besar
   const handleReportScore = async (
@@ -121,7 +165,17 @@ export const MyMatchesView: React.FC = () => {
         currentUser.uid
       );
     } catch (err: any) {
-      setActionError(err.message || 'Gagal melaporkan skor pertandingan.');
+      const code = err?.code || '';
+      const msg = err?.message || '';
+      if (
+        code === 'permission-denied' ||
+        msg.includes('permission-denied') ||
+        msg.includes('insufficient permissions')
+      ) {
+        setActionError('Skor tidak dapat dikirim. Pastikan Anda peserta pertandingan ini, atau hubungi organizer.');
+      } else {
+        setActionError(msg || 'Gagal melaporkan skor pertandingan.');
+      }
     } finally {
       setActionLoadingId(null);
     }
@@ -134,7 +188,7 @@ export const MyMatchesView: React.FC = () => {
     setActionError(null);
 
     try {
-      await respondToReportedScore(selectedTournament.id, match, approve, currentUser.uid);
+      await respondToReportedScore(selectedTournament.id, match.id, approve, currentUser.uid);
 
       if (approve) {
         // Cek jika seluruh pertandingan di ronde selesai
@@ -146,14 +200,24 @@ export const MyMatchesView: React.FC = () => {
         );
       }
     } catch (err: any) {
-      setActionError(err.message || 'Gagal menanggapi laporan skor.');
+      const code = err?.code || '';
+      const msg = err?.message || '';
+      if (
+        code === 'permission-denied' ||
+        msg.includes('permission-denied') ||
+        msg.includes('insufficient permissions')
+      ) {
+        setActionError('Skor tidak dapat dikirim. Pastikan Anda peserta pertandingan ini, atau hubungi organizer.');
+      } else {
+        setActionError(msg || 'Gagal menanggapi laporan skor.');
+      }
     } finally {
       setActionLoadingId(null);
     }
   };
 
   return (
-    <div className="flex flex-col gap-4 pb-24">
+    <div className="flex flex-col gap-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -201,7 +265,10 @@ export const MyMatchesView: React.FC = () => {
                 value={selectedTournament?.id || ''}
                 onChange={(e) => {
                   const found = tournaments.find((t) => t.id === e.target.value);
-                  if (found) setSelectedTournament(found);
+                  if (found) {
+                    setSelectedTournament(found);
+                    setSessionTournament(found);
+                  }
                 }}
                 className="w-full bg-dark-surface border border-dark-border rounded-btn px-3 py-2 text-caption text-dark-text focus:outline-none focus:border-accent"
               >
@@ -232,6 +299,64 @@ export const MyMatchesView: React.FC = () => {
                 • Total: {selectedTournament.totalRounds || 3} Ronde
               </p>
             </Card>
+          )}
+
+          {/* Banner Turnamen Selesai: Isi Deck atau Menunggu Finalisasi */}
+          {selectedTournament && selectedTournament.status === 'finished' && (
+            myFinishedParticipation ? (
+              !myFinishedParticipation.deckName || myFinishedParticipation.deckName.trim() === '' ? (
+                <div className="p-3 bg-accent/15 border border-accent/30 rounded-card flex items-center justify-between gap-3 text-caption animate-fade-in">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Layers size={16} className="text-accent flex-shrink-0" />
+                    <span className="text-dark-text truncate">
+                      Turnamen <strong>{selectedTournament.name}</strong> sudah selesai. Isi deck Anda.
+                    </span>
+                  </div>
+                  <Button
+                    variant="primary"
+                    className="!min-h-[30px] !px-3 !text-[11px] flex-shrink-0"
+                    onClick={() => setDeckModalOpen(true)}
+                  >
+                    Isi Deck
+                  </Button>
+                </div>
+              ) : (
+                <div className="p-3 bg-dark-surface border border-dark-border rounded-card flex items-center justify-between gap-2 text-caption">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Layers size={15} className="text-accent flex-shrink-0" />
+                    <span className="text-dark-text truncate">
+                      Deck Anda: <strong>{myFinishedParticipation.deckName}</strong>
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {myFinishedParticipation.deckColors?.map((c) => {
+                        const s = DECK_COLOR_STYLES[c];
+                        return (
+                          <span
+                            key={c}
+                            className={`text-[8px] px-1 rounded-full border ${s ? `${s.bg} ${s.text} ${s.border}` : ''}`}
+                          >
+                            {c}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDeckModalOpen(true)}
+                    className="text-[11px] text-accent hover:underline flex items-center gap-1 flex-shrink-0"
+                  >
+                    <Edit2 size={12} />
+                    <span>Ubah</span>
+                  </button>
+                </div>
+              )
+            ) : (
+              <div className="p-3 bg-dark-surface border border-dark-border rounded-card flex items-center gap-2 text-caption text-dark-muted">
+                <Clock size={16} className="text-status-yellow flex-shrink-0" />
+                <span>Turnamen <strong>{selectedTournament.name}</strong> sudah selesai. Menunggu organizer memfinalisasi hasil.</span>
+              </div>
+            )
           )}
 
           {/* Daftar Pertandingan Pemain */}
@@ -276,7 +401,9 @@ export const MyMatchesView: React.FC = () => {
                       </div>
                       <StatusBadge
                         label={
-                          match.status === 'confirmed'
+                          (isLoadingAction || (match as any).hasPendingWrite) && match.status !== 'confirmed'
+                            ? 'Mengirim ke Server...'
+                            : match.status === 'confirmed'
                             ? 'Terkonfirmasi'
                             : match.status === 'awaiting'
                             ? 'Menunggu Konfirmasi'
@@ -285,7 +412,9 @@ export const MyMatchesView: React.FC = () => {
                             : 'Belum Selesai'
                         }
                         variant={
-                          match.status === 'confirmed'
+                          (isLoadingAction || (match as any).hasPendingWrite) && match.status !== 'confirmed'
+                            ? 'yellow'
+                            : match.status === 'confirmed'
                             ? 'green'
                             : match.status === 'awaiting'
                             ? 'yellow'
@@ -329,6 +458,11 @@ export const MyMatchesView: React.FC = () => {
                     {isBye ? (
                       <div className="p-2.5 rounded bg-accent/10 border border-accent/20 text-caption text-accent font-medium text-center">
                         Pertandingan BYE otomatis menang (+3 Poin).
+                      </div>
+                    ) : (isLoadingAction || (match as any).hasPendingWrite) && match.status !== 'confirmed' ? (
+                      <div className="p-3 rounded bg-accent/10 border border-accent/30 text-caption text-accent flex items-center gap-2">
+                        <RefreshCw size={16} className="animate-spin flex-shrink-0" />
+                        <span>Mengirim laporan skor ke server... Mohon tunggu.</span>
                       </div>
                     ) : match.status === 'pending' ? (
                       // 1. Status PENDING: Tampilkan tombol skor besar untuk input
@@ -468,6 +602,19 @@ export const MyMatchesView: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* Modal Pendaftaran / Edit Deck Pemain */}
+      <DeckRegistrationModal
+        isOpen={deckModalOpen}
+        onClose={() => setDeckModalOpen(false)}
+        participation={myFinishedParticipation}
+        actorId={currentUser?.uid || ''}
+        actorName={userProfile?.displayName || userProfile?.username || 'Player'}
+        isOrganizer={false}
+        onDeckUpdated={() => {
+          fetchMyParticipationForFinished();
+        }}
+      />
     </div>
   );
 };

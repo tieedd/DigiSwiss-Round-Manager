@@ -4,6 +4,7 @@ import { getAllTournamentMatches } from '../../services/roundService';
 import { Button } from '../../components/common/Button';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { DECK_COLOR_STYLES } from '../../utils/deckExportLogic';
+import { FinalStandingsCard } from './FinalStandingsCard';
 import {
   X,
   Trophy,
@@ -19,19 +20,23 @@ interface PlayerMatchDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   participation: Participation | null;
+  onDeckChanged?: () => void;
 }
 
 export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = ({
   isOpen,
   onClose,
-  participation
+  participation,
+  onDeckChanged
 }) => {
+  const [activeTab, setActiveTab] = useState<'standings' | 'matches'>('standings');
   const [matches, setMatches] = useState<TournamentMatch[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !participation) return;
 
+    setActiveTab('standings'); // Default ke tab Klasemen Akhir
     setLoading(true);
     getAllTournamentMatches(participation.tournamentId, false)
       .then((allMatches) => {
@@ -47,8 +52,6 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
   }, [isOpen, participation]);
 
   if (!isOpen || !participation) return null;
-
-  const isTop3 = participation.rank <= 3;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
@@ -78,7 +81,7 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
         </div>
 
         {/* Ringkasan Hasil Pemain */}
-        <div className="p-4 bg-dark-bg/60 border-b border-dark-border flex flex-col gap-2.5">
+        <div className="p-3.5 bg-dark-bg/60 border-b border-dark-border flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div
@@ -140,88 +143,108 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
           )}
         </div>
 
-        {/* Daftar Pertandingan Tiap Ronde */}
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2.5">
-          <span className="text-[11px] font-mono text-dark-muted uppercase block">
-            Riwayat Pertandingan Ronde ({matches.length} Ronde)
-          </span>
-
-          {loading ? (
-            <div className="text-center py-6 text-caption text-dark-muted">
-              Memuat detail pertandingan...
-            </div>
-          ) : matches.length === 0 ? (
-            <div className="text-center py-6 text-caption text-dark-muted">
-              Belum ada data pertandingan yang tercatat untuk turnamen ini.
-            </div>
-          ) : (
-            matches.map((m) => {
-              const isP1 = m.p1Id === participation.playerId;
-              const isBye = m.p2Id === null;
-              const opponentName = isBye ? 'BYE (Menang Otomatis)' : isP1 ? m.p2Name : m.p1Name;
-              const myScore = isP1 ? m.p1Score : m.p2Score;
-              const oppScore = isP1 ? m.p2Score : m.p1Score;
-              const isWin = isBye || myScore > oppScore;
-
-              return (
-                <div
-                  key={m.id}
-                  className={`p-3 rounded-card border transition-colors flex items-center justify-between gap-3 ${
-                    isWin
-                      ? 'bg-status-green/5 border-status-green/30'
-                      : 'bg-dark-bg/40 border-dark-border'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-7 h-7 rounded bg-dark-surface border border-dark-border flex items-center justify-center font-mono text-[11px] text-accent font-semibold flex-shrink-0">
-                      R{m.round}
-                    </div>
-
-                    <div className="min-w-0">
-                      <span className="text-caption font-semibold text-dark-text block truncate">
-                        vs {opponentName}
-                      </span>
-                      <span className="text-[11px] text-dark-muted font-mono">
-                        {isBye ? 'Meja Otomatis' : `Meja #${m.table}`}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Skor & Status */}
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span
-                      className={`font-mono font-bold text-caption px-2 py-0.5 rounded ${
-                        isWin
-                          ? 'bg-status-green/15 text-status-green border border-status-green/30'
-                          : 'bg-status-red/15 text-status-red border border-status-red/30'
-                      }`}
-                    >
-                      {isBye ? '1 - 0' : `${myScore} - ${oppScore}`}
-                    </span>
-                    <span
-                      className={`text-[10px] font-semibold uppercase font-mono ${
-                        isWin ? 'text-status-green' : 'text-status-red'
-                      }`}
-                    >
-                      {isWin ? 'MENANG' : 'KALAH'}
-                    </span>
-                  </div>
-                </div>
-              );
-            })
-          )}
+        {/* Segmented Tab: Klasemen Akhir vs Pertandingan Saya */}
+        <div className="flex p-1 bg-dark-bg/80 border-b border-dark-border gap-1 px-3">
+          <button
+            type="button"
+            onClick={() => setActiveTab('standings')}
+            className={`flex-1 py-1.5 text-caption font-semibold rounded-btn transition-colors text-center ${
+              activeTab === 'standings'
+                ? 'bg-accent text-dark-bg shadow-sm'
+                : 'text-dark-muted hover:text-dark-text'
+            }`}
+          >
+            Klasemen Akhir
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('matches')}
+            className={`flex-1 py-1.5 text-caption font-semibold rounded-btn transition-colors text-center ${
+              activeTab === 'matches'
+                ? 'bg-accent text-dark-bg shadow-sm'
+                : 'text-dark-muted hover:text-dark-text'
+            }`}
+          >
+            Pertandingan Saya
+          </button>
         </div>
 
-        {/* Footer Modal */}
-        <div className="p-3 border-t border-dark-border bg-dark-surface flex justify-end">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onClose}
-            className="!min-h-[36px] !px-4 text-caption"
-          >
-            Tutup
-          </Button>
+        {/* Konten Tab */}
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+          {activeTab === 'standings' ? (
+            <FinalStandingsCard
+              tournamentId={participation.tournamentId}
+              tournamentName={participation.tournamentName}
+              format={participation.format as any}
+              status="finished"
+              highlightUid={participation.uid || undefined}
+              onDeckChanged={onDeckChanged}
+            />
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              <span className="text-[11px] font-mono text-dark-muted uppercase block">
+                Riwayat Pertandingan Ronde ({matches.length} Ronde)
+              </span>
+
+              {loading ? (
+                <div className="text-center py-6 text-caption text-dark-muted">
+                  Memuat detail pertandingan...
+                </div>
+              ) : matches.length === 0 ? (
+                <div className="text-center py-6 text-caption text-dark-muted">
+                  Belum ada data pertandingan yang tercatat untuk turnamen ini.
+                </div>
+              ) : (
+                matches.map((m) => {
+                  const isP1 = m.p1Id === participation.playerId;
+                  const isBye = m.p2Id === null;
+                  const opponentName = isBye ? 'BYE (Menang Otomatis)' : isP1 ? m.p2Name : m.p1Name;
+                  const myScore = isP1 ? m.p1Score : m.p2Score;
+                  const oppScore = isP1 ? m.p2Score : m.p1Score;
+                  const isWin = isBye || myScore > oppScore;
+
+                  return (
+                    <div
+                      key={m.id}
+                      className={`p-3 rounded-card border transition-colors flex items-center justify-between gap-3 ${
+                        isWin
+                          ? 'bg-status-green/5 border-status-green/30'
+                          : 'bg-dark-bg/40 border-dark-border'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded bg-dark-surface border border-dark-border flex items-center justify-center font-mono text-[11px] text-accent font-semibold flex-shrink-0">
+                          R{m.round}
+                        </div>
+
+                        <div className="min-w-0">
+                          <span className="text-caption font-semibold text-dark-text block truncate">
+                            vs {opponentName}
+                          </span>
+                          <span className="text-[11px] text-dark-muted font-mono">
+                            {isBye ? 'Meja Otomatis' : `Meja #${m.table}`}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Skor & Status */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span
+                          className={`font-mono font-bold text-caption px-2 py-0.5 rounded ${
+                            isWin
+                              ? 'bg-status-green/15 text-status-green border border-status-green/30'
+                              : 'bg-status-red/15 text-status-red border border-status-red/30'
+                          }`}
+                        >
+                          {isBye ? '1 - 0' : `${myScore} - ${oppScore}`}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -24,6 +24,9 @@ import {
 } from '../../services/tournamentService';
 import { TournamentAuditLogModal } from '../rounds/TournamentAuditLogModal';
 import { calculateSwissRounds } from '../../utils/swissLogic';
+import { FinalStandingsCard } from '../history/FinalStandingsCard';
+import { generateStandingsText } from '../../utils/deckExportLogic';
+import { getTournamentParticipations } from '../../services/participationService';
 import {
   Swords,
   Calendar,
@@ -64,6 +67,24 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
   const [players, setPlayers] = useState<TournamentPlayer[]>([]);
   const [loadingPlayers, setLoadingPlayers] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedStandings, setCopiedStandings] = useState(false);
+
+  const handleCopyStandingsText = async () => {
+    if (!tournament) return;
+    try {
+      const participations = await getTournamentParticipations(tournament.id);
+      if (participations.length > 0) {
+        const text = generateStandingsText(participations);
+        await navigator.clipboard.writeText(text);
+        setCopiedStandings(true);
+        setTimeout(() => setCopiedStandings(false), 2500);
+      } else {
+        alert('Data klasemen akhir belum tersedia untuk disalin.');
+      }
+    } catch (e: any) {
+      alert('Gagal menyalin hasil: ' + (e?.message || 'Error'));
+    }
+  };
 
   // Manual Player Modal
   const [manualModalOpen, setManualModalOpen] = useState(false);
@@ -437,6 +458,28 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
                 </Card>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Klasemen Akhir untuk Turnamen Selesai */}
+        {tournament.status === 'finished' && (
+          <div className="flex flex-col gap-2">
+            <FinalStandingsCard
+              tournamentId={tournament.id}
+              tournamentName={tournament.name}
+              format={tournament.format}
+              status={tournament.status}
+              highlightUid={currentUser?.uid}
+            />
+            <Button
+              variant="secondary"
+              fullWidth
+              className="!min-h-[36px] !text-caption"
+              onClick={handleCopyStandingsText}
+              icon={copiedStandings ? <Check size={14} className="text-status-green" /> : <Copy size={14} />}
+            >
+              {copiedStandings ? 'Hasil Berhasil Disalin!' : 'Salin Hasil'}
+            </Button>
           </div>
         )}
 

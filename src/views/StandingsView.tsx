@@ -24,11 +24,12 @@ import {
   Award
 } from 'lucide-react';
 import { FinalResultsSection } from './tournaments/FinalResultsSection';
+import { getSessionTournament, setSessionTournament } from '../utils/sessionStore';
 
 export const StandingsView: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
+  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(() => getSessionTournament());
   const [players, setPlayers] = useState<TournamentPlayer[]>([]);
   const [matches, setMatches] = useState<TournamentMatch[]>([]);
   const [standings, setStandings] = useState<PlayerStanding[]>([]);
@@ -48,8 +49,12 @@ export const StandingsView: React.FC = () => {
       });
 
       setTournaments(sorted);
-      if (sorted.length > 0 && !selectedTournament) {
-        setSelectedTournament(sorted[0]);
+      if (sorted.length > 0) {
+        const sessionTourney = getSessionTournament();
+        const matched = sessionTourney ? sorted.find((t) => t.id === sessionTourney.id) : null;
+        const chosen = matched || sorted[0];
+        setSelectedTournament(chosen);
+        setSessionTournament(chosen);
       }
     } catch (err) {
       console.error('Gagal memuat turnamen untuk klasemen:', err);
@@ -126,7 +131,7 @@ export const StandingsView: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col gap-4 pb-24">
+    <div className="flex flex-col gap-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -172,7 +177,10 @@ export const StandingsView: React.FC = () => {
               value={selectedTournament?.id || ''}
               onChange={(e) => {
                 const found = tournaments.find((t) => t.id === e.target.value);
-                if (found) setSelectedTournament(found);
+                if (found) {
+                  setSelectedTournament(found);
+                  setSessionTournament(found);
+                }
               }}
               className="w-full bg-dark-surface border border-dark-border rounded-btn px-3 py-2 text-caption text-dark-text focus:outline-none focus:border-accent"
             >

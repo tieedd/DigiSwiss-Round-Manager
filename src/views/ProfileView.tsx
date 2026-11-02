@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { ChangePasswordView } from './ChangePasswordView';
 import { formatIndonesianDateTime } from '../utils/dateHelpers';
 import { recordAuditLog } from '../services/authService';
+import { CURRENT_APP_VERSION } from '../services/versionService';
 import {
   User,
   Shield,
@@ -103,7 +104,7 @@ export const ProfileView: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col gap-4 pb-20">
+    <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-section-title text-dark-text font-semibold">
           Profil Saya
@@ -252,6 +253,13 @@ export const ProfileView: React.FC = () => {
             </div>
           </div>
         </Card>
+
+        {/* Informasi Versi Aplikasi */}
+        <div className="text-center pt-2 pb-1">
+          <span className="text-caption text-dark-muted font-mono">
+            Versi aplikasi: v{CURRENT_APP_VERSION}
+          </span>
+        </div>
       </div>
 
       {/* Bottom Sheet Ubah Nama Tampilan */}

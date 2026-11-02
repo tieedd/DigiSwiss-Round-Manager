@@ -5,7 +5,7 @@ import {
   calculateOrganizerStats,
   calculateAdminStats
 } from '../utils/statsLogic.ts';
-import { compareVersions } from '../services/versionService.ts';
+import { compareVersions, isUpdateAvailable } from '../services/versionService.ts';
 
 test('Tahap 9 TES STATS PLAYER: Menghitung total turnamen, match W-L, win rate, deck & warna stats, dan tren peringkat', () => {
   const dummyParticipations = [
@@ -184,4 +184,32 @@ test('Tahap 9 TES VERSI: compareVersions mengevaluasi semver secara benar', () =
   assert.equal(compareVersions('1.0.0', '1.0.0'), 0);
   assert.equal(compareVersions('0.9.5', '1.0.0'), -1);
   assert.equal(compareVersions('1.0.0', '1.0.1'), -1);
+});
+
+test('Tahap 9 TES VERSI: isUpdateAvailable membandingkan semver numerik dan mengabaikan nilai tidak valid', () => {
+  // 1.0.4 vs 1.0.3 = true
+  assert.equal(isUpdateAvailable('1.0.4', '1.0.3'), true);
+
+  // sama = false
+  assert.equal(isUpdateAvailable('1.0.0', '1.0.0'), false);
+  assert.equal(isUpdateAvailable('v1.0.0', '1.0.0'), false);
+  assert.equal(isUpdateAvailable('1.2.3', '1.2.3'), false);
+
+  // lebih lama = false
+  assert.equal(isUpdateAvailable('1.0.2', '1.0.3'), false);
+  assert.equal(isUpdateAvailable('0.9.9', '1.0.0'), false);
+
+  // v1.0.10 vs 1.0.9 = true (pencocokan numerik, 10 > 9)
+  assert.equal(isUpdateAvailable('v1.0.10', '1.0.9'), true);
+  assert.equal(isUpdateAvailable('1.0.10', '1.0.9'), true);
+  assert.equal(isUpdateAvailable('2.0.0', '1.9.9'), true);
+
+  // string kosong atau tidak valid = false
+  assert.equal(isUpdateAvailable('', '1.0.0'), false);
+  assert.equal(isUpdateAvailable('1.0.0', ''), false);
+  assert.equal(isUpdateAvailable(null, '1.0.0'), false);
+  assert.equal(isUpdateAvailable(undefined, '1.0.0'), false);
+  assert.equal(isUpdateAvailable('invalid', '1.0.0'), false);
+  assert.equal(isUpdateAvailable('1.0.0', 'invalid'), false);
+  assert.equal(isUpdateAvailable('v', '1.0.0'), false);
 });
