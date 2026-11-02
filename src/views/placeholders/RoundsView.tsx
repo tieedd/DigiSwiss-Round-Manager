@@ -39,6 +39,7 @@ import { finalizeTournamentResults } from '../../services/participationService';
 import { BottomSheet } from '../../components/common/BottomSheet';
 import { PastMatchRecord } from '../../utils/swissPairing';
 import { isRoundLocked } from '../../utils/roundLockLogic';
+import { shouldShowNextRoundPause } from '../../utils/roundPauseLogic';
 import { getSessionTournament, setSessionTournament } from '../../utils/sessionStore';
 import {
   Timer,
@@ -201,7 +202,7 @@ export const RoundsView: React.FC = () => {
 
   // 3. Buat Pairing Ronde X
   const handleCreatePairing = async (roundToCreate: number) => {
-    if (!selectedTournament || !isOrganizer) return;
+    if (!selectedTournament || !isOrganizer || pairingLoading) return;
     setPairingLoading(true);
     setPairingNotice(null);
 
@@ -274,45 +275,6 @@ export const RoundsView: React.FC = () => {
       targetMatch.round,
       false
     );
-    const allNowConfirmed = updatedRoundMatches.every((m) => m.status === 'confirmed');
-
-    if (allNowConfirmed && targetMatch.round < totalRounds) {
-      // Periksa apakah ronde berikutnya (X+1) belum ada/telah di-revert
-      const nextRoundMatches = await getMatchesForRound(
-        selectedTournament.id,
-        targetMatch.round + 1,
-        false
-      );
-
-      if (nextRoundMatches.length === 0) {
-        // Sistem OTOMATIS membuat ulang pairing ronde X+1 dari klasemen yang sudah diperbaiki
-        try {
-          const autoPairResult = await createRoundPairing(
-            selectedTournament.id,
-            targetMatch.round + 1,
-            selectedTournament.format,
-            totalRounds
-          );
-
-          setPairingNotice(
-            `Pairing Ronde ${targetMatch.round + 1} telah otomatis dibuat ulang berdasarkan klasemen terbaru tanpa tanding ulang.`
-          );
-          const updatedTourney = {
-            ...selectedTournament,
-            currentRound: targetMatch.round + 1,
-            status: 'running' as const
-          };
-          setSelectedTournament(updatedTourney);
-          setSessionTournament(updatedTourney);
-
-          await fetchRoundData(selectedTournament.id, targetMatch.round + 1);
-          return;
-        } catch (err: any) {
-          console.error('Gagal membuat ulang pairing otomatis:', err);
-        }
-      }
-    }
-
     // Cek jika seluruh turnamen selesai pada ronde terakhir
     const finishCheck = await checkAndFinishTournamentIfComplete(
       selectedTournament.id,
@@ -471,12 +433,17 @@ export const RoundsView: React.FC = () => {
     isOrganizer && selectedTournament && (selectedTournament.organizerId === currentUser?.uid || isAdmin)
   );
 
-  const canCreateNextRound =
-    tourneyStatus === 'running' &&
-    rounds.length < totalRounds &&
-    (rounds.length === 0 || isAllMatchesConfirmed);
+  const activeRound = activeRoundNumber || currentTourneyRound;
+  const nextRoundExists =
+    rounds.some((r) => r.number === activeRound + 1 && !r.archived) ||
+    allMatches.some((m) => m.round === activeRound + 1 && !m.archived);
 
-  const nextRoundNumberToCreate = rounds.length + 1;
+  const isPauseActive =
+    tourneyStatus === 'running' &&
+    shouldShowNextRoundPause(matches, activeRound, totalRounds, nextRoundExists);
+
+  const canCreateRound1 =
+    tourneyStatus === 'running' && rounds.length === 0;
 
   const pastMatchRecords: PastMatchRecord[] = allMatches
     .filter((m) => m.round < (activeRoundNumber || currentTourneyRound) && !m.archived)
@@ -658,29 +625,62 @@ export const RoundsView: React.FC = () => {
                 )}
               </div>
 
-              {/* Bilah Aksi Ronde: Tombol Buat Pairing Ronde X */}
-              {canCreateNextRound && isOrganizer && (
+              {/* Bilah Aksi Ronde: Tombol Buat Pairing Ronde 1 (Awal Turnamen) */}
+              {canCreateRound1 && isOrganizer && (
                 <Card variant="surface" className="flex flex-col gap-2 p-3 border-accent/40 bg-accent/5">
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <span className="text-body font-semibold text-dark-text block">
-                        Pairing Ronde {nextRoundNumberToCreate}
+                        Pairing Ronde 1
                       </span>
                       <span className="text-caption text-dark-muted">
-                        {rounds.length === 0
-                          ? 'Mulai turnamen dengan membuat pairing Ronde 1 (acak penuh)'
-                          : `Seluruh pertandingan Ronde ${rounds.length} terkonfirmasi. Lanjut ke Ronde ${nextRoundNumberToCreate}.`}
+                        Mulai turnamen dengan membuat pairing Ronde 1 (acak penuh)
                       </span>
                     </div>
                     <Button
                       variant="primary"
                       className="!min-h-[38px] !px-3.5 !text-caption whitespace-nowrap"
-                      onClick={() => handleCreatePairing(nextRoundNumberToCreate)}
+                      onClick={() => handleCreatePairing(1)}
                       isLoading={pairingLoading}
+                      disabled={pairingLoading}
                       icon={<Play size={14} />}
                     >
-                      Buat Pairing Ronde {nextRoundNumberToCreate}
+                      Buat Pairing Ronde 1
                     </Button>
+                  </div>
+                </Card>
+              )}
+
+              {/* Kartu Jeda Sebelum Pindah ke Ronde Berikutnya */}
+              {isPauseActive && (
+                <Card variant="surface" className="flex flex-col gap-2 p-3.5 border-accent/40 bg-accent/5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <span className="text-body font-semibold text-dark-text flex items-center gap-1.5">
+                        <CheckCircle2 size={16} className="text-status-green" />
+                        Semua pertandingan Ronde {activeRound} sudah terkonfirmasi
+                      </span>
+                      <span className="text-caption text-dark-muted mt-0.5 block">
+                        Periksa hasil terlebih dahulu. Pairing Ronde {activeRound + 1} baru dibuat setelah Anda melanjutkan.
+                      </span>
+                    </div>
+                    {isOrganizerOwner ? (
+                      <Button
+                        variant="primary"
+                        className="!min-h-[40px] !px-4 !text-caption whitespace-nowrap"
+                        onClick={() => handleCreatePairing(activeRound + 1)}
+                        isLoading={pairingLoading}
+                        disabled={pairingLoading}
+                        icon={<Play size={14} />}
+                      >
+                        Lanjut ke Ronde {activeRound + 1}
+                      </Button>
+                    ) : (
+                      <div className="text-caption font-medium text-status-yellow flex items-center gap-1.5 bg-status-yellow/10 px-3 py-1.5 rounded-btn border border-status-yellow/30 w-fit">
+                        <Clock size={14} />
+                        <span>Menunggu organizer melanjutkan ke Ronde {activeRound + 1}</span>
+                      </div>
+                    )}
                   </div>
                 </Card>
               )}

@@ -1,0 +1,264 @@
+import { sanitizeFileName, isAllowedApkUrl } from '../utils/nativeHelpers';
+
+export { sanitizeFileName, isAllowedApkUrl };
+
+declare global {
+  interface Window {
+    AndroidBridge?: {
+      saveFile(fileName: string, mimeType: string, base64Data: string): string;
+      copyText(text: string): string;
+      downloadApk(url: string, fileName: string): string;
+      installApk(): string;
+      openExternal(url: string): string;
+    };
+  }
+}
+
+export type NativeEventType =
+  | 'download-started'
+  | 'download-complete'
+  | 'download-failed'
+  | 'install-permission-needed';
+
+export interface NativeEventDetail {
+  type: NativeEventType;
+  fileName?: string;
+  ok?: boolean;
+  message?: string;
+  reason?: string;
+  downloadId?: number;
+}
+
+/**
+ * Cek apakah antarmuka Android NativeBridge tersedia
+ */
+export function isNativeBridgeAvailable(): boolean {
+  return typeof window !== 'undefined' && Boolean(window.AndroidBridge);
+}
+
+/**
+ * Berlangganan event native ('digiswiss-native')
+ */
+export function addNativeEventListener(
+  callback: (detail: NativeEventDetail) => void
+): () => void {
+  if (typeof window === 'undefined') return () => {};
+
+  const handler = (evt: Event) => {
+    const customEvt = evt as CustomEvent<NativeEventDetail>;
+    if (customEvt && customEvt.detail) {
+      callback(customEvt.detail);
+    }
+  };
+
+  window.addEventListener('digiswiss-native', handler);
+  return () => window.removeEventListener('digiswiss-native', handler);
+}
+
+/**
+ * Unduh APK melalui DownloadManager native atau fallback browser
+ */
+export async function downloadApkNative(
+  url: string,
+  fileName: string
+): Promise<{ ok: boolean; message: string }> {
+  const safeName = sanitizeFileName(fileName);
+  const fullName = safeName.endsWith('.apk') ? safeName : `${safeName}.apk`;
+
+  if (isNativeBridgeAvailable() && window.AndroidBridge) {
+    try {
+      const raw = window.AndroidBridge.downloadApk(url, fullName);
+      const parsed = JSON.parse(raw);
+      return { ok: Boolean(parsed.ok), message: parsed.message || '' };
+    } catch (e: any) {
+      return { ok: false, message: e.message || 'Gagal memanggil antarmuka unduhan native' };
+    }
+  }
+
+  // Fallback peramban web
+  if (typeof window !== 'undefined') {
+    window.open(url, '_blank');
+    return { ok: true, message: 'Membuka unduhan di browser' };
+  }
+
+  return { ok: false, message: 'Lingkungan tidak mendukung unduhan' };
+}
+
+/**
+ * Memasang file APK yang telah diunduh
+ */
+export async function installApkNative(): Promise<{ ok: boolean; message: string }> {
+  if (isNativeBridgeAvailable() && window.AndroidBridge) {
+    try {
+      const raw = window.AndroidBridge.installApk();
+      const parsed = JSON.parse(raw);
+      return { ok: Boolean(parsed.ok), message: parsed.message || '' };
+    } catch (e: any) {
+      return { ok: false, message: e.message || 'Gagal memanggil penginstal native' };
+    }
+  }
+
+  return {
+    ok: false,
+    message: 'Instalasi otomatis hanya tersedia di aplikasi Android.'
+  };
+}
+
+/**
+ * Helper mengonversi data ke base64 string
+ */
+async function toBase64(data: string | Blob): Promise<string> {
+  if (typeof data === 'string') {
+    if (data.startsWith('data:')) {
+      return data;
+    }
+    // Plain text: encode ke base64 UTF-8
+    try {
+      if (typeof window !== 'undefined' && window.btoa) {
+        return window.btoa(unescape(encodeURIComponent(data)));
+      }
+      return Buffer.from(data, 'utf-8').toString('base64');
+    } catch {
+      return data;
+    }
+  }
+
+  // Blob to DataURL
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(data);
+  });
+}
+
+/**
+ * Menyimpan file (PNG, CSV, TXT) ke penyimpanan perangkat atau download di browser
+ */
+export async function saveFileNative(
+  fileName: string,
+  mimeType: string,
+  data: string | Blob
+): Promise<{ ok: boolean; message: string; fileName: string }> {
+  const safeName = sanitizeFileName(fileName);
+
+  if (isNativeBridgeAvailable() && window.AndroidBridge) {
+    try {
+      const base64Data = await toBase64(data);
+      const raw = window.AndroidBridge.saveFile(safeName, mimeType, base64Data);
+      const parsed = JSON.parse(raw);
+      return {
+        ok: Boolean(parsed.ok),
+        message: parsed.message || 'File berhasil disimpan',
+        fileName: safeName
+      };
+    } catch (e: any) {
+      console.warn('Fallback ke unduhan browser:', e);
+    }
+  }
+
+  // Fallback web browser
+  if (typeof document !== 'undefined') {
+    let url: string;
+    let shouldRevoke = false;
+
+    if (data instanceof Blob) {
+      url = URL.createObjectURL(data);
+      shouldRevoke = true;
+    } else if (typeof data === 'string' && data.startsWith('data:')) {
+      url = data;
+    } else {
+      const blob = new Blob([data], { type: mimeType });
+      url = URL.createObjectURL(blob);
+      shouldRevoke = true;
+    }
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = safeName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    if (shouldRevoke) {
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    return {
+      ok: true,
+      message: `File ${safeName} tersimpan di folder Unduhan.`,
+      fileName: safeName
+    };
+  }
+
+  return { ok: false, message: 'Tidak dapat menyimpan file', fileName: safeName };
+}
+
+/**
+ * Salin teks ke clipboard menggunakan bridge native atau API navigator.clipboard
+ */
+export async function copyTextNative(
+  text: string
+): Promise<{ ok: boolean; message: string }> {
+  if (isNativeBridgeAvailable() && window.AndroidBridge) {
+    try {
+      const raw = window.AndroidBridge.copyText(text);
+      const parsed = JSON.parse(raw);
+      if (parsed.ok) {
+        return { ok: true, message: parsed.message || 'Teks berhasil disalin' };
+      }
+    } catch (e) {
+      console.warn('Gagal salin via native bridge, fallback ke navigator.clipboard:', e);
+    }
+  }
+
+  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return { ok: true, message: 'Teks berhasil disalin ke papan klip' };
+    } catch {
+      // lanjut fallback manual
+    }
+  }
+
+  // Fallback manual document.execCommand
+  if (typeof document !== 'undefined') {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      textarea.style.top = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const success = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      if (success) {
+        return { ok: true, message: 'Teks berhasil disalin' };
+      }
+    } catch {
+      // gagal
+    }
+  }
+
+  return { ok: false, message: 'Gagal menyalin teks ke papan klip' };
+}
+
+/**
+ * Membuka URL eksternal di peramban sistem
+ */
+export function openExternalNative(url: string): void {
+  if (isNativeBridgeAvailable() && window.AndroidBridge) {
+    try {
+      window.AndroidBridge.openExternal(url);
+      return;
+    } catch {
+      // fallback
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+}

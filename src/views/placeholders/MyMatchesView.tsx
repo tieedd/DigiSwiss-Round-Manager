@@ -39,6 +39,7 @@ import {
   Edit2
 } from 'lucide-react';
 import { getSessionTournament, setSessionTournament } from '../../utils/sessionStore';
+import { shouldShowNextRoundPause } from '../../utils/roundPauseLogic';
 
 export const MyMatchesView: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
@@ -50,6 +51,8 @@ export const MyMatchesView: React.FC = () => {
   const [actionError, setActionError] = useState<string | null>(null);
   const [myFinishedParticipation, setMyFinishedParticipation] = useState<Participation | null>(null);
   const [deckModalOpen, setDeckModalOpen] = useState(false);
+  const [isWaitingNextRound, setIsWaitingNextRound] = useState(false);
+  const [waitingNextRoundNum, setWaitingNextRoundNum] = useState(2);
 
   // 1. Cari turnamen yang sedang aktif / baru selesai di mana pemain mungkin berpartisipasi
   const fetchMyTournaments = async () => {
@@ -91,9 +94,21 @@ export const MyMatchesView: React.FC = () => {
     const unsub = onSnapshot(
       matchesCol,
       (snapshot) => {
-        const matchesList: TournamentMatch[] = [];
+        const currentRound = selectedTournament.currentRound || 1;
+        const totalRounds = selectedTournament.totalRounds || 3;
+        const currentRoundMatches: TournamentMatch[] = [];
+        let nextRoundExists = false;
+
         snapshot.forEach((docSnap) => {
           const m = docSnap.data() as TournamentMatch;
+          if (!m.archived) {
+            if (m.round === currentRound) {
+              currentRoundMatches.push(m);
+            }
+            if (m.round > currentRound) {
+              nextRoundExists = true;
+            }
+          }
           // Filter hanya pertandingan yang melibatkan currentUser.uid
           if (m.p1Id === currentUser.uid || m.p2Id === currentUser.uid) {
             matchesList.push({
@@ -102,6 +117,13 @@ export const MyMatchesView: React.FC = () => {
             } as any);
           }
         });
+
+        const isPause =
+          selectedTournament.status === 'running' &&
+          shouldShowNextRoundPause(currentRoundMatches, currentRound, totalRounds, nextRoundExists);
+
+        setIsWaitingNextRound(isPause);
+        setWaitingNextRoundNum(currentRound + 1);
 
         // Urutkan ronde terbaru di paling atas
         matchesList.sort((a, b) => b.round - a.round);
@@ -357,6 +379,14 @@ export const MyMatchesView: React.FC = () => {
                 <span>Turnamen <strong>{selectedTournament.name}</strong> sudah selesai. Menunggu organizer memfinalisasi hasil.</span>
               </div>
             )
+          )}
+
+          {/* Banner Menunggu Organizer Lanjut ke Ronde Berikutnya */}
+          {selectedTournament && selectedTournament.status === 'running' && isWaitingNextRound && (
+            <div className="p-3 bg-dark-surface border border-accent/40 rounded-card flex items-center gap-2.5 text-caption text-accent font-medium shadow-sm animate-fade-in">
+              <Clock size={16} className="text-accent flex-shrink-0" />
+              <span>Menunggu organizer melanjutkan ke Ronde {waitingNextRoundNum}</span>
+            </div>
           )}
 
           {/* Daftar Pertandingan Pemain */}

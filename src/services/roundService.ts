@@ -128,6 +128,23 @@ export async function createRoundPairing(
   // 2. Ambil seluruh riwayat pertandingan terdahulu
   const allPastMatches = await getAllTournamentMatches(tournamentId);
 
+  // Guard pencegahan klik ganda: jika ronde target sudah memiliki pertandingan aktif, jangan buat ulang
+  const existingMatchesForRound = allPastMatches.filter((m) => m.round === targetRoundNumber);
+  if (existingMatchesForRound.length > 0) {
+    const rounds = await getTournamentRounds(tournamentId, false);
+    const existingRound = rounds.find((r) => r.number === targetRoundNumber) || {
+      number: targetRoundNumber,
+      status: 'active' as const,
+      timer: {
+        durationMinutes: format === 'BO1' ? 25 : 45,
+        remainingSeconds: (format === 'BO1' ? 25 : 45) * 60,
+        status: 'idle' as const,
+        lastUpdated: Date.now()
+      }
+    };
+    return { round: existingRound as TournamentRound, matches: existingMatchesForRound };
+  }
+
   // Jika ronde > 1, pastikan seluruh pertandingan di ronde sebelumnya sudah berstatus 'confirmed'
   if (targetRoundNumber > 1) {
     const prevRoundMatches = allPastMatches.filter((m) => m.round === targetRoundNumber - 1);

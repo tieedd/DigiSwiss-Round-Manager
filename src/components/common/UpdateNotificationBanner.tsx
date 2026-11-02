@@ -1,10 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { checkLatestRelease, AppReleaseInfo, isUpdateAvailable } from '../../services/versionService';
-import { Download, X, Sparkles } from 'lucide-react';
+import {
+  downloadApkNative,
+  installApkNative,
+  addNativeEventListener,
+  isNativeBridgeAvailable
+} from '../../services/nativeBridge';
+import { useToast } from '../../context/ToastContext';
+import { Download, X, Sparkles, Loader2 } from 'lucide-react';
 
 export const UpdateNotificationBanner: React.FC = () => {
+  const { success, error, info } = useToast();
   const [releaseInfo, setReleaseInfo] = useState<AppReleaseInfo | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const textRef = useRef<HTMLSpanElement>(null);
   const [animationDuration, setAnimationDuration] = useState(16);
 
@@ -13,10 +22,10 @@ export const UpdateNotificationBanner: React.FC = () => {
 
     const performCheck = async () => {
       try {
-        const info = await checkLatestRelease();
+        const infoRes = await checkLatestRelease();
         if (isMounted) {
-          if (info.hasUpdate && isUpdateAvailable(info.latestVersion, info.currentVersion)) {
-            setReleaseInfo(info);
+          if (infoRes.hasUpdate && isUpdateAvailable(infoRes.latestVersion, infoRes.currentVersion)) {
+            setReleaseInfo(infoRes);
           } else {
             setReleaseInfo(null);
           }
@@ -44,6 +53,63 @@ export const UpdateNotificationBanner: React.FC = () => {
     };
   }, []);
 
+  // Pasang pendengar event native 'digiswiss-native'
+  useEffect(() => {
+    const unsubscribe = addNativeEventListener((detail) => {
+      if (detail.type === 'download-started') {
+        setIsDownloading(true);
+      } else if (detail.type === 'download-complete') {
+        setIsDownloading(false);
+        if (detail.ok) {
+          const fileName = detail.fileName || 'aplikasi';
+          success(
+            'Unduhan berhasil',
+            `File ${fileName} tersimpan di folder Unduhan.`,
+            {
+              label: 'Pasang sekarang',
+              onClick: () => {
+                installApkNative();
+              }
+            }
+          );
+        } else {
+          error('Unduhan gagal. Periksa koneksi lalu coba lagi.');
+        }
+      } else if (detail.type === 'download-failed') {
+        setIsDownloading(false);
+        error('Unduhan gagal. Periksa koneksi lalu coba lagi.');
+      } else if (detail.type === 'install-permission-needed') {
+        info('Izinkan DigiSwiss-Round memasang aplikasi, lalu kembali dan tekan Pasang.');
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [success, error, info]);
+
+  // Handler klik tombol unduh APK
+  const handleDownloadClick = async () => {
+    if (!releaseInfo || isDownloading) return;
+
+    const downloadUrl = releaseInfo.downloadUrl || releaseInfo.htmlUrl;
+    if (!downloadUrl) return;
+
+    const fileName = `DigiSwiss-Round-v${releaseInfo.latestVersion}.apk`;
+
+    if (isNativeBridgeAvailable()) {
+      setIsDownloading(true);
+      const res = await downloadApkNative(downloadUrl, fileName);
+      if (!res.ok) {
+        setIsDownloading(false);
+        error('Unduhan gagal. Periksa koneksi lalu coba lagi.');
+      }
+    } else {
+      // Browser fallback
+      await downloadApkNative(downloadUrl, fileName);
+    }
+  };
+
   // Format teks berjalan
   const releaseNameExtra =
     releaseInfo?.releaseName &&
@@ -61,11 +127,9 @@ export const UpdateNotificationBanner: React.FC = () => {
     if (!marqueeText) return;
     if (textRef.current) {
       const measuredWidth = textRef.current.offsetWidth;
-      // 40 piksel per detik, minimal 12 detik
       const calculatedDuration = Math.max(12, Math.round(measuredWidth / 40));
       setAnimationDuration(calculatedDuration);
     } else {
-      // Estimasi kasar berdasarkan karakter jika ref belum terukur (~7.5px per karakter + 48px gap)
       const approxWidth = marqueeText.length * 7.5 + 48;
       setAnimationDuration(Math.max(12, Math.round(approxWidth / 40)));
     }
@@ -114,7 +178,7 @@ export const UpdateNotificationBanner: React.FC = () => {
           >
             {marqueeText}
           </span>
-          {/* Salinan teks kedua (dipisah jarak tetap pr-12 untuk perulangan mulus tanpa jeda) */}
+          {/* Salinan teks kedua */}
           <span
             aria-hidden="true"
             className="marquee-duplicate inline-block pr-12 text-caption text-dark-text font-normal"
@@ -124,17 +188,28 @@ export const UpdateNotificationBanner: React.FC = () => {
         </div>
       </div>
 
-      {/* Tombol "Unduh APK" dan tutup (X) tetap diam di kanan */}
+      {/* Tombol "Unduh APK" (sekarang button, bukan <a>) dan tutup (X) */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
-        <a
-          href={releaseInfo.downloadUrl || releaseInfo.htmlUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1 px-2.5 py-1 rounded bg-accent text-dark-bg font-semibold text-[11px] hover:bg-accent/90 transition-colors shadow-sm active:scale-95"
+        <button
+          type="button"
+          onClick={handleDownloadClick}
+          disabled={isDownloading}
+          className={`flex items-center gap-1 px-2.5 py-1 rounded bg-accent text-dark-bg font-semibold text-[11px] hover:bg-accent/90 transition-colors shadow-sm active:scale-95 ${
+            isDownloading ? 'opacity-70 cursor-not-allowed' : ''
+          }`}
         >
-          <Download size={12} />
-          <span>Unduh APK</span>
-        </a>
+          {isDownloading ? (
+            <>
+              <Loader2 size={12} className="animate-spin" />
+              <span>Mengunduh...</span>
+            </>
+          ) : (
+            <>
+              <Download size={12} />
+              <span>Unduh APK</span>
+            </>
+          )}
+        </button>
         <button
           type="button"
           onClick={() => setDismissed(true)}

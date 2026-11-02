@@ -21,6 +21,8 @@ import {
 } from '../../utils/deckExportLogic';
 import { exportStandingsToImage } from '../../utils/canvasExport';
 import { DeckRegistrationModal } from './DeckRegistrationModal';
+import { useToast } from '../../context/ToastContext';
+import { saveFileNative, copyTextNative } from '../../services/nativeBridge';
 import {
   Trophy,
   Award,
@@ -52,6 +54,7 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
   onTournamentUpdated
 }) => {
   const { currentUser, userProfile } = useAuth();
+  const { success: showToastSuccess, error: showToastError } = useToast();
   const [participations, setParticipations] = useState<Participation[]>([]);
   const [loading, setLoading] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
@@ -104,17 +107,16 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
   };
 
   // Ekspor CSV
-  const handleExportCsv = () => {
+  const handleExportCsv = async () => {
     if (participations.length === 0) return;
     const csvContent = generateStandingsCsv(tournament.name, participations);
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Hasil-${tournament.name.replace(/\s+/g, '_')}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const fileName = `Hasil-${tournament.name.replace(/\s+/g, '_')}.csv`;
+    const res = await saveFileNative(fileName, 'text/csv', csvContent);
+    if (res.ok) {
+      showToastSuccess('Ekspor berhasil', `File ${res.fileName} tersimpan di folder Unduhan.`);
+    } else {
+      showToastError('Ekspor gagal', res.message || 'Gagal menyimpan file CSV.');
+    }
   };
 
   // Ekspor Teks (Salin ke Clipboard & Download TXT)
@@ -126,30 +128,40 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
       tournament.format,
       participations
     );
-    try {
-      await navigator.clipboard.writeText(textContent);
+    const copyRes = await copyTextNative(textContent);
+    if (copyRes.ok) {
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2500);
-    } catch (e) {
+      showToastSuccess('Ekspor berhasil', 'Teks ringkasan berhasil disalin.');
+    } else {
       // Fallback download .txt
-      const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `Hasil-${tournament.name.replace(/\s+/g, '_')}.txt`);
-      link.click();
+      const fileName = `Hasil-${tournament.name.replace(/\s+/g, '_')}.txt`;
+      const res = await saveFileNative(fileName, 'text/plain', textContent);
+      if (res.ok) {
+        showToastSuccess('Ekspor berhasil', `File ${res.fileName} tersimpan di folder Unduhan.`);
+      } else {
+        showToastError('Gagal menyalin atau mengekspor teks.');
+      }
     }
   };
 
   // Ekspor Gambar (PNG via Canvas)
-  const handleExportImage = () => {
+  const handleExportImage = async () => {
     if (participations.length === 0) return;
-    exportStandingsToImage(
+    const dataUrl = exportStandingsToImage(
       tournament.name,
       tournament.date,
       tournament.format,
       participations
     );
+    if (!dataUrl) return;
+    const fileName = `Hasil-${tournament.name.replace(/\s+/g, '_')}.png`;
+    const res = await saveFileNative(fileName, 'image/png', dataUrl);
+    if (res.ok) {
+      showToastSuccess('Ekspor berhasil', `File ${res.fileName} tersimpan di folder Unduhan.`);
+    } else {
+      showToastError('Ekspor gagal', res.message || 'Gagal menyimpan gambar PNG.');
+    }
   };
 
   // Buka modal deck

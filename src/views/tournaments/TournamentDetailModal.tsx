@@ -27,6 +27,7 @@ import { calculateSwissRounds } from '../../utils/swissLogic';
 import { FinalStandingsCard } from '../history/FinalStandingsCard';
 import { generateStandingsText } from '../../utils/deckExportLogic';
 import { getTournamentParticipations } from '../../services/participationService';
+import { copyTextNative } from '../../services/nativeBridge';
 import {
   Swords,
   Calendar,
@@ -75,9 +76,13 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
       const participations = await getTournamentParticipations(tournament.id);
       if (participations.length > 0) {
         const text = generateStandingsText(participations);
-        await navigator.clipboard.writeText(text);
-        setCopiedStandings(true);
-        setTimeout(() => setCopiedStandings(false), 2500);
+        const res = await copyTextNative(text);
+        if (res.ok) {
+          setCopiedStandings(true);
+          setTimeout(() => setCopiedStandings(false), 2500);
+        } else {
+          alert('Gagal menyalin hasil ke papan klip.');
+        }
       } else {
         alert('Data klasemen akhir belum tersedia untuk disalin.');
       }
@@ -145,8 +150,8 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
   const isRegistration = tournament.status === 'registration';
   const isRunning = tournament.status === 'running';
 
-  const copyJoinCode = () => {
-    navigator.clipboard.writeText(tournament.joinCode);
+  const copyJoinCode = async () => {
+    await copyTextNative(tournament.joinCode);
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2000);
   };

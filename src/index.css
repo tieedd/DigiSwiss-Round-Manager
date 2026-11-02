@@ -19,6 +19,16 @@
   }
 }
 
+/* Animasi bilah waktu mundur toast */
+@keyframes toast-shrink {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
 .marquee-track {
   display: inline-flex;
   white-space: nowrap;

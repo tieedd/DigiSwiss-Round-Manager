@@ -1,17 +1,18 @@
 import { Participation } from '../types';
 
 /**
- * Merender kartu hasil akhir turnamen secara visual ke HTML Canvas lalu mengunduhnya sebagai file gambar PNG
+ * Merender kartu hasil akhir turnamen secara visual ke HTML Canvas dan mengembalikan Data URL PNG
  */
 export function exportStandingsToImage(
   tournamentName: string,
   tournamentDate: string,
   format: string,
   participations: Participation[]
-): void {
+): string | null {
+  if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
-  if (!ctx) return;
+  if (!ctx) return null;
 
   const width = 1000;
   const rowHeight = 44;
@@ -125,9 +126,5 @@ export function exportStandingsToImage(
     height - 20
   );
 
-  // Trigger download
-  const link = document.createElement('a');
-  link.download = `Hasil-${tournamentName.replace(/\s+/g, '_')}.png`;
-  link.href = canvas.toDataURL('image/png');
-  link.click();
+  return canvas.toDataURL('image/png');
 }
