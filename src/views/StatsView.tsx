@@ -11,7 +11,7 @@ import {
   OrganizerStatsSummary,
   AdminStatsSummary
 } from '../utils/statsLogic';
-import { DECK_COLOR_STYLES } from '../utils/deckExportLogic';
+import { DeckColorDots } from '../components/common/DeckColorDots';
 import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { getAllTournaments, getOrganizerTournaments } from '../services/tournamentService';
@@ -302,29 +302,23 @@ export const StatsView: React.FC = () => {
                     </div>
 
                     <div className="flex flex-col gap-2 pt-1">
-                      {playerStats.colorStats.map((c) => {
-                        const style = DECK_COLOR_STYLES[c.color];
-                        return (
-                          <div key={c.color} className="flex items-center gap-2.5 text-caption">
-                            <span
-                              className={`w-16 px-1.5 py-0.5 rounded text-[10px] font-semibold text-center border ${
-                                style ? `${style.bg} ${style.text} ${style.border}` : ''
-                              }`}
-                            >
-                              {c.color}
-                            </span>
-                            <div className="flex-1 bg-dark-bg h-3 rounded-full overflow-hidden">
-                              <div
-                                className="bg-accent h-full rounded-full transition-all"
-                                style={{ width: `${c.winRate}%` }}
-                              />
-                            </div>
-                            <span className="font-mono text-dark-text font-bold w-12 text-right">
-                              {c.winRate}%
-                            </span>
+                      {playerStats.colorStats.map((c) => (
+                        <div key={c.color} className="flex items-center gap-2.5 text-caption">
+                          <div className="w-20 flex items-center gap-1.5 flex-shrink-0">
+                            <DeckColorDots colors={[c.color]} size="sm" />
+                            <span className="text-[11px] font-medium text-dark-text truncate">{c.color}</span>
                           </div>
-                        );
-                      })}
+                          <div className="flex-1 bg-dark-bg h-3 rounded-full overflow-hidden">
+                            <div
+                              className="bg-accent h-full rounded-full transition-all"
+                              style={{ width: `${c.winRate}%` }}
+                            />
+                          </div>
+                          <span className="font-mono text-dark-text font-bold w-12 text-right">
+                            {c.winRate}%
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </Card>
                 )}
@@ -405,29 +399,23 @@ export const StatsView: React.FC = () => {
                     </div>
 
                     <div className="flex flex-col gap-2 pt-1">
-                      {organizerStats.colorDistribution.map((item) => {
-                        const style = DECK_COLOR_STYLES[item.color];
-                        return (
-                          <div key={item.color} className="flex items-center gap-2.5 text-caption">
-                            <span
-                              className={`w-16 px-1.5 py-0.5 rounded text-[10px] font-semibold text-center border ${
-                                style ? `${style.bg} ${style.text} ${style.border}` : ''
-                              }`}
-                            >
-                              {item.color}
-                            </span>
-                            <div className="flex-1 bg-dark-bg h-3 rounded-full overflow-hidden">
-                              <div
-                                className="bg-accent h-full rounded-full transition-all"
-                                style={{ width: `${item.percentage}%` }}
-                              />
-                            </div>
-                            <span className="font-mono text-dark-text font-semibold w-14 text-right text-[11px]">
-                              {item.count} ({item.percentage}%)
-                            </span>
+                      {organizerStats.colorDistribution.map((item) => (
+                        <div key={item.color} className="flex items-center gap-2.5 text-caption">
+                          <div className="w-20 flex items-center gap-1.5 flex-shrink-0">
+                            <DeckColorDots colors={[item.color]} size="sm" />
+                            <span className="text-[11px] font-medium text-dark-text truncate">{item.color}</span>
                           </div>
-                        );
-                      })}
+                          <div className="flex-1 bg-dark-bg h-3 rounded-full overflow-hidden">
+                            <div
+                              className="bg-accent h-full rounded-full transition-all"
+                              style={{ width: `${item.percentage}%` }}
+                            />
+                          </div>
+                          <span className="font-mono text-dark-text font-semibold w-14 text-right text-[11px]">
+                            {item.count} ({item.percentage}%)
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </Card>
                 )}
@@ -532,29 +520,23 @@ export const StatsView: React.FC = () => {
                   </div>
 
                   <div className="flex flex-col gap-2 pt-1">
-                    {adminStats.colorDistributionGlobal.map((item) => {
-                      const style = DECK_COLOR_STYLES[item.color];
-                      return (
-                        <div key={item.color} className="flex items-center gap-2.5 text-caption">
-                          <span
-                            className={`w-16 px-1.5 py-0.5 rounded text-[10px] font-semibold text-center border ${
-                              style ? `${style.bg} ${style.text} ${style.border}` : ''
-                            }`}
-                          >
-                            {item.color}
-                          </span>
-                          <div className="flex-1 bg-dark-bg h-3 rounded-full overflow-hidden">
-                            <div
-                              className="bg-accent h-full rounded-full transition-all"
-                              style={{ width: `${item.percentage}%` }}
-                            />
-                          </div>
-                          <span className="font-mono text-dark-text font-semibold w-14 text-right text-[11px]">
-                            {item.percentage}%
-                          </span>
+                    {adminStats.colorDistributionGlobal.map((item) => (
+                      <div key={item.color} className="flex items-center gap-2.5 text-caption">
+                        <div className="w-20 flex items-center gap-1.5 flex-shrink-0">
+                          <DeckColorDots colors={[item.color]} size="sm" />
+                          <span className="text-[11px] font-medium text-dark-text truncate">{item.color}</span>
                         </div>
-                      );
-                    })}
+                        <div className="flex-1 bg-dark-bg h-3 rounded-full overflow-hidden">
+                          <div
+                            className="bg-accent h-full rounded-full transition-all"
+                            style={{ width: `${item.percentage}%` }}
+                          />
+                        </div>
+                        <span className="font-mono text-dark-text font-semibold w-14 text-right text-[11px]">
+                          {item.percentage}%
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </Card>
               )}

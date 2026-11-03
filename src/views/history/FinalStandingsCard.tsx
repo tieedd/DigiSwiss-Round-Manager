@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Participation, DeckColor } from '../../types';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
-import { DECK_COLOR_STYLES } from '../../utils/deckExportLogic';
+import { DeckColorDots } from '../../components/common/DeckColorDots';
 import {
   getTournamentParticipations
 } from '../../services/participationService';
@@ -262,27 +262,16 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
                     </div>
 
                     {/* Info Deck & Warna */}
-                    <div className="flex items-center gap-1.5 mt-0.5 min-w-0 flex-wrap">
+                    <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
                       {row.deckName ? (
                         <>
-                          <span className="text-[11px] text-dark-text font-medium truncate max-w-[150px]">
+                          <span
+                            className="text-[11px] text-dark-text font-medium truncate max-w-[140px]"
+                            title={row.deckName}
+                          >
                             {row.deckName}
                           </span>
-                          <div className="flex items-center gap-0.5">
-                            {row.deckColors?.map((c) => {
-                              const s = DECK_COLOR_STYLES[c];
-                              return (
-                                <span
-                                  key={c}
-                                  className={`text-[8px] px-1 py-0.1 rounded-full border ${
-                                    s ? `${s.bg} ${s.text} ${s.border}` : ''
-                                  }`}
-                                >
-                                  {c}
-                                </span>
-                              );
-                            })}
-                          </div>
+                          <DeckColorDots colors={row.deckColors} size="sm" />
                         </>
                       ) : (
                         <span className="text-[11px] text-dark-muted italic">

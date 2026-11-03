@@ -3,7 +3,7 @@ import { Participation, TournamentMatch } from '../../types';
 import { getAllTournamentMatches } from '../../services/roundService';
 import { Button } from '../../components/common/Button';
 import { StatusBadge } from '../../components/common/StatusBadge';
-import { DECK_COLOR_STYLES } from '../../utils/deckExportLogic';
+import { DeckColorDots } from '../../components/common/DeckColorDots';
 import { FinalStandingsCard } from './FinalStandingsCard';
 import {
   X,
@@ -121,23 +121,11 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
           {participation.deckName && (
             <div className="flex items-center gap-2 pt-1 border-t border-dark-border/60 text-caption">
               <Layers size={14} className="text-accent flex-shrink-0" />
-              <span className="text-dark-text font-medium truncate">
+              <span className="text-dark-text font-medium truncate" title={participation.deckName}>
                 Deck: <strong>{participation.deckName}</strong>
               </span>
-              <div className="flex items-center gap-1 ml-auto flex-wrap">
-                {participation.deckColors?.map((c) => {
-                  const s = DECK_COLOR_STYLES[c];
-                  return (
-                    <span
-                      key={c}
-                      className={`text-[9px] px-1.5 py-0.2 rounded-full border ${
-                        s ? `${s.bg} ${s.text} ${s.border}` : ''
-                      }`}
-                    >
-                      {c}
-                    </span>
-                  );
-                })}
+              <div className="ml-auto flex items-center">
+                <DeckColorDots colors={participation.deckColors} size="sm" />
               </div>
             </div>
           )}

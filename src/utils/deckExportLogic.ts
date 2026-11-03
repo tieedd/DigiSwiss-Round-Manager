@@ -86,6 +86,71 @@ export const DECK_COLOR_STYLES: Record<DeckColor, { bg: string; text: string; bo
   }
 };
 
+export const DECK_COLOR_HEX: Record<DeckColor, string> = {
+  Merah: '#EF4444',
+  Biru: '#3B82F6',
+  Kuning: '#FACC15',
+  Hijau: '#10B981',
+  Hitam: '#18181B',
+  Ungu: '#A855F7',
+  Putih: '#F8FAFC'
+};
+
+export const DECK_COLOR_EMOJI: Record<DeckColor, string> = {
+  Merah: '🔴',
+  Biru: '🔵',
+  Kuning: '🟡',
+  Hijau: '🟢',
+  Hitam: '⚫',
+  Ungu: '🟣',
+  Putih: '⚪'
+};
+
+export function formatDeckColorsEmoji(colors?: string[] | null): string {
+  if (!colors || !Array.isArray(colors) || colors.length === 0) return '';
+  return colors
+    .map((c) => DECK_COLOR_EMOJI[c as DeckColor] || '')
+    .filter(Boolean)
+    .join('');
+}
+
+export function getDeckColorLabel(colors?: string[] | null): string {
+  if (!colors || !Array.isArray(colors) || colors.length === 0) return '';
+  return colors.join(', ');
+}
+
+/**
+  * Mengambil daftar warna unik yang digunakan pada daftar partisipasi
+  */
+export function getUsedDeckColors(
+  participations: Participation[],
+  limit = 32
+): DeckColor[] {
+  const used = new Set<string>();
+  participations.slice(0, limit).forEach((p) => {
+    if (p.deckColors && Array.isArray(p.deckColors)) {
+      p.deckColors.forEach((c) => used.add(c));
+    }
+  });
+  return OFFICIAL_DECK_COLORS.filter((c) => used.has(c));
+}
+
+/**
+  * Memotong teks agar lebarnya sesuai batas piksel kanvas
+  */
+export function truncateTextToWidth(
+  measureWidth: (str: string) => number,
+  text: string,
+  maxWidth: number
+): string {
+  if (measureWidth(text) <= maxWidth) return text;
+  let truncated = text;
+  while (truncated.length > 0 && measureWidth(truncated + '...') > maxWidth) {
+    truncated = truncated.slice(0, -1);
+  }
+  return truncated.length > 0 ? truncated + '...' : '';
+}
+
 /**
  * Validasi form pengisian deck pemain
  */
@@ -197,8 +262,9 @@ export function generateStandingsText(
 
   for (const p of participations) {
     const medal = p.rank === 1 ? '🥇' : p.rank === 2 ? '🥈' : p.rank === 3 ? '🥉' : `#${p.rank}`;
+    const emojiStr = formatDeckColorsEmoji(p.deckColors);
     const deckInfo = p.deckName
-      ? `${p.deckName} [${(p.deckColors || []).join('/')}]`
+      ? `${p.deckName}${emojiStr ? ` ${emojiStr}` : ''}`
       : 'Deck belum diisi';
     lines.push(
       `${medal} ${p.name.padEnd(20)} | Poin: ${String(p.points).padStart(2)} | W-L: ${p.wins}-${p.losses} | Deck: ${deckInfo}`

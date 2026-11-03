@@ -14,7 +14,7 @@ import { db } from '../firebaseConfig';
 import { PlayerMatchDetailsModal } from './history/PlayerMatchDetailsModal';
 import { TournamentDetailModal } from './tournaments/TournamentDetailModal';
 import { DeckRegistrationModal } from './tournaments/DeckRegistrationModal';
-import { DECK_COLOR_STYLES } from '../utils/deckExportLogic';
+import { DeckColorDots } from '../components/common/DeckColorDots';
 import { countUnfilledDecks } from '../utils/finalStandingsLogic';
 import {
   History,
@@ -406,24 +406,10 @@ export const HistoryView: React.FC = () => {
                       <Layers size={13} className="text-accent flex-shrink-0" />
                       {p.deckName ? (
                         <>
-                          <span className="text-dark-text font-medium truncate">
+                          <span className="text-dark-text font-medium truncate" title={p.deckName}>
                             {p.deckName}
                           </span>
-                          <div className="flex items-center gap-1 flex-wrap">
-                            {p.deckColors?.map((c) => {
-                              const s = DECK_COLOR_STYLES[c];
-                              return (
-                                <span
-                                  key={c}
-                                  className={`text-[8px] px-1 rounded-full border ${
-                                    s ? `${s.bg} ${s.text} ${s.border}` : ''
-                                  }`}
-                                >
-                                  {c}
-                                </span>
-                              );
-                            })}
-                          </div>
+                          <DeckColorDots colors={p.deckColors} size="sm" />
                           {isOwnDoc && (
                             <button
                               type="button"

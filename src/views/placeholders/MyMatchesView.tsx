@@ -24,7 +24,7 @@ import { calculateMatchPoints } from '../../utils/standingsLogic';
 import { collection, query, where, onSnapshot, getDocs } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { DeckRegistrationModal } from '../tournaments/DeckRegistrationModal';
-import { DECK_COLOR_STYLES } from '../../utils/deckExportLogic';
+import { DeckColorDots } from '../../components/common/DeckColorDots';
 import {
   Swords,
   Flame,
@@ -346,22 +346,10 @@ export const MyMatchesView: React.FC = () => {
                 <div className="p-3 bg-dark-surface border border-dark-border rounded-card flex items-center justify-between gap-2 text-caption">
                   <div className="flex items-center gap-2 min-w-0">
                     <Layers size={15} className="text-accent flex-shrink-0" />
-                    <span className="text-dark-text truncate">
+                    <span className="text-dark-text truncate" title={myFinishedParticipation.deckName}>
                       Deck Anda: <strong>{myFinishedParticipation.deckName}</strong>
                     </span>
-                    <div className="flex items-center gap-1">
-                      {myFinishedParticipation.deckColors?.map((c) => {
-                        const s = DECK_COLOR_STYLES[c];
-                        return (
-                          <span
-                            key={c}
-                            className={`text-[8px] px-1 rounded-full border ${s ? `${s.bg} ${s.text} ${s.border}` : ''}`}
-                          >
-                            {c}
-                          </span>
-                        );
-                      })}
-                    </div>
+                    <DeckColorDots colors={myFinishedParticipation.deckColors} size="sm" />
                   </div>
                   <button
                     type="button"

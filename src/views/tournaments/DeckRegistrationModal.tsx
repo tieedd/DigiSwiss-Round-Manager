@@ -4,8 +4,11 @@ import { Button } from '../../components/common/Button';
 import {
   OFFICIAL_DECK_COLORS,
   DECK_COLOR_STYLES,
+  DECK_COLOR_HEX,
+  formatDeckColorsEmoji,
   validateDeckSubmission
 } from '../../utils/deckExportLogic';
+import { DeckColorDots } from '../../components/common/DeckColorDots';
 import {
   getPlayerDeckHistory,
   PlayerDeckHistory,
@@ -196,11 +199,14 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
                 className="w-full bg-dark-surface border border-dark-border rounded-btn px-2.5 py-1.5 text-caption text-dark-text focus:outline-none focus:border-accent"
               >
                 <option value="" disabled>-- Pilih Deck yang Pernah Digunakan --</option>
-                {deckHistory.map((item, idx) => (
-                  <option key={idx} value={item.deckName}>
-                    {item.deckName} ({item.deckColors.join('/')}) &bull; {item.tournamentName}
-                  </option>
-                ))}
+                {deckHistory.map((item, idx) => {
+                  const emojis = formatDeckColorsEmoji(item.deckColors);
+                  return (
+                    <option key={idx} value={item.deckName}>
+                      {item.deckName} {emojis ? `${emojis} ` : ''}&bull; {item.tournamentName}
+                    </option>
+                  );
+                })}
               </select>
 
               {/* Chip pilihan cepat */}
@@ -210,12 +216,10 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
                     key={idx}
                     type="button"
                     onClick={() => handleSelectFromHistory(item)}
-                    className="text-[11px] px-2 py-0.5 rounded bg-dark-surface border border-dark-border hover:border-accent text-dark-text flex items-center gap-1 transition-colors"
+                    className="text-[11px] px-2 py-1 rounded bg-dark-surface border border-dark-border hover:border-accent text-dark-text flex items-center gap-1.5 transition-colors"
                   >
                     <span>{item.deckName}</span>
-                    <span className="text-[10px] text-accent font-mono">
-                      ({item.deckColors.join('/')})
-                    </span>
+                    <DeckColorDots colors={item.deckColors} size="sm" />
                   </button>
                 ))}
               </div>
@@ -253,6 +257,7 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
               {OFFICIAL_DECK_COLORS.map((color) => {
                 const isSelected = selectedColors.includes(color);
                 const style = DECK_COLOR_STYLES[color];
+                const hex = DECK_COLOR_HEX[color];
 
                 return (
                   <button
@@ -265,8 +270,20 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
                         : `${style.bg} ${style.text} ${style.border} hover:opacity-80`
                     }`}
                   >
-                    {isSelected && <Check size={13} className="stroke-[2.5]" />}
+                    <span
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{
+                        backgroundColor: hex,
+                        boxShadow:
+                          color === 'Hitam'
+                            ? '0 0 0 1px #94A3B8'
+                            : color === 'Putih'
+                            ? '0 0 0 1px #CBD5E1'
+                            : undefined
+                      }}
+                    />
                     <span>{color}</span>
+                    {isSelected && <Check size={13} className="stroke-[2.5]" />}
                   </button>
                 );
               })}

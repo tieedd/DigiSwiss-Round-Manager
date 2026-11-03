@@ -16,10 +16,10 @@ import {
 import {
   calculateDeckFillProgress,
   generateStandingsCsv,
-  generateStandingsText,
-  DECK_COLOR_STYLES
+  generateStandingsText
 } from '../../utils/deckExportLogic';
 import { exportStandingsToImage } from '../../utils/canvasExport';
+import { DeckColorDots } from '../../components/common/DeckColorDots';
 import { DeckRegistrationModal } from './DeckRegistrationModal';
 import { useToast } from '../../context/ToastContext';
 import { saveFileNative, copyTextNative } from '../../services/nativeBridge';
@@ -352,25 +352,14 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
                       {/* Info Deck & Tombol Aksi */}
                       <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-1 sm:pt-0 border-t sm:border-t-0 border-dark-border">
                         {hasDeck ? (
-                          <div className="flex flex-col sm:items-end">
-                            <span className="text-caption font-semibold text-dark-text truncate max-w-[160px]">
+                          <div className="flex items-center gap-1.5 sm:justify-end min-w-0">
+                            <span
+                              className="text-caption font-semibold text-dark-text truncate max-w-[130px] sm:max-w-[180px]"
+                              title={p.deckName}
+                            >
                               {p.deckName}
                             </span>
-                            <div className="flex items-center gap-1 flex-wrap mt-0.5">
-                              {(p.deckColors as DeckColor[])?.map((c) => {
-                                const style = DECK_COLOR_STYLES[c];
-                                return (
-                                  <span
-                                    key={c}
-                                    className={`text-[9px] font-medium px-1.5 py-0.2 rounded-full border ${
-                                      style ? `${style.bg} ${style.text} ${style.border}` : ''
-                                    }`}
-                                  >
-                                    {c}
-                                  </span>
-                                );
-                              })}
-                            </div>
+                            <DeckColorDots colors={p.deckColors} size="sm" />
                           </div>
                         ) : (
                           <span className="text-[11px] text-dark-muted italic">

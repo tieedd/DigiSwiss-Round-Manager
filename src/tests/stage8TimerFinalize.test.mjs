@@ -212,7 +212,7 @@ test('Tahap 8 TES EKSPOR: Ekspor CSV dan Teks hasil akhir turnamen', () => {
   // 2. Verifikasi Teks
   const text = generateStandingsText('Digimon Store Cup', '2026-10-31', 'BO3', sampleParticipations);
   assert.ok(text.includes('HASIL AKHIR TURNAMEN: DIGIMON STORE CUP'));
-  assert.ok(text.includes('AgumonMaster'));
-  assert.ok(text.includes('WarGreymon OTK [Merah/Hitam]'));
+  assert.ok(text.includes('WarGreymon OTK 🔴⚫'));
+  assert.ok(!text.includes('[Merah/Hitam]'));
   assert.ok(text.includes('OMW: 66.67%'));
 });

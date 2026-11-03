@@ -1,4 +1,11 @@
 import { Participation } from '../types';
+import {
+  DeckColor,
+  DECK_COLOR_HEX,
+  OFFICIAL_DECK_COLORS,
+  getUsedDeckColors,
+  truncateTextToWidth
+} from './deckExportLogic';
 
 /**
  * Merender kartu hasil akhir turnamen secara visual ke HTML Canvas dan mengembalikan Data URL PNG
@@ -19,7 +26,11 @@ export function exportStandingsToImage(
   const headerHeight = 160;
   const padding = 30;
   const totalRows = Math.min(participations.length, 32);
-  const height = headerHeight + totalRows * rowHeight + padding * 2 + 50;
+
+  // Ambil hanya warna deck yang ada di tabel hasil
+  const usedColors = getUsedDeckColors(participations, totalRows);
+  const legendHeight = usedColors.length > 0 ? 32 : 0;
+  const height = headerHeight + totalRows * rowHeight + padding * 2 + legendHeight + 40;
 
   canvas.width = width;
   canvas.height = height;
@@ -59,7 +70,7 @@ export function exportStandingsToImage(
   ctx.font = 'bold 12px monospace';
   ctx.fillText('RANK', padding + 15, tableY + 22);
   ctx.fillText('NAMA PEMAIN', padding + 80, tableY + 22);
-  ctx.fillText('DECK & WARNA', padding + 340, tableY + 22);
+  ctx.fillText('DECK', padding + 340, tableY + 22);
   ctx.fillText('PTS', padding + 620, tableY + 22);
   ctx.fillText('W - L', padding + 690, tableY + 22);
   ctx.fillText('OMW%', padding + 780, tableY + 22);
@@ -67,9 +78,14 @@ export function exportStandingsToImage(
 
   // Rows
   let currentY = tableY + 36;
+  const deckColStartX = padding + 340;
+  const maxColWidth = 260; // Dari x=370 ke kolom PTS di x=650
+
   participations.slice(0, totalRows).forEach((p, idx) => {
+    const rowBg = idx % 2 === 0 ? '#131d31' : '#0f172a';
+
     // Alternating row background
-    ctx.fillStyle = idx % 2 === 0 ? '#131d31' : '#0f172a';
+    ctx.fillStyle = rowBg;
     ctx.fillRect(padding, currentY, width - padding * 2, rowHeight);
 
     // Top 3 accent border
@@ -88,13 +104,66 @@ export function exportStandingsToImage(
     ctx.fillStyle = '#f8fafc';
     ctx.fillText(p.name.length > 24 ? p.name.substring(0, 22) + '...' : p.name, padding + 80, currentY + 27);
 
-    // Deck & Color
+    // Deck & Color Dots
     ctx.font = '13px sans-serif';
-    ctx.fillStyle = p.deckName ? '#38bdf8' : '#64748b';
-    const deckText = p.deckName
-      ? `${p.deckName} [${(p.deckColors || []).join('/')}]`
-      : 'Belum diisi';
-    ctx.fillText(deckText.length > 30 ? deckText.substring(0, 28) + '...' : deckText, padding + 340, currentY + 27);
+    if (p.deckName && p.deckName.trim().length > 0) {
+      const colors = (p.deckColors || []).filter((c) =>
+        OFFICIAL_DECK_COLORS.includes(c as DeckColor)
+      ) as DeckColor[];
+
+      const r = 7;
+      const step = r * 1.5; // ~25% overlap (center distance = 10.5px)
+      const dotsWidth = colors.length > 0 ? r * 2 + (colors.length - 1) * step : 0;
+      const gap = colors.length > 0 ? 8 : 0;
+      const maxTextWidth = Math.max(40, maxColWidth - dotsWidth - gap);
+
+      const truncatedName = truncateTextToWidth(
+        (str) => ctx.measureText(str).width,
+        p.deckName.trim(),
+        maxTextWidth
+      );
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText(truncatedName, deckColStartX, currentY + 27);
+
+      if (colors.length > 0) {
+        const textWidth = ctx.measureText(truncatedName).width;
+        let dotCenterX = deckColStartX + textWidth + gap + r;
+        const dotCenterY = currentY + 22; // vertically center in 44px row
+
+        colors.forEach((c) => {
+          const hex = DECK_COLOR_HEX[c] || '#94A3B8';
+
+          // Background ring matching row background
+          ctx.beginPath();
+          ctx.arc(dotCenterX, dotCenterY, r + 1.5, 0, Math.PI * 2);
+          ctx.fillStyle = rowBg;
+          ctx.fill();
+
+          // Circle dot
+          ctx.beginPath();
+          ctx.arc(dotCenterX, dotCenterY, r, 0, Math.PI * 2);
+          ctx.fillStyle = hex;
+          ctx.fill();
+
+          // Contrast borders
+          if (c === 'Hitam') {
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#94A3B8';
+            ctx.stroke();
+          } else if (c === 'Putih') {
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#CBD5E1';
+            ctx.stroke();
+          }
+
+          dotCenterX += step;
+        });
+      }
+    } else {
+      ctx.fillStyle = '#64748b';
+      ctx.fillText('Belum diisi', deckColStartX, currentY + 27);
+    }
 
     // Points
     ctx.font = 'bold 15px monospace';
@@ -116,6 +185,47 @@ export function exportStandingsToImage(
 
     currentY += rowHeight;
   });
+
+  // Legenda warna deck di atas footer (hanya jika ada warna yang dipakai)
+  if (usedColors.length > 0) {
+    const legendY = currentY + 18;
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillStyle = '#94a3b8';
+    const labelText = 'Warna deck:';
+    ctx.fillText(labelText, padding, legendY);
+
+    let legendX = padding + ctx.measureText(labelText).width + 12;
+    const dotR = 5;
+
+    usedColors.forEach((color) => {
+      const hex = DECK_COLOR_HEX[color] || '#94A3B8';
+
+      // Dot
+      ctx.beginPath();
+      ctx.arc(legendX + dotR, legendY - 4, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = hex;
+      ctx.fill();
+
+      if (color === 'Hitam') {
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#94A3B8';
+        ctx.stroke();
+      } else if (color === 'Putih') {
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#CBD5E1';
+        ctx.stroke();
+      }
+
+      // Color Name
+      ctx.font = '11px sans-serif';
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillText(color, legendX + dotR * 2 + 5, legendY);
+
+      legendX += dotR * 2 + 5 + ctx.measureText(color).width + 14;
+    });
+
+    currentY += legendHeight;
+  }
 
   // Footer
   ctx.fillStyle = '#64748b';
