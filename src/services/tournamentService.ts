@@ -16,6 +16,7 @@ import { db } from '../firebaseConfig';
 import { Tournament, TournamentFormat, TournamentPlayer, PlayerStatus } from '../types';
 import { calculateSwissRounds, generateJoinCode } from '../utils/swissLogic';
 import { recordAuditLog } from './authService';
+import { executeCascadeTournamentDeletion } from './tournamentCleanupService';
 
 export interface CreateTournamentParams {
   name: string;
@@ -129,24 +130,16 @@ export async function getAllTournaments(): Promise<Tournament[]> {
 }
 
 /**
- * Menghapus turnamen oleh Admin
+ * Menghapus turnamen oleh Admin secara berantai (cascade):
+ * matches -> rounds -> players -> participations -> tournaments/{tid}
  */
 export async function deleteTournament(
   tid: string,
   tournamentName: string,
-  admin: { uid: string; name: string }
-): Promise<void> {
-  const tournamentRef = doc(db, 'tournaments', tid);
-  await deleteDoc(tournamentRef);
-
-  await recordAuditLog(
-    admin.uid,
-    admin.name,
-    'TOURNAMENT_DELETED',
-    `tournaments/${tid}`,
-    tournamentName,
-    'DELETED'
-  );
+  admin: { uid: string; name: string },
+  onProgress?: (deleted: number, total: number) => void
+) {
+  return executeCascadeTournamentDeletion(tid, tournamentName, admin, onProgress);
 }
 
 /**

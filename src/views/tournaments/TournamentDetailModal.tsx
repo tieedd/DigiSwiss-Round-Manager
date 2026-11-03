@@ -28,6 +28,7 @@ import { FinalStandingsCard } from '../history/FinalStandingsCard';
 import { generateStandingsText } from '../../utils/deckExportLogic';
 import { getTournamentParticipations } from '../../services/participationService';
 import { copyTextNative } from '../../services/nativeBridge';
+import { useToast } from '../../context/ToastContext';
 import {
   Swords,
   Calendar,
@@ -44,7 +45,9 @@ import {
   Check,
   ShieldAlert,
   ArrowRight,
-  Timer
+  Timer,
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
 
 interface TournamentDetailModalProps {
@@ -102,9 +105,13 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
   const [startWarningMessage, setStartWarningMessage] = useState('');
   const [startLoading, setStartLoading] = useState(false);
 
-  // Admin Delete Tournament Reauth
+  const { success: showToastSuccess } = useToast();
+
+  // Admin Delete Tournament Reauth & Progress
   const [deleteReauthOpen, setDeleteReauthOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState<{ deleted: number; total: number } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [auditLogModalOpen, setAuditLogModalOpen] = useState(false);
 
   // Player action loading
@@ -275,16 +282,30 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
   const handleConfirmDelete = async () => {
     if (!currentUser || !userProfile) return;
     setDeleteLoading(true);
+    setDeleteError(null);
+    setDeleteProgress({ deleted: 0, total: 0 });
     try {
-      await deleteTournament(tournament.id, tournament.name, {
-        uid: currentUser.uid,
-        name: userProfile.displayName || userProfile.username,
-      });
+      const result = await deleteTournament(
+        tournament.id,
+        tournament.name,
+        {
+          uid: currentUser.uid,
+          name: userProfile.displayName || userProfile.username,
+        },
+        (deleted, total) => {
+          setDeleteProgress({ deleted, total });
+        }
+      );
       setDeleteReauthOpen(false);
+      setDeleteProgress(null);
+      showToastSuccess(
+        `Turnamen dan seluruh datanya (${result.totalDeleted} dokumen) berhasil dihapus.`
+      );
       if (onTournamentDeleted) onTournamentDeleted();
       onClose();
     } catch (err: any) {
-      alert(err.message || 'Gagal menghapus turnamen.');
+      console.error('Gagal menghapus turnamen:', err);
+      setDeleteError(err.message || 'Gagal menghapus turnamen. Silakan coba lagi.');
     } finally {
       setDeleteLoading(false);
     }
@@ -734,11 +755,65 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
       {/* Reauth Modal untuk Hapus Turnamen (Admin) */}
       <ReauthModal
         isOpen={deleteReauthOpen}
-        onClose={() => setDeleteReauthOpen(false)}
+        onClose={() => {
+          if (!deleteLoading) setDeleteReauthOpen(false);
+        }}
         onSuccess={handleConfirmDelete}
         actionTitle="Konfirmasi Hapus Turnamen"
-        actionDescription={`Masukkan password admin Anda untuk menghapus turnamen "${tournament.name}". Aksi ini bersifat permanen.`}
+        actionDescription="Menghapus turnamen juga menghapus seluruh hasil, klasemen, dan deck yang tercatat. Statistik dan riwayat pemain akan ikut berubah. Tindakan ini tidak dapat dibatalkan."
       />
+
+      {/* Indikator Progres Hapus Turnamen / Galat Coba Lagi */}
+      {(deleteLoading || deleteError) && (
+        <div className="fixed inset-0 z-50 bg-dark-bg/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <Card variant="surface" className="max-w-md w-full p-4 flex flex-col gap-3 border border-dark-border shadow-xl">
+            {deleteLoading ? (
+              <div className="flex flex-col items-center justify-center py-4 text-center gap-3">
+                <RefreshCw size={28} className="animate-spin text-status-red" />
+                <div className="flex flex-col gap-1">
+                  <span className="font-semibold text-body text-dark-text">
+                    Menghapus data turnamen...
+                  </span>
+                  <span className="text-caption text-dark-muted font-mono">
+                    {deleteProgress && deleteProgress.total > 0
+                      ? `${deleteProgress.deleted} dari ${deleteProgress.total} dokumen`
+                      : 'Menyiapkan dokumen turnamen...'}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div className="flex items-start gap-2.5 text-status-red">
+                  <AlertCircle size={20} className="flex-shrink-0 mt-0.5" />
+                  <div className="flex flex-col gap-1 text-caption">
+                    <strong className="text-body font-semibold">Gagal Menghapus Turnamen</strong>
+                    <span className="text-dark-muted">{deleteError}</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-dark-border">
+                  <Button
+                    variant="secondary"
+                    className="!min-h-[36px] !text-caption"
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeleteProgress(null);
+                    }}
+                  >
+                    Batal
+                  </Button>
+                  <Button
+                    variant="danger"
+                    className="!min-h-[36px] !text-caption"
+                    onClick={handleConfirmDelete}
+                  >
+                    Coba Lagi
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
 
       {/* Log Audit Keamanan Turnamen */}
       <TournamentAuditLogModal

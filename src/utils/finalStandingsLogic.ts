@@ -153,3 +153,7 @@ export function setCachedStandings(tournamentId: string, data: Participation[]):
 export function invalidateStandingsCache(tournamentId: string): void {
   standingsSessionCache.delete(tournamentId);
 }
+
+export function clearAllStandingsCache(): void {
+  standingsSessionCache.clear();
+}

@@ -2,15 +2,22 @@ name: Build APK
 
 # Simpan file ini sebagai: .github/workflows/build-apk.yml
 #
-# ATURAN NOMOR VERSI (format MAYOR.MINOR.PATCH, contoh 1.2.3):
-#   a. Perbaikan bug  -> PATCH naik       (1.0.4 -> 1.0.5)
-#   b. Fitur baru     -> MINOR naik, PATCH kembali 0   (1.0.5 -> 1.1.0)
-#   c. Perubahan besar (jarang) -> MAYOR naik          (1.4.2 -> 2.0.0)
-# Jenis update dibaca dari PESAN COMMIT (awalan di depan pesan):
-#   fix: ...   atau pesan lain apa pun   -> perbaikan bug
-#   feat: ...  atau  fitur: ...  atau mengandung [fitur] -> fitur baru
-#   feat!: ... atau  major: ...          -> perubahan besar
-# Jika beberapa commit sekaligus, jenis TERTINGGI yang dipakai (besar > fitur > perbaikan).
+# ATURAN NOMOR VERSI (format MAYOR.MINOR.PATCH, contoh 1.4.0):
+#   PATCH naik (1.4.0 -> 1.4.1) : perbaikan bug atau penyempurnaan fitur (kecil)
+#   MINOR naik (1.4.0 -> 1.5.0) : ada penambahan fitur, ATAU perbaikan/perubahan yang banyak
+#   MAYOR naik (1.4.0 -> 2.0.0) : perubahan besar yang jarang terjadi
+#
+# Jenis update dibaca dari PESAN COMMIT sejak rilis terakhir:
+#   fix: / improve: / refactor: / chore: / pesan lain apa pun -> PATCH
+#   feat: / fitur: / mengandung [fitur] atau [minor]          -> MINOR
+#   feat!: / major: / mengandung [major]                      -> MAYOR
+# "Banyak" (otomatis MINOR) bila salah satu terpenuhi sejak rilis terakhir:
+#   - 5 commit atau lebih berawalan fix: / perbaiki
+#   - 800 baris kode atau lebih berubah, atau 25 file atau lebih berubah
+#     (file kunci dependensi, dokumentasi .md, dan hasil build tidak dihitung)
+#   Angka ambang ada di bagian atas skrip "Hitung nomor versi" dan bisa diubah.
+# Tanda [patch] pada salah satu pesan membatalkan aturan "banyak" (tetapi tidak membatalkan feat:).
+# Jika beberapa jenis muncul bersamaan, yang tertinggi dipakai (MAYOR > MINOR > PATCH).
 # Untuk memaksa jenis tertentu: Actions > Build APK > Run workflow > pilih "jenis_update".
 
 on:
@@ -24,14 +31,14 @@ on:
   workflow_dispatch:
     inputs:
       jenis_update:
-        description: 'Jenis update (otomatis = dibaca dari pesan commit)'
+        description: 'Jenis update (otomatis = dibaca dari pesan commit). patch: 1.4.0 -> 1.5.0, minor: 1.4.0 -> 1.5.0, major: 1.4.0 -> 2.0.0'
         type: choice
         default: otomatis
         options:
           - otomatis
-          - perbaikan
-          - fitur
-          - besar
+          - patch
+          - minor
+          - major
 
 permissions:
   contents: write
@@ -50,6 +57,7 @@ jobs:
     outputs:
       version: ${{ steps.hitung.outputs.version }}
       jenis: ${{ steps.hitung.outputs.jenis }}
+      alasan: ${{ steps.hitung.outputs.alasan }}
       prev_tag: ${{ steps.hitung.outputs.prev_tag }}
       skip: ${{ steps.hitung.outputs.skip }}
     steps:
@@ -66,6 +74,11 @@ jobs:
         run: |
           set -eu
 
+          # Ambang "perbaikan banyak" (ubah angka ini bila perlu)
+          BANYAK_COMMIT_FIX=5     # jumlah commit perbaikan sejak rilis terakhir
+          BANYAK_BARIS=800        # jumlah baris kode yang berubah (tambah + hapus)
+          BANYAK_FILE=25          # jumlah file yang berubah
+
           # Jika commit ini sudah punya tag rilis dan dipicu push (misalnya re-run), jangan rilis ulang
           TAG_DI_HEAD=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
           if [ -n "$TAG_DI_HEAD" ] && [ "$EVENT" = "push" ]; then
@@ -77,31 +90,46 @@ jobs:
 
           # Versi rilis terakhir (hanya tag berformat vX.Y.Z)
           PREV_TAG=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+          JUMLAH_FILE=0; JUMLAH_BARIS=0
           if [ -n "$PREV_TAG" ]; then
             BASE="${PREV_TAG#v}"
             MSGS=$(git log "${PREV_TAG}..HEAD" --pretty=%s)
+            # Ukuran perubahan (tanpa file kunci dependensi, dokumentasi, dan hasil build)
+            UKURAN=$(git diff --numstat "${PREV_TAG}" HEAD -- . \
+              ':(exclude)package-lock.json' ':(exclude)bun.lock' ':(exclude)*.md' \
+              ':(exclude)app/src/main/assets' ':(exclude)dist' | awk '$1!="-"{f++; b+=$1+$2} END{print f+0, b+0}')
+            JUMLAH_FILE=$(echo "$UKURAN" | cut -d' ' -f1)
+            JUMLAH_BARIS=$(echo "$UKURAN" | cut -d' ' -f2)
           else
             BASE="1.0.0"
             MSGS=$(git log --pretty=%s)
           fi
+          JUMLAH_FIX=$(printf '%s\n' "$MSGS" | grep -ciE '^(fix|hotfix|bugfix|perbaiki)(\([^)]*\))?[:! ]' || true)
           MAJOR=$(echo "$BASE" | cut -d. -f1)
           MINOR=$(echo "$BASE" | cut -d. -f2)
           PATCH=$(echo "$BASE" | cut -d. -f3)
 
-          # Tentukan jenis update
-          JENIS="perbaikan"
+          # Tentukan jenis update: patch (1.4.0 -> 1.4.1), minor (1.4.0 -> 1.5.0), major (1.4.0 -> 2.0.0)
+          JENIS="patch"
+          ALASAN="perbaikan bug atau penyempurnaan kecil"
           if [ -n "${INPUT_JENIS:-}" ] && [ "$INPUT_JENIS" != "otomatis" ]; then
-            JENIS="$INPUT_JENIS"
-          elif printf '%s\n' "$MSGS" | grep -qiE '^(major|breaking)|^[a-z]+(\([^)]*\))?!:'; then
-            JENIS="besar"
-          elif printf '%s\n' "$MSGS" | grep -qiE '^(feat|feature|fitur)(\([^)]*\))?[:!]|\[fitur\]'; then
-            JENIS="fitur"
+            JENIS="$INPUT_JENIS"; ALASAN="dipilih manual"
+          elif printf '%s\n' "$MSGS" | grep -qiE '\[major\]|^(major|breaking)|^[a-z]+(\([^)]*\))?!:'; then
+            JENIS="major"; ALASAN="perubahan besar"
+          elif printf '%s\n' "$MSGS" | grep -qiE '\[minor\]|^(feat|feature|fitur)(\([^)]*\))?[:!]|\[fitur\]'; then
+            JENIS="minor"; ALASAN="penambahan fitur"
+          elif printf '%s\n' "$MSGS" | grep -qiE '\[patch\]'; then
+            JENIS="patch"; ALASAN="ditandai [patch]"
+          elif [ "$JUMLAH_FIX" -ge "$BANYAK_COMMIT_FIX" ]; then
+            JENIS="minor"; ALASAN="perbaikan banyak (${JUMLAH_FIX} commit perbaikan)"
+          elif [ "$JUMLAH_BARIS" -ge "$BANYAK_BARIS" ] || [ "$JUMLAH_FILE" -ge "$BANYAK_FILE" ]; then
+            JENIS="minor"; ALASAN="perubahan banyak (${JUMLAH_FILE} file, ${JUMLAH_BARIS} baris)"
           fi
 
           # Naikkan nomor versi
           case "$JENIS" in
-            besar) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-            fitur) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
             *)     PATCH=$((PATCH + 1)) ;;
           esac
           VERSION="${MAJOR}.${MINOR}.${PATCH}"
@@ -112,11 +140,13 @@ jobs:
           fi
 
           echo "Versi sebelumnya : ${PREV_TAG:-belum ada}"
-          echo "Jenis update     : ${JENIS}"
+          echo "Jenis update     : ${JENIS} (${ALASAN})"
+          echo "Ukuran perubahan : ${JUMLAH_FIX} commit perbaikan, ${JUMLAH_FILE} file, ${JUMLAH_BARIS} baris"
           echo "Versi baru       : ${VERSION}"
           {
             echo "version=${VERSION}"
             echo "jenis=${JENIS}"
+            echo "alasan=${ALASAN}"
             echo "prev_tag=${PREV_TAG}"
           } >> "$GITHUB_OUTPUT"
 
@@ -132,6 +162,7 @@ jobs:
     env:
       APP_VERSION: ${{ needs.versi.outputs.version }}
       JENIS_UPDATE: ${{ needs.versi.outputs.jenis }}
+      ALASAN_UPDATE: ${{ needs.versi.outputs.alasan }}
       PREV_TAG: ${{ needs.versi.outputs.prev_tag }}
 
     steps:
@@ -167,7 +198,7 @@ jobs:
       #    versionCode memakai nomor run agar SELALU naik (syarat Android untuk update)
       - name: Atur nomor versi
         run: |
-          echo "Versi ${APP_VERSION} (${JENIS_UPDATE}), versionCode ${{ github.run_number }}"
+          echo "Versi ${APP_VERSION} (${JENIS_UPDATE}: ${ALASAN_UPDATE}), versionCode ${{ github.run_number }}"
           sed -i "s/export const CURRENT_APP_VERSION = '.*';/export const CURRENT_APP_VERSION = '${APP_VERSION}';/" src/services/versionService.ts
           sed -i "s/versionCode = [0-9]*/versionCode = ${{ github.run_number }}/" app/build.gradle.kts
           sed -i "s/versionName = \".*\"/versionName = \"${APP_VERSION}\"/" app/build.gradle.kts
@@ -223,12 +254,12 @@ jobs:
       - name: Susun catatan rilis
         run: |
           case "$JENIS_UPDATE" in
-            besar) LABEL="Pembaruan besar" ;;
-            fitur) LABEL="Fitur baru" ;;
-            *)     LABEL="Perbaikan bug" ;;
+            major) LABEL="Pembaruan besar" ;;
+            minor) LABEL="Penambahan fitur / perbaikan banyak" ;;
+            *)     LABEL="Perbaikan bug / penyempurnaan" ;;
           esac
           {
-            echo "**Jenis update:** ${LABEL}"
+            echo "**Jenis update:** ${LABEL} (${ALASAN_UPDATE})"
             echo
             echo "**Perubahan:**"
             if [ -n "$PREV_TAG" ]; then

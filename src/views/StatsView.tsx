@@ -12,6 +12,8 @@ import {
   AdminStatsSummary
 } from '../utils/statsLogic';
 import { DeckColorDots } from '../components/common/DeckColorDots';
+import { filterParticipationsByExistingTournaments } from '../utils/cascadeDeleteLogic';
+import { checkExistingTournaments } from '../services/tournamentCleanupService';
 import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { getAllTournaments, getOrganizerTournaments } from '../services/tournamentService';
@@ -51,7 +53,7 @@ export const StatsView: React.FC = () => {
     setErrorMsg(null);
     try {
       if (isAdmin) {
-        // Admin: Baca data pengguna, turnamen, dan sampel partisipasi terbaru (dibatasi limit pembacaan)
+        // Admin: Baca data pengguna, turnamen, dan sampel partisipasi terbaru
         const [users, allTournaments] = await Promise.all([
           getAllUsers(),
           getAllTournaments()
@@ -62,7 +64,11 @@ export const StatsView: React.FC = () => {
         const partsSnap = await getDocs(query(partsCol, orderBy('createdAt', 'desc'), limit(200)));
         const partsList = partsSnap.docs.map((d) => d.data() as Participation);
 
-        const summary = calculateAdminStats(users, allTournaments, partsList);
+        // Hanya sertakan partisipasi dari turnamen yang masih ada
+        const existingTournamentIds = new Set(allTournaments.map((t) => t.id));
+        const validPartsList = filterParticipationsByExistingTournaments(partsList, existingTournamentIds);
+
+        const summary = calculateAdminStats(users, allTournaments, validPartsList);
         setAdminStats(summary);
       } else if (isOrganizer) {
         // Organizer: Turnamen yang ia buat & seluruh partisipasi di turnamennya
@@ -73,7 +79,11 @@ export const StatsView: React.FC = () => {
         );
         const partsList = partsSnap.docs.map((d) => d.data() as Participation);
 
-        const summary = calculateOrganizerStats(orgTournaments, partsList);
+        // Hanya sertakan partisipasi dari turnamen yang masih ada
+        const existingTournamentIds = new Set(orgTournaments.map((t) => t.id));
+        const validPartsList = filterParticipationsByExistingTournaments(partsList, existingTournamentIds);
+
+        const summary = calculateOrganizerStats(orgTournaments, validPartsList);
         setOrganizerStats(summary);
       } else {
         // Player: Partisipasi miliknya
@@ -86,7 +96,12 @@ export const StatsView: React.FC = () => {
         const partsSnap = await getDocs(q);
         const partsList = partsSnap.docs.map((d) => d.data() as Participation);
 
-        const summary = calculatePlayerStats(partsList);
+        // Hanya sertakan partisipasi dari turnamen yang masih ada
+        const tourneyIds = partsList.map((p) => p.tournamentId).filter(Boolean);
+        const existingSet = await checkExistingTournaments(tourneyIds);
+        const validPartsList = filterParticipationsByExistingTournaments(partsList, existingSet);
+
+        const summary = calculatePlayerStats(validPartsList);
         setPlayerStats(summary);
       }
     } catch (err: any) {

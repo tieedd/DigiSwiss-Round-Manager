@@ -16,6 +16,8 @@ import { TournamentDetailModal } from './tournaments/TournamentDetailModal';
 import { DeckRegistrationModal } from './tournaments/DeckRegistrationModal';
 import { DeckColorDots } from '../components/common/DeckColorDots';
 import { countUnfilledDecks } from '../utils/finalStandingsLogic';
+import { filterParticipationsByExistingTournaments } from '../utils/cascadeDeleteLogic';
+import { checkExistingTournaments } from '../services/tournamentCleanupService';
 import {
   History,
   Search,
@@ -87,7 +89,12 @@ export const HistoryView: React.FC = () => {
         );
         const snap = await getDocs(q);
         const list = snap.docs.map((d) => d.data() as Participation);
-        setParticipations(list);
+
+        // Hanya sertakan partisipasi dari turnamen yang masih ada di sistem
+        const tourneyIds = list.map((p) => p.tournamentId).filter(Boolean);
+        const existingSet = await checkExistingTournaments(tourneyIds);
+        const validList = filterParticipationsByExistingTournaments(list, existingSet);
+        setParticipations(validList);
       }
     } catch (err: any) {
       console.error('Gagal mengambil riwayat:', err);

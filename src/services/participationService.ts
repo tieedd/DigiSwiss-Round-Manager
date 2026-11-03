@@ -19,6 +19,8 @@ import {
 } from '../types';
 import { calculateTournamentStandings } from '../utils/standingsLogic';
 import { recordAuditLog } from './authService';
+import { filterParticipationsByExistingTournaments } from '../utils/cascadeDeleteLogic';
+import { checkExistingTournaments } from './tournamentCleanupService';
 
 /**
  * Melakukan finalisasi hasil turnamen:
@@ -156,10 +158,14 @@ export async function getPlayerDeckHistory(uid: string): Promise<PlayerDeckHisto
   const q = query(partsCol, where('uid', '==', uid));
   const snap = await getDocs(q);
 
+  const rawList = snap.docs.map((d) => d.data() as Participation);
+  const tourneyIds = rawList.map((p) => p.tournamentId).filter(Boolean);
+  const existingSet = await checkExistingTournaments(tourneyIds);
+  const validList = filterParticipationsByExistingTournaments(rawList, existingSet);
+
   const historyMap = new Map<string, PlayerDeckHistory>();
 
-  snap.docs.forEach((d) => {
-    const data = d.data() as Participation;
+  validList.forEach((data) => {
     if (data.deckName && data.deckName.trim().length > 0 && Array.isArray(data.deckColors) && data.deckColors.length > 0) {
       const normalizedKey = data.deckName.trim().toLowerCase();
       if (!historyMap.has(normalizedKey)) {
