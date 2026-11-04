@@ -203,7 +203,8 @@ service cloud.firestore {
         allow update: if isCurrentUserActive() && (
           // Kasus Organizer Pemilik:
           // Hanya boleh mengubah pertandingan ronde aktif (currentRound) saat turnamen 'running',
-          // ATAU hanya mengubah field archived (untuk alur Revert Ronde)
+          // ATAU hanya mengubah field archived (untuk alur Revert Ronde),
+          // ATAU hanya mengubah field p1Id, p2Id, p1Name, p2Name saat running (penautan akun pemain manual)
           (
             get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid &&
             (
@@ -213,6 +214,11 @@ service cloud.firestore {
               )
               ||
               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['archived'])
+              ||
+              (
+                get(/databases/$(database)/documents/tournaments/$(tid)).data.status == 'running' &&
+                request.resource.data.diff(resource.data).affectedKeys().hasOnly(['p1Id', 'p2Id', 'p1Name', 'p2Name'])
+              )
             )
           )
           ||

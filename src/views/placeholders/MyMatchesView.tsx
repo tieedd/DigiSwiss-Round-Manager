@@ -3,25 +3,30 @@ import {
   Tournament,
   TournamentMatch,
   TournamentFormat,
-  MatchStatus,
-  Participation
+  PlayerStatus,
+  Participation,
 } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { EmptyState } from '../../components/common/EmptyState';
+import { getAllTournaments } from '../../services/tournamentService';
 import {
-  getAllTournaments
-} from '../../services/tournamentService';
-import {
-  getAllTournamentMatches,
   reportMatchScoreByPlayer,
   respondToReportedScore,
-  checkAndFinishTournamentIfComplete
+  checkAndFinishTournamentIfComplete,
 } from '../../services/roundService';
 import { calculateMatchPoints } from '../../utils/standingsLogic';
-import { collection, query, where, onSnapshot, getDocs } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDoc,
+  query,
+  where,
+  onSnapshot,
+  getDocs,
+} from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { DeckRegistrationModal } from '../tournaments/DeckRegistrationModal';
 import { DeckColorDots } from '../../components/common/DeckColorDots';
@@ -32,48 +37,143 @@ import {
   XCircle,
   AlertTriangle,
   Clock,
-  Trophy,
   RefreshCw,
-  HelpCircle,
   Layers,
-  Edit2
+  Edit2,
+  AlertCircle,
 } from 'lucide-react';
-import { getSessionTournament, setSessionTournament } from '../../utils/sessionStore';
+import {
+  getSessionTournament,
+  setSessionTournament,
+} from '../../utils/sessionStore';
 import { shouldShowNextRoundPause } from '../../utils/roundPauseLogic';
+import { resolvePlayerMatchState } from '../../utils/playerMatchStateLogic';
 
 export const MyMatchesView: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(() => getSessionTournament());
+  const [playerStatusMap, setPlayerStatusMap] = useState<Record<string, PlayerStatus>>({});
+  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(() =>
+    getSessionTournament()
+  );
   const [myMatches, setMyMatches] = useState<TournamentMatch[]>([]);
+  const [allTournamentMatches, setAllTournamentMatches] = useState<TournamentMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
+  const [snapshotRetryKey, setSnapshotRetryKey] = useState(0);
   const [myFinishedParticipation, setMyFinishedParticipation] = useState<Participation | null>(null);
   const [deckModalOpen, setDeckModalOpen] = useState(false);
   const [isWaitingNextRound, setIsWaitingNextRound] = useState(false);
   const [waitingNextRoundNum, setWaitingNextRoundNum] = useState(2);
 
-  // 1. Cari turnamen yang sedang aktif / baru selesai di mana pemain mungkin berpartisipasi
-  const fetchMyTournaments = async () => {
+  // Helper session cache untuk dokumen pemain
+  const getCachedPlayerStatus = (
+    tid: string,
+    uid: string
+  ): { cached: boolean; exists: boolean; status: PlayerStatus | null } => {
+    try {
+      const raw = sessionStorage.getItem(`my_player_doc_${tid}_${uid}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return { cached: true, exists: Boolean(parsed.exists), status: parsed.status || null };
+      }
+    } catch (_) {}
+    return { cached: false, exists: false, status: null };
+  };
+
+  const setCachedPlayerStatus = (
+    tid: string,
+    uid: string,
+    exists: boolean,
+    status: PlayerStatus | null
+  ) => {
+    try {
+      sessionStorage.setItem(
+        `my_player_doc_${tid}_${uid}`,
+        JSON.stringify({ exists, status })
+      );
+    } catch (_) {}
+  };
+
+  const clearSessionPlayerCache = () => {
+    try {
+      const keys = Object.keys(sessionStorage);
+      for (const k of keys) {
+        if (k.startsWith('my_player_doc_')) {
+          sessionStorage.removeItem(k);
+        }
+      }
+    } catch (_) {}
+  };
+
+  // 1. Cari turnamen yang HANYA diikuti oleh akun saat ini (maks 10 terbaru running / finished)
+  const fetchMyTournaments = async (forceRefresh = false) => {
     if (!currentUser) return;
+    if (forceRefresh) {
+      clearSessionPlayerCache();
+    }
     setLoading(true);
+    setSnapshotError(null);
     try {
       const all = await getAllTournaments();
-      // Prioritaskan turnamen berstatus running
-      const runningAndFinished = all.filter(
-        (t) => t.status === 'running' || t.status === 'finished'
-      );
-      setTournaments(runningAndFinished);
+      // Filter turnamen running atau finished, maksimal 10 terbaru
+      const candidateTournaments = all
+        .filter((t) => t.status === 'running' || t.status === 'finished')
+        .sort((a, b) => {
+          if (a.status === 'running' && b.status !== 'running') return -1;
+          if (b.status === 'running' && a.status !== 'running') return 1;
+          const tA = (a as any).createdAt?.seconds || 0;
+          const tB = (b as any).createdAt?.seconds || 0;
+          return tB - tA;
+        })
+        .slice(0, 10);
 
-      if (runningAndFinished.length > 0) {
+      const joinedList: Tournament[] = [];
+      const statusMap: Record<string, PlayerStatus> = {};
+
+      for (const t of candidateTournaments) {
+        const cached = getCachedPlayerStatus(t.id, currentUser.uid);
+        let exists = false;
+        let status: PlayerStatus | null = null;
+
+        if (cached.cached && !forceRefresh) {
+          exists = cached.exists;
+          status = cached.status;
+        } else {
+          try {
+            const pDocRef = doc(db, 'tournaments', t.id, 'players', currentUser.uid);
+            const pSnap = await getDoc(pDocRef);
+            exists = pSnap.exists();
+            if (exists) {
+              status = (pSnap.data()?.status as PlayerStatus) || 'waiting';
+            }
+            setCachedPlayerStatus(t.id, currentUser.uid, exists, status);
+          } catch (e) {
+            console.warn(`Gagal memeriksa peserta untuk turnamen ${t.id}:`, e);
+          }
+        }
+
+        if (exists && status) {
+          joinedList.push(t);
+          statusMap[t.id] = status;
+        }
+      }
+
+      setTournaments(joinedList);
+      setPlayerStatusMap(statusMap);
+
+      if (joinedList.length > 0) {
         const sessionTourney = getSessionTournament();
         const matched = sessionTourney
-          ? runningAndFinished.find((t) => t.id === sessionTourney.id)
+          ? joinedList.find((t) => t.id === sessionTourney.id)
           : null;
-        const chosen = matched || runningAndFinished[0];
+        const chosen = matched || joinedList[0];
         setSelectedTournament(chosen);
         setSessionTournament(chosen);
+      } else {
+        setSelectedTournament(null);
       }
     } catch (err) {
       console.error('Gagal memuat turnamen pemain:', err);
@@ -88,8 +188,13 @@ export const MyMatchesView: React.FC = () => {
 
   // 2. Pasang real-time listener onSnapshot pada turnamen yang dipilih
   useEffect(() => {
-    if (!selectedTournament || !currentUser) return;
+    if (!selectedTournament || !currentUser) {
+      setMyMatches([]);
+      setAllTournamentMatches([]);
+      return;
+    }
 
+    setSnapshotError(null);
     const matchesCol = collection(db, 'tournaments', selectedTournament.id, 'matches');
     const unsub = onSnapshot(
       matchesCol,
@@ -98,9 +203,16 @@ export const MyMatchesView: React.FC = () => {
         const totalRounds = selectedTournament.totalRounds || 3;
         const currentRoundMatches: TournamentMatch[] = [];
         let nextRoundExists = false;
+        const allMatches: TournamentMatch[] = [];
+        const matchesList: TournamentMatch[] = [];
 
         snapshot.forEach((docSnap) => {
-          const m = docSnap.data() as TournamentMatch;
+          const m = {
+            id: docSnap.id,
+            ...(docSnap.data() as TournamentMatch),
+          };
+          allMatches.push(m);
+
           if (!m.archived) {
             if (m.round === currentRound) {
               currentRoundMatches.push(m);
@@ -109,6 +221,7 @@ export const MyMatchesView: React.FC = () => {
               nextRoundExists = true;
             }
           }
+
           // Filter hanya pertandingan yang melibatkan currentUser.uid
           if (m.p1Id === currentUser.uid || m.p2Id === currentUser.uid) {
             matchesList.push({
@@ -128,14 +241,27 @@ export const MyMatchesView: React.FC = () => {
         // Urutkan ronde terbaru di paling atas
         matchesList.sort((a, b) => b.round - a.round);
         setMyMatches(matchesList);
+        setAllTournamentMatches(allMatches);
+        setSnapshotError(null);
       },
-      (error) => {
+      (error: any) => {
         console.error('Snapshot error pada pertandingan pemain:', error);
+        const code = error?.code || '';
+        const msg = error?.message || '';
+        if (
+          code === 'permission-denied' ||
+          msg.includes('permission-denied') ||
+          msg.includes('insufficient permissions')
+        ) {
+          setSnapshotError('Akses ke data pertandingan ditolak.');
+        } else {
+          setSnapshotError('Gagal memuat data pertandingan secara langsung. Silakan coba lagi.');
+        }
       }
     );
 
     return () => unsub();
-  }, [selectedTournament?.id, currentUser?.uid]);
+  }, [selectedTournament?.id, currentUser?.uid, snapshotRetryKey]);
 
   // Muat status partisipasi pemain untuk turnamen finished
   const fetchMyParticipationForFinished = async () => {
@@ -213,7 +339,6 @@ export const MyMatchesView: React.FC = () => {
       await respondToReportedScore(selectedTournament.id, match.id, approve, currentUser.uid);
 
       if (approve) {
-        // Cek jika seluruh pertandingan di ronde selesai
         const totalRounds = selectedTournament.totalRounds || 3;
         await checkAndFinishTournamentIfComplete(
           selectedTournament.id,
@@ -238,6 +363,19 @@ export const MyMatchesView: React.FC = () => {
     }
   };
 
+  const currentPlayerStatus: PlayerStatus | null =
+    selectedTournament && playerStatusMap[selectedTournament.id]
+      ? playerStatusMap[selectedTournament.id]
+      : null;
+
+  const currentMatchState = resolvePlayerMatchState(
+    currentPlayerStatus,
+    selectedTournament?.totalRounds || 3,
+    allTournamentMatches,
+    currentUser?.uid,
+    userProfile?.displayName || userProfile?.username || ''
+  );
+
   return (
     <div className="flex flex-col gap-4">
       {/* Header */}
@@ -254,15 +392,36 @@ export const MyMatchesView: React.FC = () => {
         <Button
           variant="secondary"
           className="!min-h-[36px] !px-2.5 !text-caption"
-          onClick={fetchMyTournaments}
+          onClick={() => fetchMyTournaments(true)}
           icon={<RefreshCw size={15} className={loading ? 'animate-spin' : ''} />}
         />
       </div>
 
+      {/* Banner Galat Aksi Skor */}
       {actionError && (
         <div className="p-3 bg-status-red/10 border border-status-red/30 rounded-card text-caption text-status-red flex items-start gap-2">
           <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
           <span>{actionError}</span>
+        </div>
+      )}
+
+      {/* Banner Galat Snapshot Real-time dengan Tombol Coba Lagi */}
+      {snapshotError && (
+        <div className="p-3 bg-status-red/10 border border-status-red/30 rounded-card text-caption text-status-red flex items-center justify-between gap-2 shadow-sm animate-fade-in">
+          <div className="flex items-start gap-2">
+            <AlertCircle size={16} className="flex-shrink-0 mt-0.5 text-status-red" />
+            <span>{snapshotError}</span>
+          </div>
+          <Button
+            variant="secondary"
+            className="!min-h-[30px] !px-2.5 !text-[11px] flex-shrink-0"
+            onClick={() => {
+              setSnapshotError(null);
+              setSnapshotRetryKey((k) => k + 1);
+            }}
+          >
+            Coba Lagi
+          </Button>
         </div>
       )}
 
@@ -274,7 +433,7 @@ export const MyMatchesView: React.FC = () => {
         <Card variant="surface" className="my-2">
           <EmptyState
             icon={Swords}
-            message="Belum ada turnamen aktif yang Anda ikuti saat ini. Daftarkan diri Anda di menu Turnamen."
+            message="Belum ada turnamen aktif yang Anda ikuti. Daftarkan diri Anda di menu Turnamen."
           />
         </Card>
       ) : (
@@ -313,13 +472,20 @@ export const MyMatchesView: React.FC = () => {
                   {selectedTournament.format}
                 </span>
               </div>
-              <p className="text-caption text-dark-muted">
-                Status:{' '}
-                <strong className={selectedTournament.status === 'running' ? 'text-status-green' : 'text-dark-text'}>
-                  {selectedTournament.status === 'running' ? 'Sedang Berjalan' : 'Selesai'}
-                </strong>{' '}
-                • Total: {selectedTournament.totalRounds || 3} Ronde
-              </p>
+              <div className="flex items-center justify-between text-caption text-dark-muted">
+                <span>
+                  Status:{' '}
+                  <strong className={selectedTournament.status === 'running' ? 'text-status-green' : 'text-dark-text'}>
+                    {selectedTournament.status === 'running' ? 'Sedang Berjalan' : 'Selesai'}
+                  </strong>{' '}
+                  • Total: {selectedTournament.totalRounds || 3} Ronde
+                </span>
+                {currentPlayerStatus && (
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-dark-surface border border-dark-border">
+                    Status: <strong className="text-dark-text capitalize">{currentPlayerStatus}</strong>
+                  </span>
+                )}
+              </div>
             </Card>
           )}
 
@@ -377,12 +543,12 @@ export const MyMatchesView: React.FC = () => {
             </div>
           )}
 
-          {/* Daftar Pertandingan Pemain */}
+          {/* Daftar Pertandingan Pemain atau Pesan Keadaan Spesifik */}
           {myMatches.length === 0 ? (
             <Card variant="surface" className="my-2">
               <EmptyState
                 icon={Swords}
-                message="Anda belum memiliki pertandingan yang dijadwalkan pada turnamen ini. Tunggu organizer membuat pairing ronde."
+                message={currentMatchState.message}
               />
             </Card>
           ) : (
@@ -414,7 +580,7 @@ export const MyMatchesView: React.FC = () => {
                           Ronde {match.round}
                         </span>
                         <span className="text-caption text-dark-muted font-mono">
-                          {isBye ? '• BYE' : `• Meja #${match.table}`}
+                          {isBye ? '• BYE (menang otomatis)' : `• Meja #${match.table}`}
                         </span>
                       </div>
                       <StatusBadge
@@ -448,7 +614,7 @@ export const MyMatchesView: React.FC = () => {
                       <div>
                         <span className="text-caption text-dark-muted block">Lawan Anda:</span>
                         <span className="text-title font-semibold text-dark-text">
-                          {isBye ? 'BYE (Tanpa Lawan)' : oppName}
+                          {isBye ? 'BYE (menang otomatis)' : oppName}
                         </span>
                       </div>
 
@@ -475,7 +641,7 @@ export const MyMatchesView: React.FC = () => {
                     {/* Kontrol Interaktif Sesuai Status */}
                     {isBye ? (
                       <div className="p-2.5 rounded bg-accent/10 border border-accent/20 text-caption text-accent font-medium text-center">
-                        Pertandingan BYE otomatis menang (+3 Poin).
+                        Pertandingan BYE (menang otomatis) (+3 Poin).
                       </div>
                     ) : (isLoadingAction || (match as any).hasPendingWrite) && match.status !== 'confirmed' ? (
                       <div className="p-3 rounded bg-accent/10 border border-accent/30 text-caption text-accent flex items-center gap-2">
@@ -556,7 +722,6 @@ export const MyMatchesView: React.FC = () => {
                     ) : match.status === 'awaiting' ? (
                       // 2. Status AWAITING
                       isReporter ? (
-                        // Kasus A: Saya yang melaporkan skor
                         <div className="p-3 rounded bg-status-yellow/10 border border-status-yellow/30 text-caption text-status-yellow flex items-start gap-2">
                           <Clock size={16} className="flex-shrink-0 mt-0.5" />
                           <div>
@@ -567,7 +732,6 @@ export const MyMatchesView: React.FC = () => {
                           </div>
                         </div>
                       ) : (
-                        // Kasus B: Lawan yang melaporkan skor -> Saya mengonfirmasi / menolak
                         <div className="flex flex-col gap-2 pt-2 border-t border-dark-border">
                           <div className="p-2.5 rounded bg-accent/10 border border-accent/20 text-caption text-dark-text">
                             <strong>{oppName}</strong> melaporkan skor pertandingan:{' '}
