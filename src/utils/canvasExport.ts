@@ -1,34 +1,113 @@
-import { Participation } from '../types';
+import type { Participation } from '../types/index.ts';
+import type { DeckColor } from './deckExportLogic.ts';
 import {
-  DeckColor,
   DECK_COLOR_HEX,
   OFFICIAL_DECK_COLORS,
   getUsedDeckColors,
   truncateTextToWidth
-} from './deckExportLogic';
+} from './deckExportLogic.ts';
+
+export interface ExportStandingsImageOptions {
+  tournamentName: string;
+  tournamentDate: string;
+  format: string;
+  participations: Participation[];
+  organizerName?: string;
+  location?: string;
+}
+
+/**
+ * Format baris Organizer dan Lokasi dengan pemotongan proporsional elipsis "…"
+ * jika melebihi batas piksel kartu (maxWidth).
+ */
+export function formatOrganizerLocationLine(
+  organizerName: string | undefined | null,
+  location: string | undefined | null,
+  maxWidth: number,
+  measureWidth: (str: string) => number
+): string {
+  const org = organizerName && organizerName.trim() ? organizerName.trim() : '-';
+  const loc = location && location.trim() ? location.trim() : '-';
+
+  const fullLine = `Organizer: ${org}  |  Lokasi: ${loc}`;
+  if (measureWidth(fullLine) <= maxWidth) {
+    return fullLine;
+  }
+
+  // Pendekkan nama organizer dan lokasi secara proporsional dengan elipsis "…"
+  let trimmedOrg = org;
+  let trimmedLoc = loc;
+
+  while (
+    measureWidth(`Organizer: ${trimmedOrg}  |  Lokasi: ${trimmedLoc}`) > maxWidth
+  ) {
+    if (trimmedOrg.length <= 2 && trimmedLoc.length <= 2) {
+      break;
+    }
+    // Kurangi dari string yang lebih panjang
+    if (trimmedOrg.length >= trimmedLoc.length && trimmedOrg.length > 2) {
+      trimmedOrg = trimmedOrg.endsWith('…')
+        ? trimmedOrg.slice(0, -2) + '…'
+        : trimmedOrg.slice(0, -1) + '…';
+    } else if (trimmedLoc.length > 2) {
+      trimmedLoc = trimmedLoc.endsWith('…')
+        ? trimmedLoc.slice(0, -2) + '…'
+        : trimmedLoc.slice(0, -1) + '…';
+    } else {
+      break;
+    }
+  }
+
+  return `Organizer: ${trimmedOrg}  |  Lokasi: ${trimmedLoc}`;
+}
 
 /**
  * Merender kartu hasil akhir turnamen secara visual ke HTML Canvas dan mengembalikan Data URL PNG
  */
 export function exportStandingsToImage(
-  tournamentName: string,
-  tournamentDate: string,
-  format: string,
-  participations: Participation[]
+  nameOrOptions: string | ExportStandingsImageOptions,
+  tournamentDate?: string,
+  format?: string,
+  participations?: Participation[],
+  organizerName?: string,
+  location?: string
 ): string | null {
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
 
+  let tName = '';
+  let tDate = '';
+  let tFormat = '';
+  let parts: Participation[] = [];
+  let orgName: string | undefined;
+  let locName: string | undefined;
+
+  if (typeof nameOrOptions === 'object' && nameOrOptions !== null) {
+    tName = nameOrOptions.tournamentName;
+    tDate = nameOrOptions.tournamentDate;
+    tFormat = nameOrOptions.format;
+    parts = nameOrOptions.participations || [];
+    orgName = nameOrOptions.organizerName;
+    locName = nameOrOptions.location;
+  } else {
+    tName = nameOrOptions || '';
+    tDate = tournamentDate || '';
+    tFormat = format || '';
+    parts = participations || [];
+    orgName = organizerName;
+    locName = location;
+  }
+
   const width = 1000;
   const rowHeight = 44;
-  const headerHeight = 160;
+  const headerHeight = 185;
   const padding = 30;
-  const totalRows = Math.min(participations.length, 32);
+  const totalRows = Math.min(parts.length, 32);
 
   // Ambil hanya warna deck yang ada di tabel hasil
-  const usedColors = getUsedDeckColors(participations, totalRows);
+  const usedColors = getUsedDeckColors(parts, totalRows);
   const legendHeight = usedColors.length > 0 ? 32 : 0;
   const height = headerHeight + totalRows * rowHeight + padding * 2 + legendHeight + 40;
 
@@ -36,7 +115,7 @@ export function exportStandingsToImage(
   canvas.height = height;
 
   // Background
-  ctx.fillStyle = '#0f172a'; // slate-900
+  ctx.fillStyle = '#0f172a'; // slate-900 (tetap palet gelap)
   ctx.fillRect(0, 0, width, height);
 
   // Decorative header gradient
@@ -49,19 +128,30 @@ export function exportStandingsToImage(
   // Title
   ctx.fillStyle = '#f8fafc';
   ctx.font = 'bold 28px sans-serif';
-  ctx.fillText(`HASIL AKHIR: ${tournamentName.toUpperCase()}`, padding, 60);
+  ctx.fillText(`HASIL AKHIR: ${tName.toUpperCase()}`, padding, 60);
 
   // Subtitle
   ctx.fillStyle = '#94a3b8';
   ctx.font = '14px sans-serif';
   ctx.fillText(
-    `Tanggal: ${tournamentDate}  |  Format: ${format}  |  Total Peserta: ${participations.length} Pemain`,
+    `Tanggal: ${tDate}  |  Format: ${tFormat}  |  Total Peserta: ${parts.length} Pemain`,
     padding,
     90
   );
 
-  // Table Header Background
-  const tableY = 125;
+  // Baris Baru: Organizer dan Lokasi (Bold 15px, #E2E8F0)
+  ctx.font = 'bold 15px sans-serif';
+  ctx.fillStyle = '#e2e8f0';
+  const orgLocLine = formatOrganizerLocationLine(
+    orgName,
+    locName,
+    width - padding * 2,
+    (str) => ctx.measureText(str).width
+  );
+  ctx.fillText(orgLocLine, padding, 118);
+
+  // Table Header Background (digeser ~25px ke tableY = 150)
+  const tableY = 150;
   ctx.fillStyle = '#1e293b'; // slate-800
   ctx.fillRect(padding, tableY, width - padding * 2, 36);
 
@@ -78,10 +168,11 @@ export function exportStandingsToImage(
 
   // Rows
   let currentY = tableY + 36;
+
   const deckColStartX = padding + 340;
   const maxColWidth = 260; // Dari x=370 ke kolom PTS di x=650
 
-  participations.slice(0, totalRows).forEach((p, idx) => {
+  parts.slice(0, totalRows).forEach((p, idx) => {
     const rowBg = idx % 2 === 0 ? '#131d31' : '#0f172a';
 
     // Alternating row background

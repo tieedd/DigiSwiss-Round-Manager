@@ -9,9 +9,11 @@ import { getClockOffset } from '../services/authService';
 interface AuthContextType {
   currentUser: User | null;
   userProfile: UserProfile | null;
+  hasPin: boolean | null;
   loading: boolean;
   clockOffset: number;
   refreshProfile: () => Promise<void>;
+  refreshPinStatus: () => Promise<void>;
   logout: () => Promise<void>;
   adminInactivityWarning: boolean;
   adminInactivityCountdown: number;
@@ -21,9 +23,11 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   currentUser: null,
   userProfile: null,
+  hasPin: null,
   loading: true,
   clockOffset: 0,
   refreshProfile: async () => {},
+  refreshPinStatus: async () => {},
   logout: async () => {},
   adminInactivityWarning: false,
   adminInactivityCountdown: 60,
@@ -35,6 +39,7 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [hasPin, setHasPin] = useState<boolean | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [clockOffset, setClockOffsetState] = useState<number>(0);
 
@@ -50,9 +55,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await signOut(auth);
       setCurrentUser(null);
       setUserProfile(null);
+      setHasPin(null);
       setAdminInactivityWarning(false);
     } catch (err) {
       console.error('Galat saat keluar:', err);
+    }
+  }, []);
+
+  const refreshPinStatus = useCallback(async () => {
+    if (!auth.currentUser) {
+      setHasPin(null);
+      return;
+    }
+    try {
+      const snap = await getDoc(doc(db, 'userPins', auth.currentUser.uid));
+      setHasPin(snap.exists() && Boolean(snap.data()?.hash));
+    } catch (e) {
+      console.warn('Gagal memverifikasi status PIN:', e);
     }
   }, []);
 
@@ -127,6 +146,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Inisialisasi awal Auth State & Bootstrap Admin Utama
   useEffect(() => {
     let unsubscribeProfileSnapshot: (() => void) | null = null;
+    let unsubscribePinSnapshot: (() => void) | null = null;
 
     const initAuth = async () => {
       try {
@@ -140,6 +160,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (unsubscribeProfileSnapshot) {
           unsubscribeProfileSnapshot();
           unsubscribeProfileSnapshot = null;
+        }
+        if (unsubscribePinSnapshot) {
+          unsubscribePinSnapshot();
+          unsubscribePinSnapshot = null;
         }
 
         if (user) {
@@ -169,9 +193,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setLoading(false);
             }
           );
+
+          // Pantau keberadaan PIN secara real-time
+          const pinDocRef = doc(db, 'userPins', user.uid);
+          unsubscribePinSnapshot = onSnapshot(
+            pinDocRef,
+            (pinSnap) => {
+              setHasPin(pinSnap.exists() && Boolean(pinSnap.data()?.hash));
+            },
+            (pinError) => {
+              console.warn('Snapshot PIN warning:', pinError);
+              setHasPin(false);
+            }
+          );
         } else {
           setCurrentUser(null);
           setUserProfile(null);
+          setHasPin(null);
           setLoading(false);
         }
       });
@@ -179,6 +217,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return () => {
         unsubscribeAuth();
         if (unsubscribeProfileSnapshot) unsubscribeProfileSnapshot();
+        if (unsubscribePinSnapshot) unsubscribePinSnapshot();
       };
     };
 
@@ -190,9 +229,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         currentUser,
         userProfile,
+        hasPin,
         loading,
         clockOffset,
         refreshProfile,
+        refreshPinStatus,
         logout,
         adminInactivityWarning,
         adminInactivityCountdown,

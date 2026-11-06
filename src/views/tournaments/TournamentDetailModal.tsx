@@ -84,7 +84,14 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
     try {
       const participations = await getTournamentParticipations(tournament.id);
       if (participations.length > 0) {
-        const text = generateStandingsText(participations);
+        const text = generateStandingsText({
+          tournamentName: tournament.name,
+          tournamentDate: tournament.date,
+          format: tournament.format,
+          participations,
+          organizerName: tournament.organizerName,
+          location: tournament.location
+        });
         const res = await copyTextNative(text);
         if (res.ok) {
           setCopiedStandings(true);

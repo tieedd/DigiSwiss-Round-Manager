@@ -8,12 +8,12 @@ export default {
     extend: {
       colors: {
         dark: {
-          bg: '#0B0F14',
-          surface: '#121821',
-          'surface-high': '#1A2230',
-          border: '#232C3A',
-          text: '#E8EDF3',
-          muted: '#8B97A8',
+          bg: 'rgb(var(--c-dark-bg) / <alpha-value>)',
+          surface: 'rgb(var(--c-dark-surface) / <alpha-value>)',
+          'surface-high': 'rgb(var(--c-dark-surface-high) / <alpha-value>)',
+          border: 'rgb(var(--c-dark-border) / <alpha-value>)',
+          text: 'rgb(var(--c-dark-text) / <alpha-value>)',
+          muted: 'rgb(var(--c-dark-muted) / <alpha-value>)',
         },
         accent: {
           DEFAULT: '#FF8A1F',

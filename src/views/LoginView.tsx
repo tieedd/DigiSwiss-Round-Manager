@@ -5,6 +5,7 @@ import { Input } from '../components/common/Input';
 import { loginUser, registerUser, getRateLimitStatus } from '../services/authService';
 import { getBootstrapError, BootstrapError } from '../services/bootstrapService';
 import { LogIn, UserPlus, Eye, EyeOff, ShieldAlert, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { ThemeToggle } from '../components/common/ThemeToggle';
 
 export const LoginView: React.FC = () => {
   const [tab, setTab] = useState<'login' | 'register'>('login');
@@ -102,7 +103,10 @@ export const LoginView: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-dark-bg text-dark-text flex flex-col justify-center px-4 py-8 safe-top safe-bottom">
+    <div className="min-h-screen bg-dark-bg text-dark-text flex flex-col justify-center px-4 py-8 safe-top safe-bottom relative">
+      <div className="absolute top-4 right-4 z-10">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-sm mx-auto flex flex-col gap-4">
         {/* Header Logo & Identitas */}
         <div className="flex flex-col items-center text-center">

@@ -278,6 +278,32 @@ class NativeBridge(
     }
   }
 
+  @JavascriptInterface
+  fun setSystemBarsStyle(isDark: Boolean): String {
+    val result = JSONObject()
+    try {
+      activity.runOnUiThread {
+        val window = activity.window
+        val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+        insetsController.isAppearanceLightStatusBars = !isDark
+        insetsController.isAppearanceLightNavigationBars = !isDark
+
+        val statusBarColor = if (isDark) android.graphics.Color.parseColor("#0B0F14") else android.graphics.Color.parseColor("#F6F8FB")
+        val navBarColor = if (isDark) android.graphics.Color.parseColor("#0B0F14") else android.graphics.Color.parseColor("#F6F8FB")
+        window.statusBarColor = statusBarColor
+        window.navigationBarColor = navBarColor
+        webView.setBackgroundColor(statusBarColor)
+      }
+      result.put("ok", true)
+      return result.toString()
+    } catch (e: Exception) {
+      result.put("ok", false)
+      result.put("message", e.message ?: "Gagal mengubah gaya system bars")
+      return result.toString()
+    }
+  }
+
+
   companion object {
     const val REQUEST_CODE_STORAGE = 1001
 

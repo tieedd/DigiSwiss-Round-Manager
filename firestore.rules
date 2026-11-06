@@ -294,9 +294,46 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // 6. Koleksi PIN Keamanan Pengguna: userPins/{uid}
+    match /userPins/{uid} {
+      // Pembacaan: Hanya pemilik akun yang aktif
+      allow read: if isCurrentUserActive() && request.auth.uid == uid;
+
+      // Pembuatan: Hanya pemilik akun saat inisialisasi awal PIN 6 digit
+      allow create: if isCurrentUserActive() && request.auth.uid == uid &&
+        request.resource.data.algo == 'pbkdf2-sha256' &&
+        request.resource.data.iterations >= 150000 &&
+        request.resource.data.salt is string &&
+        request.resource.data.salt.size() >= 16 &&
+        request.resource.data.hash is string &&
+        request.resource.data.hash.size() >= 32 &&
+        request.resource.data.failedAttempts is int &&
+        request.resource.data.failedAttempts >= 0;
+
+      // Pembaruan:
+      // Kasus A: Hanya memperbarui hitungan gagal atau waktu kunci saat verifikasi
+      // Kasus B: Mengubah hash/salt dengan otentikasi baru/segar (< 300 detik)
+      allow update: if isCurrentUserActive() && request.auth.uid == uid && (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['failedAttempts', 'lockedUntil', 'updatedAt'])
+        ||
+        (
+          request.resource.data.algo == 'pbkdf2-sha256' &&
+          request.resource.data.iterations >= 150000 &&
+          request.resource.data.salt is string &&
+          request.resource.data.hash is string &&
+          request.auth.token.auth_time is int &&
+          (request.time.toMillis() / 1000 - request.auth.token.auth_time < 300)
+        )
+      );
+
+      // Penghapusan: Dilarang keras untuk siapa pun
+      allow delete: if false;
+    }
+
     // Default deny untuk seluruh dokumen lainnya
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
+

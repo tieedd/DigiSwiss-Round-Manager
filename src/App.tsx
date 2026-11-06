@@ -5,6 +5,7 @@ import { Header } from './components/common/Header';
 import { BottomNav, NavTabKey } from './components/common/BottomNav';
 import { LoginView } from './views/LoginView';
 import { ChangePasswordView } from './views/ChangePasswordView';
+import { CreatePinView } from './views/CreatePinView';
 import { TournamentsView } from './views/TournamentsView';
 import { StandingsView } from './views/StandingsView';
 import { ProfileView } from './views/ProfileView';
@@ -24,6 +25,7 @@ const MainAppContent: React.FC = () => {
   const {
     currentUser,
     userProfile,
+    hasPin,
     loading,
     adminInactivityWarning,
     adminInactivityCountdown,
@@ -43,8 +45,8 @@ const MainAppContent: React.FC = () => {
     }
   }, [userProfile?.role]);
 
-  // 1. Tampilkan layar loading sampai onAuthStateChanged menjawab
-  if (loading) {
+  // 1. Tampilkan layar loading sampai auth dan pemeriksaan PIN selesai
+  if (loading || (currentUser && userProfile && hasPin === null)) {
     return (
       <div className="min-h-screen bg-dark-bg text-dark-text flex flex-col items-center justify-center p-4">
         <div className="w-12 h-12 rounded-2xl bg-dark-surface border border-dark-border flex items-center justify-center text-accent font-bold text-xl mb-3 animate-pulse">
@@ -64,6 +66,11 @@ const MainAppContent: React.FC = () => {
   // 3. mustChangePassword = true memaksa layar "Ganti Password" sebelum halaman lain bisa dibuka
   if (userProfile.mustChangePassword) {
     return <ChangePasswordView forced={true} />;
+  }
+
+  // 4. Pengguna tanpa PIN keamanan wajib diarahkan ke layar pembuatan PIN 6-digit
+  if (hasPin === false) {
+    return <CreatePinView />;
   }
 
   const role: UserRole = userProfile.role || 'player';

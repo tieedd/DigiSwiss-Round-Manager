@@ -1,4 +1,4 @@
-import { sanitizeFileName, isAllowedApkUrl } from '../utils/nativeHelpers';
+import { sanitizeFileName, isAllowedApkUrl } from '../utils/nativeHelpers.ts';
 
 export { sanitizeFileName, isAllowedApkUrl };
 
@@ -10,6 +10,7 @@ declare global {
       downloadApk(url: string, fileName: string): string;
       installApk(): string;
       openExternal(url: string): string;
+      setSystemBarsStyle(isDark: boolean): string;
     };
   }
 }
@@ -262,3 +263,17 @@ export function openExternalNative(url: string): void {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 }
+
+/**
+ * Mengubah gaya icon dan warna status bar & navigation bar Android
+ */
+export function setSystemBarsStyleNative(isDark: boolean): void {
+  if (isNativeBridgeAvailable() && window.AndroidBridge && typeof window.AndroidBridge.setSystemBarsStyle === 'function') {
+    try {
+      window.AndroidBridge.setSystemBarsStyle(isDark);
+    } catch (e) {
+      console.warn('Gagal mengubah gaya system bars:', e);
+    }
+  }
+}
+

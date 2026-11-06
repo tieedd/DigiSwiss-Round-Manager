@@ -178,3 +178,24 @@ File APK debug akan dihasilkan pada direktori:
    - Tunggu hingga proses selesai, lalu ketuk **Buka** (*Open*).
 4. **Login Pertama Kali:**
    - Aplikasi siap digunakan! Akun Administrator Utama akan otomatis diinisialisasi saat pertama kali aplikasi dibuka.
+
+---
+
+## Catatan Arsitektur & Keamanan Terbaru
+
+### 1. Sistem PIN Keamanan 6-Digit (`userPins/{uid}`)
+- **Kriptografi Kuat di Sisi Klien:** PIN 6 digit di-hash secara aman menggunakan **Web Crypto API (`crypto.subtle`)** dengan algoritma **PBKDF2-SHA256**, iterasi minimum **150.000 kali**, dan salt acak kriptografis 16 byte.
+- **Pencegahan PIN Lemah:** Sistem secara otomatis menolak kombinasi angka yang mudah ditebak, termasuk 6 angka identik (`111111`), pola angka berurutan naik/turun (`123456`, `654321`), dan pola pengulangan 2/3 angka (`121212`, `123123`).
+- **Proteksi Brute-Force & Kunci Akun:** Jika salah memasukkan PIN sebanyak 5 kali berturut-turut, PIN akun dikunci secara otomatis selama **15 menit** dengan hitung mundur waktu tersisa.
+- **Perlindungan Dokumen Firestore:** Koleksi `userPins/{uid}` hanya dapat dibaca dan diperbarui oleh pemilik akun aktif yang bersangkutan. Administrator sekalipun tidak memiliki hak akses baca terhadap hash PIN pengguna lain, dan penghapusan dokumen PIN dilarang secara permanen (`allow delete: if false;`). Penggantian hash PIN pada Firestore rules mewajibkan token otentikasi segar (`auth_time < 300` detik).
+- **Catatan Pengembangan Masa Depan (Server-side Functions):** Karena aplikasi ini berjalan pada arsitektur Firebase Spark tanpa server, hashing dan verifikasi PIN saat ini dilakukan via Web Crypto API klien dengan perlindungan aturan Firestore. Di masa depan bila proyek di-upgrade ke paket Blaze dengan Cloud Functions, verifikasi PIN dapat dipindahkan sepenuhnya ke server-side callable function untuk memperketat pertahanan pertahanan berlapis.
+
+### 2. Tema Terang & Gelap (Light / Dark Mode)
+- **Token CSS Variables Berbasis Alpha:** Seluruh token warna latar belakang, permukaan, border, dan teks dialihkan ke variabel CSS RGB (`rgb(var(--c-nama) / <alpha-value>)`).
+- **Penyesuaian Aksesibilitas & Kontras:** Pada mode terang (`data-theme="light"`), warna teks aksen dan status otomatis disesuaikan ke tone yang lebih gelap (misal `#C25E00`, `#15803D`) untuk menjamin rasio kontras teks terhadap latar belakang $\ge 4.5:1$.
+- **Sinkronisasi Sistem Operasi & Android Native:** Mengikuti preferensi bawaan sistem (`prefers-color-scheme`) pada peluncuran pertama dan tersimpan di `localStorage`. Di lingkungan Android, `NativeBridge` secara dinamis mengatur ikon status bar dan navigation bar (`isAppearanceLightStatusBars`, `isAppearanceLightNavigationBars`).
+
+### 3. Ekspor Gambar & Teks (Organizer & Lokasi)
+- Format ekspor kartu gambar (PNG) dan teks ringkasan menyertakan informasi **Organizer** dan **Lokasi turnamen**.
+- Kanvas ekspor mengukur dimensi teks secara presisi (`measureText`) dan memotong teks panjang secara proporsional dengan elipsis (`…`) agar pas dalam batas kartu 1000px tanpa terpotong.
+

@@ -100,7 +100,7 @@ export function detectPreflightIssues(players: any[]): {
 export function planPlayerLink(
   tournamentId: string,
   manualPlayer: { id: string; name: string },
-  targetAccount: { id?: string; uid?: string; name: string; status?: string },
+  targetAccount: { id?: string; uid?: string | null; name: string; status?: string },
   allMatches: any[],
   actor: { uid: string; name: string }
 ): LinkOperation[] {

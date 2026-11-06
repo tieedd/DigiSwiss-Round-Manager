@@ -207,9 +207,9 @@ export const MyMatchesView: React.FC = () => {
         const matchesList: TournamentMatch[] = [];
 
         snapshot.forEach((docSnap) => {
-          const m = {
+          const m: TournamentMatch = {
+            ...(docSnap.data() as any),
             id: docSnap.id,
-            ...(docSnap.data() as TournamentMatch),
           };
           allMatches.push(m);
 

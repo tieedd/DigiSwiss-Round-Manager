@@ -110,6 +110,7 @@ export interface Participation {
   deckName?: string;
   deckColors?: DeckColor[];
   isManual?: boolean;
+  isDropped?: boolean;
   createdAt?: number;
   updatedAt?: number;
 }

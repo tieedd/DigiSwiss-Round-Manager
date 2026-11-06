@@ -69,10 +69,10 @@ export const DeckColorDots: React.FC<DeckColorDotsProps> = ({
           backgroundColor: hex,
           marginLeft: !isStandalone && index > 0 ? `-${overlapPx}px` : undefined,
           boxShadow: isHitam
-            ? '0 0 0 1.5px #1e293b, inset 0 0 0 1px #94A3B8'
+            ? '0 0 0 1.5px var(--c-dot-ring, #121821), inset 0 0 0 1px #94A3B8'
             : isPutih
-            ? '0 0 0 1.5px #1e293b, inset 0 0 0 1px #CBD5E1'
-            : '0 0 0 1.5px #1e293b',
+            ? '0 0 0 1.5px var(--c-dot-ring, #121821), inset 0 0 0 1px #CBD5E1'
+            : '0 0 0 1.5px var(--c-dot-ring, #121821)',
           zIndex: visibleColors.length - index
         }}
       />

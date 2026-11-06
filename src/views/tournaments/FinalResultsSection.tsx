@@ -122,12 +122,14 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
   // Ekspor Teks (Salin ke Clipboard & Download TXT)
   const handleCopyText = async () => {
     if (participations.length === 0) return;
-    const textContent = generateStandingsText(
-      tournament.name,
-      tournament.date,
-      tournament.format,
-      participations
-    );
+    const textContent = generateStandingsText({
+      tournamentName: tournament.name,
+      tournamentDate: tournament.date,
+      format: tournament.format,
+      participations,
+      organizerName: tournament.organizerName,
+      location: tournament.location
+    });
     const copyRes = await copyTextNative(textContent);
     if (copyRes.ok) {
       setCopySuccess(true);
@@ -148,12 +150,14 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
   // Ekspor Gambar (PNG via Canvas)
   const handleExportImage = async () => {
     if (participations.length === 0) return;
-    const dataUrl = exportStandingsToImage(
-      tournament.name,
-      tournament.date,
-      tournament.format,
-      participations
-    );
+    const dataUrl = exportStandingsToImage({
+      tournamentName: tournament.name,
+      tournamentDate: tournament.date,
+      format: tournament.format,
+      participations,
+      organizerName: tournament.organizerName,
+      location: tournament.location
+    });
     if (!dataUrl) return;
     const fileName = `Hasil-${tournament.name.replace(/\s+/g, '_')}.png`;
     const res = await saveFileNative(fileName, 'image/png', dataUrl);

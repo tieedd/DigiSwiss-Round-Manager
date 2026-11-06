@@ -2,6 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Default dark theme tokens */
+  --c-dark-bg: 11 15 20;           /* #0B0F14 */
+  --c-dark-surface: 18 24 33;      /* #121821 */
+  --c-dark-surface-high: 26 34 48; /* #1A2230 */
+  --c-dark-border: 35 44 58;       /* #232C3A */
+  --c-dark-text: 232 237 243;      /* #E8EDF3 */
+  --c-dark-muted: 139 151 168;     /* #8B97A8 */
+  --c-dot-ring: #121821;
+}
+
+:root[data-theme="light"] {
+  /* Light theme tokens */
+  --c-dark-bg: 246 248 251;        /* #F6F8FB */
+  --c-dark-surface: 255 255 255;   /* #FFFFFF */
+  --c-dark-surface-high: 238 242 247; /* #EEF2F7 */
+  --c-dark-border: 215 222 232;    /* #D7DEE8 */
+  --c-dark-text: 17 24 39;         /* #111827 */
+  --c-dark-muted: 91 103 120;      /* #5B6778 */
+  --c-dot-ring: #FFFFFF;
+}
+
+:root[data-theme="light"] html,
+:root[data-theme="light"] body {
+  background-color: #F6F8FB;
+  color: #111827;
+}
+
+/* Penyesuaian kontras teks mode terang (rasio kontras >= 4.5:1) */
+:root[data-theme="light"] .text-accent {
+  color: #C25E00 !important;
+}
+:root[data-theme="light"] .text-status-green {
+  color: #15803D !important;
+}
+:root[data-theme="light"] .text-status-yellow {
+  color: #A16207 !important;
+}
+:root[data-theme="light"] .text-status-red {
+  color: #B91C1C !important;
+}
+
 @layer base {
   body {
     @apply bg-dark-bg text-dark-text antialiased;

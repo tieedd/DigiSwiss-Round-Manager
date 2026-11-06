@@ -244,23 +244,68 @@ export function generateStandingsCsv(
   return [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
 }
 
+export interface GenerateStandingsTextOptions {
+  tournamentName: string;
+  tournamentDate: string;
+  format: string;
+  participations: Participation[];
+  organizerName?: string;
+  location?: string;
+}
+
 /**
  * Menghasilkan teks ringkasan berformat rapi untuk disalin / diekspor
  */
 export function generateStandingsText(
-  tournamentName: string,
-  tournamentDate: string,
-  format: string,
-  participations: Participation[]
+  nameOrOptions: string | GenerateStandingsTextOptions | Participation[],
+  tournamentDate?: string,
+  format?: string,
+  participations?: Participation[],
+  organizerName?: string,
+  location?: string
 ): string {
+  let tournamentName = '';
+  let dateStr = '';
+  let formatStr = '';
+  let parts: Participation[] = [];
+  let orgName: string | undefined;
+  let locName: string | undefined;
+
+  if (Array.isArray(nameOrOptions)) {
+    // Dipanggil sebagai generateStandingsText(participations)
+    parts = nameOrOptions;
+    if (parts.length > 0) {
+      tournamentName = parts[0].tournamentName || 'Turnamen';
+      dateStr = parts[0].date || '-';
+      formatStr = parts[0].format || '-';
+    }
+  } else if (typeof nameOrOptions === 'object' && nameOrOptions !== null) {
+    tournamentName = nameOrOptions.tournamentName;
+    dateStr = nameOrOptions.tournamentDate;
+    formatStr = nameOrOptions.format;
+    parts = nameOrOptions.participations || [];
+    orgName = nameOrOptions.organizerName;
+    locName = nameOrOptions.location;
+  } else {
+    tournamentName = nameOrOptions || '';
+    dateStr = tournamentDate || '';
+    formatStr = format || '';
+    parts = participations || [];
+    orgName = organizerName;
+    locName = location;
+  }
+
   const lines: string[] = [];
   lines.push(`=======================================================`);
   lines.push(`HASIL AKHIR TURNAMEN: ${tournamentName.toUpperCase()}`);
-  lines.push(`Tanggal: ${tournamentDate} | Format: ${format}`);
+  lines.push(`Tanggal: ${dateStr} | Format: ${formatStr}`);
+  lines.push(
+    `Organizer: ${orgName && orgName.trim() ? orgName.trim() : '-'} | Lokasi: ${locName && locName.trim() ? locName.trim() : '-'}`
+  );
   lines.push(`=======================================================`);
   lines.push(``);
 
-  for (const p of participations) {
+  for (const p of parts) {
     const medal = p.rank === 1 ? '🥇' : p.rank === 2 ? '🥈' : p.rank === 3 ? '🥉' : `#${p.rank}`;
     const emojiStr = formatDeckColorsEmoji(p.deckColors);
     const deckInfo = p.deckName
@@ -279,3 +324,4 @@ export function generateStandingsText(
   lines.push(`Digenerate oleh DigiSwiss-Round pada ${new Date().toLocaleString('id-ID')}`);
   return lines.join('\n');
 }
+

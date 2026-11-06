@@ -11,22 +11,49 @@ import { ChangePasswordView } from './ChangePasswordView';
 import { formatIndonesianDateTime } from '../utils/dateHelpers';
 import { recordAuditLog } from '../services/authService';
 import { CURRENT_APP_VERSION } from '../services/versionService';
+import { ThemeToggle } from '../components/common/ThemeToggle';
+import { useToast } from '../context/ToastContext';
+import { changeUserPin, resetUserPinWithPassword, verifyUserPin } from '../services/pinService';
+import { isWeakPin, isPinFormatValid } from '../utils/pinSecurityLogic';
 import {
   User,
   Shield,
+  ShieldCheck,
   Mail,
   KeyRound,
   LogOut,
   Clock,
   Edit3,
   CheckCircle2,
-  Calendar
+  Calendar,
+  Sun,
+  Lock,
+  AlertCircle,
+  RotateCcw
 } from 'lucide-react';
 
 export const ProfileView: React.FC = () => {
-  const { userProfile, currentUser, logout, clockOffset, refreshProfile } = useAuth();
+  const { userProfile, currentUser, hasPin, logout, clockOffset, refreshProfile } = useAuth();
+  const toast = useToast();
   const [isChangePassOpen, setIsChangePassOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+
+  // Verifikasi PIN sebelum Ganti Password
+  const [isVerifyPinOpen, setIsVerifyPinOpen] = useState(false);
+  const [verifyPinInput, setVerifyPinInput] = useState('');
+  const [verifyPinError, setVerifyPinError] = useState('');
+  const [verifyPinLoading, setVerifyPinLoading] = useState(false);
+
+  // Modal Ubah / Reset PIN
+  const [isChangePinOpen, setIsChangePinOpen] = useState(false);
+  const [pinModalMode, setPinModalMode] = useState<'change' | 'reset_with_password'>('change');
+  const [oldPin, setOldPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [confirmNewPin, setConfirmNewPin] = useState('');
+  const [accountPassword, setAccountPassword] = useState('');
+  const [changePinError, setChangePinError] = useState('');
+  const [changePinLoading, setChangePinLoading] = useState(false);
+  const [changePinSuccess, setChangePinSuccess] = useState('');
 
   // Modal Ubah Nama Tampilan
   const [isEditNameOpen, setIsEditNameOpen] = useState(false);
@@ -102,6 +129,117 @@ export const ProfileView: React.FC = () => {
       setNameLoading(false);
     }
   };
+
+  const handleVerifyPinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    if (verifyPinInput.length !== 6) {
+      setVerifyPinError('Masukkan lengkap 6 digit PIN.');
+      return;
+    }
+    setVerifyPinLoading(true);
+    setVerifyPinError('');
+    try {
+      const res = await verifyUserPin(currentUser.uid, verifyPinInput);
+      if (res.success) {
+        setIsVerifyPinOpen(false);
+        setVerifyPinInput('');
+        setIsChangePassOpen(true);
+      } else {
+        setVerifyPinError(res.error || 'PIN tidak valid.');
+      }
+    } catch (err: any) {
+      setVerifyPinError(err?.message || 'Gagal memverifikasi PIN.');
+    } finally {
+      setVerifyPinLoading(false);
+    }
+  };
+
+  const resetPinForm = () => {
+    setOldPin('');
+    setNewPin('');
+    setConfirmNewPin('');
+    setAccountPassword('');
+    setChangePinError('');
+    setChangePinSuccess('');
+  };
+
+  const handleChangePinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    setChangePinError('');
+    setChangePinSuccess('');
+
+    if (pinModalMode === 'change') {
+      if (!isPinFormatValid(oldPin)) {
+        setChangePinError('PIN lama harus terdiri dari 6 digit angka.');
+        return;
+      }
+      if (!isPinFormatValid(newPin)) {
+        setChangePinError('PIN baru harus terdiri dari 6 digit angka.');
+        return;
+      }
+      const weakCheck = isWeakPin(newPin);
+      if (weakCheck.isWeak) {
+        setChangePinError(weakCheck.reason || 'Kombinasi PIN baru terlalu lemah.');
+        return;
+      }
+      if (newPin !== confirmNewPin) {
+        setChangePinError('Konfirmasi PIN baru tidak cocok.');
+        return;
+      }
+
+      setChangePinLoading(true);
+      try {
+        await changeUserPin(currentUser.uid, oldPin, newPin);
+        setChangePinSuccess('PIN keamanan berhasil diperbarui.');
+        toast.success('Berhasil', 'PIN keamanan akun Anda berhasil diperbarui.');
+        setTimeout(() => {
+          setIsChangePinOpen(false);
+          resetPinForm();
+        }, 1200);
+      } catch (err: any) {
+        setChangePinError(err?.message || 'Gagal mengubah PIN.');
+      } finally {
+        setChangePinLoading(false);
+      }
+    } else {
+      // Reset dengan password akun
+      if (!accountPassword) {
+        setChangePinError('Password akun wajib diisi.');
+        return;
+      }
+      if (!isPinFormatValid(newPin)) {
+        setChangePinError('PIN baru harus terdiri dari 6 digit angka.');
+        return;
+      }
+      const weakCheck = isWeakPin(newPin);
+      if (weakCheck.isWeak) {
+        setChangePinError(weakCheck.reason || 'Kombinasi PIN baru terlalu lemah.');
+        return;
+      }
+      if (newPin !== confirmNewPin) {
+        setChangePinError('Konfirmasi PIN baru tidak cocok.');
+        return;
+      }
+
+      setChangePinLoading(true);
+      try {
+        await resetUserPinWithPassword(currentUser.uid, accountPassword, newPin);
+        setChangePinSuccess('PIN keamanan berhasil diatur ulang.');
+        toast.success('Berhasil', 'PIN keamanan berhasil diatur ulang.');
+        setTimeout(() => {
+          setIsChangePinOpen(false);
+          resetPinForm();
+        }, 1200);
+      } catch (err: any) {
+        setChangePinError(err?.message || 'Password salah atau gagal mereset PIN.');
+      } finally {
+        setChangePinLoading(false);
+      }
+    }
+  };
+
 
   return (
     <div className="flex flex-col gap-4">
@@ -183,6 +321,31 @@ export const ProfileView: React.FC = () => {
         </div>
       </Card>
 
+      {/* Pengaturan Tampilan & Tema */}
+      <div className="flex flex-col gap-2">
+        <h4 className="text-body font-semibold text-dark-text px-1">
+          Pengaturan Tampilan
+        </h4>
+
+        {/* Alihkan Tema Terang / Gelap */}
+        <Card variant="surface" className="flex items-center justify-between p-3.5">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-btn bg-dark-surface-high flex items-center justify-center text-accent">
+              <Sun size={18} className="stroke-[1.5]" />
+            </div>
+            <div>
+              <span className="text-body font-medium text-dark-text block">
+                Tema Aplikasi
+              </span>
+              <span className="text-caption text-dark-muted">
+                Pilih tampilan mode gelap atau terang
+              </span>
+            </div>
+          </div>
+          <ThemeToggle />
+        </Card>
+      </div>
+
       {/* Aksi Akun & Keamanan */}
       <div className="flex flex-col gap-2">
         <h4 className="text-body font-semibold text-dark-text px-1">
@@ -211,11 +374,52 @@ export const ProfileView: React.FC = () => {
           <span className="text-caption text-dark-muted">&rarr;</span>
         </Card>
 
-        {/* Ganti Password */}
+        {/* PIN Keamanan 6 Digit */}
         <Card
           variant="surface"
           className="cursor-pointer hover:border-dark-muted/40 transition-colors flex items-center justify-between p-3.5"
-          onClick={() => setIsChangePassOpen(true)}
+          onClick={() => {
+            setIsChangePinOpen(true);
+            setPinModalMode('change');
+            resetPinForm();
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-btn bg-dark-surface-high flex items-center justify-center text-accent">
+              <ShieldCheck size={18} className="stroke-[1.5]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-body font-medium text-dark-text block">
+                  PIN Keamanan
+                </span>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-status-green/10 text-status-green border border-status-green/30">
+                  Sudah diatur
+                </span>
+              </div>
+              <span className="text-caption text-dark-muted">
+                6-digit untuk proteksi tindakan penting
+              </span>
+            </div>
+          </div>
+          <span className="text-caption text-accent font-medium hover:underline">
+            Ubah PIN
+          </span>
+        </Card>
+
+        {/* Ganti Password (Wajib PIN jika aktif) */}
+        <Card
+          variant="surface"
+          className="cursor-pointer hover:border-dark-muted/40 transition-colors flex items-center justify-between p-3.5"
+          onClick={() => {
+            if (hasPin) {
+              setVerifyPinInput('');
+              setVerifyPinError('');
+              setIsVerifyPinOpen(true);
+            } else {
+              setIsChangePassOpen(true);
+            }
+          }}
         >
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-btn bg-dark-surface-high flex items-center justify-center text-accent">
@@ -226,7 +430,7 @@ export const ProfileView: React.FC = () => {
                 Ganti Password
               </span>
               <span className="text-caption text-dark-muted">
-                Perbarui sandi akun dengan standar keamanan
+                {hasPin ? 'Memerlukan verifikasi PIN 6-digit' : 'Perbarui sandi akun dengan standar keamanan'}
               </span>
             </div>
           </div>
@@ -318,6 +522,249 @@ export const ProfileView: React.FC = () => {
           onSuccess={() => setIsChangePassOpen(false)}
           onCancel={() => setIsChangePassOpen(false)}
         />
+      </BottomSheet>
+
+      {/* Bottom Sheet Verifikasi PIN sebelum Ubah Password */}
+      <BottomSheet
+        isOpen={isVerifyPinOpen}
+        onClose={() => {
+          setIsVerifyPinOpen(false);
+          setVerifyPinInput('');
+          setVerifyPinError('');
+        }}
+        title="Verifikasi PIN Keamanan"
+      >
+        <form onSubmit={handleVerifyPinSubmit} className="flex flex-col gap-4 py-2">
+          <p className="text-body text-dark-muted">
+            Masukkan 6 digit PIN keamanan akun Anda untuk membuka akses perubahan password.
+          </p>
+
+          <Input
+            label="6-Digit PIN Keamanan"
+            type="password"
+            inputMode="numeric"
+            maxLength={6}
+            placeholder="••••••"
+            value={verifyPinInput}
+            onChange={(e) => {
+              const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+              setVerifyPinInput(val);
+              if (verifyPinError) setVerifyPinError('');
+            }}
+            error={verifyPinError}
+            disabled={verifyPinLoading}
+            autoFocus
+          />
+
+          <div className="flex flex-col gap-2 mt-1">
+            <Button
+              variant="primary"
+              fullWidth
+              type="submit"
+              isLoading={verifyPinLoading}
+              disabled={verifyPinInput.length !== 6 || verifyPinLoading}
+            >
+              Verifikasi & Lanjut
+            </Button>
+            <Button
+              variant="secondary"
+              fullWidth
+              type="button"
+              onClick={() => {
+                setIsVerifyPinOpen(false);
+                setVerifyPinInput('');
+                setVerifyPinError('');
+              }}
+              disabled={verifyPinLoading}
+            >
+              Batal
+            </Button>
+          </div>
+        </form>
+      </BottomSheet>
+
+      {/* Bottom Sheet Ubah / Reset PIN Keamanan */}
+      <BottomSheet
+        isOpen={isChangePinOpen}
+        onClose={() => {
+          setIsChangePinOpen(false);
+          resetPinForm();
+        }}
+        title={pinModalMode === 'change' ? 'Ubah PIN Keamanan' : 'Reset PIN Keamanan'}
+      >
+        <form onSubmit={handleChangePinSubmit} className="flex flex-col gap-3 py-2">
+          {pinModalMode === 'change' ? (
+            <>
+              <p className="text-body text-dark-muted text-sm">
+                Masukkan PIN saat ini dan tentukan 6-digit PIN baru yang aman.
+              </p>
+
+              <Input
+                label="PIN Lama Saat Ini"
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="6 digit angka"
+                value={oldPin}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                  setOldPin(val);
+                  if (changePinError) setChangePinError('');
+                }}
+                disabled={changePinLoading}
+              />
+
+              <Input
+                label="PIN Baru"
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="6 digit angka"
+                value={newPin}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                  setNewPin(val);
+                  if (changePinError) setChangePinError('');
+                }}
+                disabled={changePinLoading}
+              />
+
+              <Input
+                label="Konfirmasi PIN Baru"
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="Ketik ulang PIN baru"
+                value={confirmNewPin}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                  setConfirmNewPin(val);
+                  if (changePinError) setChangePinError('');
+                }}
+                disabled={changePinLoading}
+              />
+
+              <div className="text-right">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPinModalMode('reset_with_password');
+                    setChangePinError('');
+                    setChangePinSuccess('');
+                  }}
+                  className="text-caption text-accent hover:underline"
+                >
+                  Lupa PIN lama?
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-body text-dark-muted text-sm">
+                Masukkan kata sandi (password) akun Anda untuk memverifikasi kepemilikan dan mengatur ulang PIN baru.
+              </p>
+
+              <Input
+                label="Password Akun Anda"
+                type="password"
+                placeholder="Masukkan kata sandi akun"
+                value={accountPassword}
+                onChange={(e) => {
+                  setAccountPassword(e.target.value);
+                  if (changePinError) setChangePinError('');
+                }}
+                disabled={changePinLoading}
+              />
+
+              <Input
+                label="PIN Baru"
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="6 digit angka"
+                value={newPin}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                  setNewPin(val);
+                  if (changePinError) setChangePinError('');
+                }}
+                disabled={changePinLoading}
+              />
+
+              <Input
+                label="Konfirmasi PIN Baru"
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="Ketik ulang PIN baru"
+                value={confirmNewPin}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                  setConfirmNewPin(val);
+                  if (changePinError) setChangePinError('');
+                }}
+                disabled={changePinLoading}
+              />
+
+              <div className="text-right">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPinModalMode('change');
+                    setChangePinError('');
+                    setChangePinSuccess('');
+                  }}
+                  className="text-caption text-accent hover:underline"
+                >
+                  Kembali ke Ubah PIN
+                </button>
+              </div>
+            </>
+          )}
+
+          {changePinError && (
+            <div className="p-3 bg-status-red/10 border border-status-red/30 rounded-btn flex items-start gap-2 text-caption text-status-red">
+              <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+              <span>{changePinError}</span>
+            </div>
+          )}
+
+          {changePinSuccess && (
+            <div className="p-3 bg-status-green/10 border border-status-green/30 rounded-btn flex items-center gap-2 text-caption text-status-green">
+              <CheckCircle2 size={16} />
+              <span>{changePinSuccess}</span>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2 mt-2">
+            <Button
+              variant="primary"
+              fullWidth
+              type="submit"
+              isLoading={changePinLoading}
+              disabled={
+                changePinLoading ||
+                newPin.length !== 6 ||
+                confirmNewPin.length !== 6 ||
+                (pinModalMode === 'change' ? oldPin.length !== 6 : !accountPassword)
+              }
+            >
+              {pinModalMode === 'change' ? 'Simpan PIN Baru' : 'Reset PIN Keamanan'}
+            </Button>
+            <Button
+              variant="secondary"
+              fullWidth
+              type="button"
+              onClick={() => {
+                setIsChangePinOpen(false);
+                resetPinForm();
+              }}
+              disabled={changePinLoading}
+            >
+              Batal
+            </Button>
+          </div>
+        </form>
       </BottomSheet>
 
       {/* Bottom Sheet Konfirmasi Logout yang Jelas */}
