@@ -79,8 +79,11 @@ export const ChangePasswordView: React.FC<ChangePasswordViewProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-dark-bg text-dark-text flex flex-col justify-center px-4 py-8 safe-top safe-bottom">
-      <div className="w-full max-w-sm mx-auto flex flex-col gap-4">
+    <div
+      className="bg-dark-bg text-dark-text flex flex-col justify-center px-4 page-pad-top page-pad-bottom overflow-y-auto"
+      style={{ minHeight: '100dvh' }}
+    >
+      <div className="w-full max-w-sm mx-auto flex flex-col gap-4 py-2">
         {/* Header Peringatan */}
         <div className="flex flex-col items-center text-center">
           <div className="w-12 h-12 rounded-full bg-status-yellow/10 text-status-yellow flex items-center justify-center mb-2">

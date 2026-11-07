@@ -103,11 +103,18 @@ export const LoginView: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-dark-bg text-dark-text flex flex-col justify-center px-4 py-8 safe-top safe-bottom relative">
-      <div className="absolute top-4 right-4 z-10">
+    <div
+      className="bg-dark-bg text-dark-text flex flex-col page-pad-top page-pad-bottom overflow-y-auto"
+      style={{ minHeight: '100dvh' }}
+    >
+      {/* Baris Atas dalam Alur Normal: Tombol Alih Tema */}
+      <div className="w-full max-w-sm mx-auto px-4 flex justify-end">
         <ThemeToggle />
       </div>
-      <div className="w-full max-w-sm mx-auto flex flex-col gap-4">
+
+      {/* Area Konten: Ditengahkan Vertikal dalam Sisa Ruang Layar */}
+      <div className="flex-1 flex flex-col justify-center px-4 py-2">
+        <div className="w-full max-w-sm mx-auto flex flex-col gap-4">
         {/* Header Logo & Identitas */}
         <div className="flex flex-col items-center text-center">
           <div className="w-14 h-14 rounded-2xl bg-dark-surface border border-dark-border flex items-center justify-center text-accent font-bold text-2xl mb-3 shadow-none">
@@ -341,6 +348,7 @@ export const LoginView: React.FC = () => {
             </form>
           )}
         </Card>
+      </div>
       </div>
     </div>
   );

@@ -9,8 +9,17 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, helperText, leftIcon, rightIcon, className = '', id, ...props }, ref) => {
+  ({ label, error, helperText, leftIcon, rightIcon, className = '', id, onFocus, ...props }, ref) => {
     const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
+
+    const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+      try {
+        e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (_) {}
+      if (onFocus) {
+        onFocus(e);
+      }
+    };
 
     return (
       <div className="w-full flex flex-col gap-1.5">
@@ -28,6 +37,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           <input
             id={inputId}
             ref={ref}
+            onFocus={handleFocus}
             className={`w-full min-h-[48px] px-3.5 bg-dark-surface text-dark-text border rounded-btn text-body placeholder:text-dark-muted/60 transition-colors duration-150 focus:outline-none focus:border-accent ${
               leftIcon ? 'pl-10' : ''
             } ${rightIcon ? 'pr-10' : ''} ${
