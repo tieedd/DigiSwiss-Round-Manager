@@ -57,7 +57,7 @@ test('Tahap 10 TES JEDA RONDE: shouldShowNextRoundPause mengembalikan true hanya
 test('Tahap 10 TES VALIDASI URL APK: isAllowedApkUrl memverifikasi protokol https dan host resmi GitHub', () => {
   // URL rilis GitHub valid
   assert.equal(
-    isAllowedApkUrl('https://github.com/tieedd/DigiSwiss-Round/releases/download/v1.0.1/app-release.apk'),
+    isAllowedApkUrl('https://github.com/tieedd/DigiSwiss-Round-Manager/releases/download/v1.0.1/app-release.apk'),
     true
   );
   assert.equal(
@@ -73,7 +73,7 @@ test('Tahap 10 TES VALIDASI URL APK: isAllowedApkUrl memverifikasi protokol http
 
   // Ditolak: protokol http biasa
   assert.equal(
-    isAllowedApkUrl('http://github.com/tieedd/DigiSwiss-Round/releases/download/v1.0.1/app-release.apk'),
+    isAllowedApkUrl('http://github.com/tieedd/DigiSwiss-Round-Manager/releases/download/v1.0.1/app-release.apk'),
     false
   );
 
@@ -89,11 +89,11 @@ test('Tahap 10 TES VALIDASI URL APK: isAllowedApkUrl memverifikasi protokol http
 
   // Ditolak: bukan rilis download atau bukan file .apk
   assert.equal(
-    isAllowedApkUrl('https://github.com/tieedd/DigiSwiss-Round/blob/main/app-release.apk'),
+    isAllowedApkUrl('https://github.com/tieedd/DigiSwiss-Round-Manager/blob/main/app-release.apk'),
     false
   );
   assert.equal(
-    isAllowedApkUrl('https://github.com/tieedd/DigiSwiss-Round/releases/download/v1.0.1/readme.txt'),
+    isAllowedApkUrl('https://github.com/tieedd/DigiSwiss-Round-Manager/releases/download/v1.0.1/readme.txt'),
     false
   );
 

@@ -108,7 +108,7 @@ export function compareVersions(versionA: string, versionB: string): number {
 }
 
 /**
- * Memeriksa versi rilis terbaru dari GitHub Releases repo DigiSwiss-Round.
+ * Memeriksa versi rilis terbaru dari GitHub Releases repo DigiSwiss-Round-Manager.
  * Menghemat panggilan GitHub API dengan cache localStorage 30 menit.
  * Gagal diam-diam jika perangkat sedang offline atau API tidak terjangkau.
  */

@@ -168,7 +168,7 @@ File APK debug akan dihasilkan pada direktori:
 ## Cara Memasang APK dari GitHub Releases
 
 1. **Unduh File APK:**
-   - Buka repositori GitHub aplikasi di browser ponsel Android Anda: [GitHub Releases](https://github.com/darryhafidh/digiswiss-round/releases).
+   - Buka repositori GitHub aplikasi di browser ponsel Android Anda: [GitHub Releases](https://github.com/tieedd/DigiSwiss-Round-Manager/releases).
    - Pada rilis versi terbaru (misalnya `v1.0.0`), unduh file `app-debug.apk` atau `DigiSwiss-Round.apk` yang tersedia di bagian **Assets**.
 2. **Aktifkan Izin Pemasangan:**
    - Jika ponsel memunculkan peringatan *"File ini mungkin berbahaya"* atau *"Ponsel Anda tidak diizinkan memasang aplikasi dari sumber ini"*, pilih **Setelan / Settings**.
