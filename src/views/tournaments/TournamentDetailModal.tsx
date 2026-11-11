@@ -54,7 +54,9 @@ import {
   RefreshCw,
   AlertCircle,
   Link2,
+  History,
 } from 'lucide-react';
+import { AddFromHistoryModal } from './AddFromHistoryModal';
 
 interface TournamentDetailModalProps {
   tournament: Tournament | null;
@@ -113,6 +115,9 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
   const [manualLoading, setManualLoading] = useState(false);
   const [manualError, setManualError] = useState('');
   const [manualDuplicateWarning, setManualDuplicateWarning] = useState<TournamentPlayer | null>(null);
+
+  // History Player Modal (Tambah dari Histori)
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
 
   // Link Manual Player state
   const [linkModalOpen, setLinkModalOpen] = useState(false);
@@ -596,15 +601,25 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
               </span>
             </span>
 
-            {isOrganizerOwner && isRegistration && (
-              <Button
-                variant="secondary"
-                className="!min-h-[32px] !px-2.5 !text-[11px]"
-                onClick={() => setManualModalOpen(true)}
-                icon={<UserPlus size={14} />}
-              >
-                + Peserta Manual
-              </Button>
+            {(isOrganizerOwner || isAdmin) && isRegistration && (
+              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                <Button
+                  variant="secondary"
+                  className="!min-h-[32px] !px-2.5 !text-[11px]"
+                  onClick={() => setHistoryModalOpen(true)}
+                  icon={<History size={14} />}
+                >
+                  Tambah dari Histori
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="!min-h-[32px] !px-2.5 !text-[11px]"
+                  onClick={() => setManualModalOpen(true)}
+                  icon={<UserPlus size={14} />}
+                >
+                  + Peserta Manual
+                </Button>
+              </div>
             )}
           </div>
 
@@ -838,6 +853,26 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
           </form>
         )}
       </BottomSheet>
+
+      {/* Modal Tambah Peserta dari Histori Turnamen */}
+      {(isOrganizerOwner || isAdmin) && isRegistration && (
+        <AddFromHistoryModal
+          isOpen={historyModalOpen}
+          onClose={() => setHistoryModalOpen(false)}
+          tournament={tournament}
+          currentPlayers={players}
+          organizerId={tournament.organizerId || currentUser?.uid || ''}
+          actor={{
+            uid: currentUser?.uid || '',
+            name: userProfile?.displayName || userProfile?.username || 'Organizer'
+          }}
+          onSuccess={async (count) => {
+            setActionMessage(`Berhasil menambahkan ${count} peserta dari histori turnamen.`);
+            await fetchPlayers();
+            if (onTournamentUpdated) onTournamentUpdated();
+          }}
+        />
+      )}
 
       {/* Bottom Sheet Konfirmasi Mulai Turnamen (dengan pemeriksaan preflight) */}
       <BottomSheet

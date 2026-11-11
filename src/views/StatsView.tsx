@@ -189,7 +189,7 @@ export const StatsView: React.FC = () => {
                       {playerStats.winRate}%
                     </span>
                     <span className="text-[10px] text-dark-muted mt-0.5 font-mono">
-                      {playerStats.totalWins}M - {playerStats.totalLosses}K Match
+                      {playerStats.totalWins}W - {playerStats.totalLosses}L Match
                     </span>
                   </Card>
 
@@ -298,7 +298,7 @@ export const StatsView: React.FC = () => {
                           </div>
                           <div className="flex items-center justify-between text-[10px] text-dark-muted font-mono pt-0.5">
                             <span>{d.count}x Turnamen</span>
-                            <span>{d.wins} Menang - {d.losses} Kalah</span>
+                            <span>{d.wins}W - {d.losses}L</span>
                           </div>
                         </div>
                       ))}

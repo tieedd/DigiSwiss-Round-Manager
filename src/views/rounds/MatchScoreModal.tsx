@@ -47,7 +47,7 @@ export const MatchScoreModal: React.FC<MatchScoreModalProps> = ({
         const validBO1 =
           (p1Score === 1 && p2Score === 0) || (p1Score === 0 && p2Score === 1);
         if (!validBO1) {
-          setError('Format BO1 hanya mengizinkan skor 1 - 0 atau 0 - 1 (Menang atau Kalah).');
+          setError('Format BO1 hanya mengizinkan skor 1 - 0 atau 0 - 1 (Win atau Lose).');
           return;
         }
       } else {
@@ -85,7 +85,7 @@ export const MatchScoreModal: React.FC<MatchScoreModalProps> = ({
           <Card variant="surface-high" className="text-center py-4">
             <p className="text-body font-semibold text-accent">{match.p1Name}</p>
             <p className="text-caption text-dark-muted mt-1">
-              Pertandingan BYE (Otomatis Menang {match.p1Score} - 0)
+              Pertandingan BYE (Otomatis Win {match.p1Score} - 0)
             </p>
           </Card>
         ) : (
@@ -104,7 +104,7 @@ export const MatchScoreModal: React.FC<MatchScoreModalProps> = ({
                         : 'border-dark-border bg-dark-surface text-dark-muted hover:text-dark-text'
                     }`}
                   >
-                    {match.p1Name} Menang (1 - 0)
+                    {match.p1Name} Win (1 - 0)
                   </button>
                   <button
                     type="button"
@@ -115,7 +115,7 @@ export const MatchScoreModal: React.FC<MatchScoreModalProps> = ({
                         : 'border-dark-border bg-dark-surface text-dark-muted hover:text-dark-text'
                     }`}
                   >
-                    {match.p2Name} Menang (0 - 1)
+                    {match.p2Name} Win (0 - 1)
                   </button>
                 </div>
               ) : (

@@ -102,7 +102,7 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
                   Peringkat #{participation.rank}
                 </span>
                 <span className="text-caption text-dark-muted font-mono">
-                  Total Poin: <strong className="text-accent">{participation.points}</strong> • Match: {participation.wins}M - {participation.losses}K
+                  Total Poin: <strong className="text-accent">{participation.points}</strong> • Match: {participation.wins}W - {participation.losses}L
                 </span>
               </div>
             </div>
@@ -186,7 +186,7 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
                 matches.map((m) => {
                   const isP1 = m.p1Id === participation.playerId;
                   const isBye = m.p2Id === null;
-                  const opponentName = isBye ? 'BYE (Menang Otomatis)' : isP1 ? m.p2Name : m.p1Name;
+                  const opponentName = isBye ? 'BYE (Win Otomatis)' : isP1 ? m.p2Name : m.p1Name;
                   const myScore = isP1 ? m.p1Score : m.p2Score;
                   const oppScore = isP1 ? m.p2Score : m.p1Score;
                   const isWin = isBye || myScore > oppScore;

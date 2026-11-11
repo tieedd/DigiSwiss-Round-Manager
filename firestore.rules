@@ -143,7 +143,7 @@ service cloud.firestore {
 
         // Pendaftaran:
         // A. Pemain mendaftar dirinya sendiri saat status turnamen 'registration' (pid == request.auth.uid, status awal 'waiting', manual false)
-        // B. Organizer pemilik turnamen mendaftarkan peserta manual (manual == true, uid == null, status == 'accepted')
+        // B. Organizer pemilik turnamen atau Admin mendaftarkan peserta (manual atau tambah dari histori) (status == 'accepted')
         allow create: if isCurrentUserActive() && (
           (
             pid == request.auth.uid &&
@@ -153,10 +153,13 @@ service cloud.firestore {
             request.resource.data.status == 'waiting'
           ) ||
           (
-            get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid &&
-            request.resource.data.manual == true &&
-            request.resource.data.uid == null &&
-            request.resource.data.status == 'accepted'
+            (get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid || isAdmin()) &&
+            get(/databases/$(database)/documents/tournaments/$(tid)).data.status == 'registration' &&
+            request.resource.data.status == 'accepted' &&
+            (
+              (request.resource.data.manual == true && request.resource.data.uid == null) ||
+              (request.resource.data.manual == false && request.resource.data.uid == pid)
+            )
           )
         );
 

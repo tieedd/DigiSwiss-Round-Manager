@@ -293,7 +293,7 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
               {/* Baris Bawah: W-L dan Tiebreaker */}
               <div className="pl-8 flex items-center justify-between text-[10px] font-mono text-dark-muted pt-0.5 border-t border-dark-border/40">
                 <span>
-                  {row.wins}M-{row.losses}K
+                  {row.wins}W-{row.losses}L
                 </span>
                 <span className="truncate">
                   OMW {row.omw.toFixed(1)}% &bull; GW {row.gw.toFixed(1)}% &bull; OGW {row.ogw.toFixed(1)}%

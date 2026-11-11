@@ -893,7 +893,7 @@ export const RoundsView: React.FC = () => {
                               {match.p2Name}
                             </span>
                             <span className="text-[11px] font-mono text-dark-muted">
-                              {isBye ? 'Otomatis Menang' : 'Pemain 2'}
+                              {isBye ? 'Otomatis Win' : 'Pemain 2'}
                             </span>
                           </div>
                         </div>

@@ -402,7 +402,7 @@ export const HistoryView: React.FC = () => {
                         {p.points} Pts
                       </span>
                       <span className="text-[11px] font-mono text-dark-muted">
-                        {p.wins}M - {p.losses}K
+                        {p.wins}W - {p.losses}L
                       </span>
                     </div>
                   </div>

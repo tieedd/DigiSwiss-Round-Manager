@@ -663,7 +663,7 @@ export const MyMatchesView: React.FC = () => {
                               className="min-h-[50px] rounded-btn border border-status-green/40 bg-status-green/10 text-status-green font-bold text-body hover:bg-status-green/20 transition-colors flex items-center justify-center gap-2 shadow-sm"
                             >
                               <CheckCircle2 size={18} />
-                              Menang (1 - 0)
+                              Win (1 - 0)
                             </button>
                             <button
                               type="button"
@@ -672,7 +672,7 @@ export const MyMatchesView: React.FC = () => {
                               className="min-h-[50px] rounded-btn border border-status-red/40 bg-status-red/10 text-status-red font-bold text-body hover:bg-status-red/20 transition-colors flex items-center justify-center gap-2 shadow-sm"
                             >
                               <XCircle size={18} />
-                              Kalah (0 - 1)
+                              Lose (0 - 1)
                             </button>
                           </div>
                         ) : (
@@ -683,7 +683,7 @@ export const MyMatchesView: React.FC = () => {
                               onClick={() => handleReportScore(match, 2, 0)}
                               className="min-h-[48px] rounded-btn border border-status-green/40 bg-status-green/10 text-status-green font-bold text-caption hover:bg-status-green/20 transition-colors flex flex-col items-center justify-center py-1.5"
                             >
-                              <span>Menang 2 - 0</span>
+                              <span>Win 2 - 0</span>
                               <span className="text-[10px] opacity-80">(3 Poin)</span>
                             </button>
                             <button
@@ -692,7 +692,7 @@ export const MyMatchesView: React.FC = () => {
                               onClick={() => handleReportScore(match, 2, 1)}
                               className="min-h-[48px] rounded-btn border border-status-green/40 bg-status-green/10 text-status-green font-bold text-caption hover:bg-status-green/20 transition-colors flex flex-col items-center justify-center py-1.5"
                             >
-                              <span>Menang 2 - 1</span>
+                              <span>Win 2 - 1</span>
                               <span className="text-[10px] opacity-80">(2 Poin)</span>
                             </button>
                             <button
@@ -701,7 +701,7 @@ export const MyMatchesView: React.FC = () => {
                               onClick={() => handleReportScore(match, 1, 2)}
                               className="min-h-[48px] rounded-btn border border-status-yellow/40 bg-status-yellow/10 text-status-yellow font-bold text-caption hover:bg-status-yellow/20 transition-colors flex flex-col items-center justify-center py-1.5"
                             >
-                              <span>Kalah 1 - 2</span>
+                              <span>Lose 1 - 2</span>
                               <span className="text-[10px] opacity-80">(1 Poin)</span>
                             </button>
                             <button
@@ -710,7 +710,7 @@ export const MyMatchesView: React.FC = () => {
                               onClick={() => handleReportScore(match, 0, 2)}
                               className="min-h-[48px] rounded-btn border border-status-red/40 bg-status-red/10 text-status-red font-bold text-caption hover:bg-status-red/20 transition-colors flex flex-col items-center justify-center py-1.5"
                             >
-                              <span>Kalah 0 - 2</span>
+                              <span>Lose 0 - 2</span>
                               <span className="text-[10px] opacity-80">(0 Poin)</span>
                             </button>
                           </div>

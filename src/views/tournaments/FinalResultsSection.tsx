@@ -348,7 +348,7 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
                             )}
                           </div>
                           <span className="text-caption text-dark-muted font-mono block">
-                            Poin: <strong className="text-accent">{p.points}</strong> • Match: {p.wins}M - {p.losses}K • OMW: {p.omw}%
+                            Poin: <strong className="text-accent">{p.points}</strong> • Match: {p.wins}W - {p.losses}L • OMW: {p.omw}%
                           </span>
                         </div>
                       </div>

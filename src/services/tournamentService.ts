@@ -13,10 +13,14 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { Tournament, TournamentFormat, TournamentPlayer, PlayerStatus } from '../types';
+import { Tournament, TournamentFormat, TournamentPlayer, PlayerStatus, Participation } from '../types';
 import { calculateSwissRounds, generateJoinCode } from '../utils/swissLogic';
 import { recordAuditLog } from './authService';
 import { executeCascadeTournamentDeletion } from './tournamentCleanupService';
+import {
+  HistoryPlayerCandidate,
+  preparePlayersToAdd
+} from '../utils/playerHistoryImportLogic';
 
 export interface CreateTournamentParams {
   name: string;
@@ -293,3 +297,78 @@ export async function dropPlayer(tid: string, pid: string): Promise<void> {
   const playerRef = doc(db, 'tournaments', tid, 'players', pid);
   await updateDoc(playerRef, { status: 'dropped' });
 }
+
+/**
+ * Mengambil seluruh partisipasi dari turnamen-turnamen milik organizer yang sedang login.
+ * Alur: Ambil turnamen milik organizer (organizerId) lalu participations per tournamentId.
+ * Memakai indeks yang sudah ada tanpa memerlukan indeks komposit baru.
+ */
+export async function fetchOrganizerPastParticipations(
+  organizerId: string
+): Promise<Participation[]> {
+  if (!organizerId) return [];
+  const orgTourneys = await getOrganizerTournaments(organizerId);
+  if (!orgTourneys || orgTourneys.length === 0) return [];
+
+  const partsCol = collection(db, 'participations');
+  const results = await Promise.all(
+    orgTourneys.map(async (t) => {
+      try {
+        const q = query(partsCol, where('tournamentId', '==', t.id));
+        const snap = await getDocs(q);
+        return snap.docs.map((d) => d.data() as Participation);
+      } catch (err) {
+        console.warn(`Gagal memuat partisipasi turnamen ${t.id}:`, err);
+        return [];
+      }
+    })
+  );
+
+  const allParts: Participation[] = [];
+  results.forEach((list) => allParts.push(...list));
+  return allParts;
+}
+
+/**
+ * Menambahkan sejumlah peserta dari histori ke turnamen yang masih berstatus registration.
+ * - Pemain berakun ditambahkan dengan uid aslinya, status accepted.
+ * - Pemain manual ditambahkan dengan ID berawalan m_, status accepted.
+ * - Dicatat ke log audit.
+ */
+export async function addPlayersFromHistory(
+  tid: string,
+  tournamentName: string,
+  candidates: HistoryPlayerCandidate[],
+  actor: { uid: string; name: string }
+): Promise<number> {
+  if (!candidates || candidates.length === 0) return 0;
+
+  const payloads = preparePlayersToAdd(candidates);
+  const batch = writeBatch(db);
+
+  payloads.forEach((p) => {
+    const playerRef = doc(db, 'tournaments', tid, 'players', p.id);
+    batch.set(playerRef, p);
+  });
+
+  await batch.commit();
+
+  // Catat ke log audit (non-blocking)
+  try {
+    const names = payloads.map((p) => p.name).join(', ');
+    await recordAuditLog(
+      actor.uid,
+      actor.name,
+      'ADD_PLAYERS_FROM_HISTORY',
+      `tournaments/${tid}/players`,
+      null,
+      `Menambahkan ${payloads.length} peserta dari histori (${names}) ke turnamen ${tournamentName}`,
+      tid
+    );
+  } catch (auditErr) {
+    console.warn('Gagal mencatat audit log tambah pemain histori:', auditErr);
+  }
+
+  return payloads.length;
+}
+

@@ -314,7 +314,7 @@ export const StandingsView: React.FC = () => {
                             )}
                           </div>
                           <span className="text-caption text-dark-muted font-mono block">
-                            Match: <strong className="text-dark-text">{s.matchWins}M - {s.matchLosses}K</strong>
+                            Match: <strong className="text-dark-text">{s.matchWins}W - {s.matchLosses}L</strong>
                             {' • '}
                             Game: {s.gamesWon} - {s.gamesLost}
                           </span>
