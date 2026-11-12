@@ -1,4 +1,6 @@
-import { isUpdateAvailable, compareVersions } from './versionService.ts';
+import { isUpdateAvailable, compareVersions, parseSemver } from './versionService.ts';
+import type { AppReleaseInfo } from './versionService.ts';
+import { constructReleaseDownloadUrl, isAllowedApkUrl } from '../utils/nativeHelpers.ts';
 import {
   fetchOtaManifestNative,
   getNativeVersionNative,
@@ -28,10 +30,48 @@ export interface UpdateDecision {
   hasUpdate: boolean;
   reason: string;
   manifest?: OtaManifest;
+  error?: boolean;
+}
+
+export interface UpdatePresentation {
+  visible: boolean;
+  latestVersion: string;
+  currentVersionLabel: string;
+  mode: UpdateMode;
+  downloadSource: string;
 }
 
 const OTA_VERSION_REGEX = /^\d+\.\d+\.\d+$/;
 const OTA_SHA256_REGEX = /^[0-9a-fA-F]{64}$/;
+
+function cleanSemverString(v?: string | null): string {
+  if (!v || typeof v !== 'string') return '';
+  const clean = v.trim().replace(/^[vV]/, '').trim();
+  return parseSemver(clean) ? clean : '';
+}
+
+export function getUpdateModeLabel(mode: UpdateMode): string {
+  if (mode === 'ota') return 'Pembaruan Web Cepat (OTA)';
+  if (mode === 'apk') return 'Pembaruan Aplikasi (Perlu APK Baru)';
+  return '';
+}
+
+function resolveApkDownloadUrl(
+  latestVersion: string,
+  releaseInfo?: Partial<AppReleaseInfo> | null
+): string {
+  const fallback = constructReleaseDownloadUrl(latestVersion);
+  if (
+    releaseInfo &&
+    !releaseInfo.error &&
+    releaseInfo.downloadUrl &&
+    isAllowedApkUrl(releaseInfo.downloadUrl) &&
+    cleanSemverString(releaseInfo.latestVersion) === latestVersion
+  ) {
+    return releaseInfo.downloadUrl;
+  }
+  return fallback;
+}
 
 /**
  * Fungsi murni untuk memeriksa apakah objek manifest OTA valid sesuai spesifikasi:
@@ -146,17 +186,176 @@ export function resolveUpdateMode(params: {
 }
 
 /**
+ * Satu sumber kebenaran murni untuk tampilan pembaruan (modal, banner, dan cek pembaruan manual).
+ */
+export function buildUpdatePresentation(params: {
+  releaseInfo?: Partial<AppReleaseInfo> | null;
+  decision?: Partial<UpdateDecision> | null;
+  currentWebVersion?: string | null;
+  nativeVersion?: string | null;
+}): UpdatePresentation {
+  const cleanWeb = cleanSemverString(params.currentWebVersion);
+  const cleanNative = cleanSemverString(params.nativeVersion || params.decision?.nativeVersion);
+
+  const validManifest =
+    params.decision?.manifest && isValidOtaManifest(params.decision.manifest)
+      ? {
+          version: cleanSemverString(params.decision.manifest.version),
+          bundle: String(params.decision.manifest.bundle).trim(),
+          sha256: String(params.decision.manifest.sha256).trim().toLowerCase(),
+          minNativeVersion:
+            cleanSemverString(params.decision.manifest.minNativeVersion) || '1.0'
+        }
+      : null;
+
+  const manifestVer = validManifest ? validManifest.version : '';
+  const releaseVer =
+    params.releaseInfo && !params.releaseInfo.error
+      ? cleanSemverString(params.releaseInfo.latestVersion)
+      : '';
+
+  let latestVersion = '';
+  if (manifestVer && releaseVer) {
+    latestVersion =
+      compareVersions(manifestVer, releaseVer) >= 0 ? manifestVer : releaseVer;
+  } else {
+    latestVersion = manifestVer || releaseVer;
+  }
+
+  if (!latestVersion) {
+    return {
+      visible: false,
+      latestVersion: '',
+      currentVersionLabel: cleanWeb,
+      mode: 'none',
+      downloadSource: ''
+    };
+  }
+
+  const manifestMatchesLatest = Boolean(
+    validManifest && compareVersions(validManifest.version, latestVersion) === 0
+  );
+  const webNeedsUpdate = cleanWeb ? isUpdateAvailable(latestVersion, cleanWeb) : true;
+  const nativeBelowMin = Boolean(
+    validManifest &&
+      manifestMatchesLatest &&
+      cleanNative &&
+      compareVersions(cleanNative, validManifest.minNativeVersion) < 0
+  );
+  const nativeSatisfiesMin = Boolean(
+    validManifest &&
+      cleanNative &&
+      compareVersions(cleanNative, validManifest.minNativeVersion) >= 0
+  );
+
+  // Mode OTA hanya jika manifest valid, sinkron dengan latestVersion, web lebih lama, dan native >= minNative
+  if (validManifest && manifestMatchesLatest && webNeedsUpdate && nativeSatisfiesMin) {
+    const visible = isUpdateAvailable(latestVersion, cleanWeb);
+    if (!visible) {
+      return {
+        visible: false,
+        latestVersion,
+        currentVersionLabel: cleanWeb,
+        mode: 'none',
+        downloadSource: ''
+      };
+    }
+    return {
+      visible: true,
+      latestVersion,
+      currentVersionLabel: cleanWeb,
+      mode: 'ota',
+      downloadSource: `https://github.com/tieedd/DigiSwiss-Round-Manager/releases/download/v${latestVersion}/${validManifest.bundle}`
+    };
+  }
+
+  // Mode APK jika native < minNativeVersion, ATAU manifest tidak tersedia/tidak sinkron (saat ada pembaruan)
+  const needsApkForMinNative = nativeBelowMin;
+  const needsApkDueToManifest = !manifestMatchesLatest && webNeedsUpdate;
+
+  if (needsApkForMinNative || needsApkDueToManifest) {
+    const currentVersionLabel = cleanNative || cleanWeb;
+    const visible = Boolean(
+      currentVersionLabel && isUpdateAvailable(latestVersion, currentVersionLabel)
+    );
+    if (!visible) {
+      return {
+        visible: false,
+        latestVersion,
+        currentVersionLabel,
+        mode: 'none',
+        downloadSource: ''
+      };
+    }
+    return {
+      visible: true,
+      latestVersion,
+      currentVersionLabel,
+      mode: 'apk',
+      downloadSource: resolveApkDownloadUrl(latestVersion, params.releaseInfo)
+    };
+  }
+
+  return {
+    visible: false,
+    latestVersion,
+    currentVersionLabel: cleanWeb,
+    mode: 'none',
+    downloadSource: ''
+  };
+}
+
+/**
  * Mengambil manifest rilis terbaru dan mengevaluasi mode pembaruan
  */
 export async function fetchOtaManifestAndDecide(
   currentWebVersion: string,
   repoOwner = 'tieedd',
-  repoName = 'DigiSwiss-Round-Manager'
+  repoName = 'DigiSwiss-Round-Manager',
+  options?: { cacheBust?: boolean }
 ): Promise<UpdateDecision> {
   const nativeVersion = await getNativeVersionNative();
+  const useCacheBust = Boolean(options?.cacheBust);
 
-  // 1. Coba ambil manifest via NativeBridge jika tersedia di Android
-  if (isNativeBridgeAvailable()) {
+  const fetchViaWeb = async (cacheBust: boolean): Promise<UpdateDecision | null> => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const baseUrl = `https://github.com/${repoOwner}/${repoName}/releases/latest/download/manifest.json`;
+      const targetUrl = cacheBust ? `${baseUrl}?t=${Date.now()}` : baseUrl;
+
+      const res = await fetch(targetUrl, {
+        headers: {
+          Accept: 'application/json',
+          ...(cacheBust ? { 'Cache-Control': 'no-cache', Pragma: 'no-cache' } : {})
+        },
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const rawJson = await res.json();
+        const val = validateOtaManifest(rawJson);
+        if (val.valid && val.manifest) {
+          const decision = resolveUpdateMode({
+            latestWebVersion: val.manifest.version,
+            currentWebVersion,
+            minNativeVersion: val.manifest.minNativeVersion,
+            currentNativeVersion: nativeVersion
+          });
+          decision.manifest = val.manifest;
+          return decision;
+        }
+      }
+    } catch (err) {
+      console.warn('Gagal mengambil manifest OTA via web fetch:', err);
+    }
+    return null;
+  };
+
+  const fetchViaNative = async (): Promise<UpdateDecision | null> => {
+    if (!isNativeBridgeAvailable()) return null;
     try {
       const nativeRes = await fetchOtaManifestNative();
       if (nativeRes.ok && nativeRes.manifest) {
@@ -175,48 +374,31 @@ export async function fetchOtaManifestAndDecide(
     } catch (err) {
       console.warn('Gagal mengambil manifest via native bridge:', err);
     }
+    return null;
+  };
+
+  // Saat cache-busting (retry manifest basi), prioritaskan web fetch dengan parameter query ?t=...
+  if (useCacheBust) {
+    const webDecision = await fetchViaWeb(true);
+    if (webDecision) return webDecision;
+    const nativeDecision = await fetchViaNative();
+    if (nativeDecision) return nativeDecision;
+  } else {
+    const nativeDecision = await fetchViaNative();
+    if (nativeDecision) return nativeDecision;
+    const webDecision = await fetchViaWeb(false);
+    if (webDecision) return webDecision;
   }
 
-  // 2. Fallback pengambilan manifest via Web Fetch
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-    const res = await fetch(
-      `https://github.com/${repoOwner}/${repoName}/releases/latest/download/manifest.json`,
-      {
-        headers: { Accept: 'application/json' },
-        signal: controller.signal
-      }
-    );
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const rawJson = await res.json();
-      const val = validateOtaManifest(rawJson);
-      if (val.valid && val.manifest) {
-        const decision = resolveUpdateMode({
-          latestWebVersion: val.manifest.version,
-          currentWebVersion,
-          minNativeVersion: val.manifest.minNativeVersion,
-          currentNativeVersion: nativeVersion
-        });
-        decision.manifest = val.manifest;
-        return decision;
-      }
-    }
-  } catch (err) {
-    console.warn('Gagal mengambil manifest OTA via web fetch:', err);
-  }
-
-  // Jika manifest tidak ditemukan atau offline
+  // Jika manifest tidak ditemukan, tidak valid, atau offline
   return {
     mode: 'none',
-    latestVersion: currentWebVersion,
+    latestVersion: '',
     currentWebVersion,
     minNativeVersion: '1.0',
     nativeVersion,
     hasUpdate: false,
+    error: true,
     reason: 'Tidak dapat mengambil manifest rilis.'
   };
 }
@@ -228,3 +410,4 @@ export {
   markBootOkNative,
   getCurrentOtaInfoNative
 };
+

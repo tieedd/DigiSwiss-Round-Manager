@@ -48,20 +48,21 @@ export const ProfileView: React.FC = () => {
 
   const handleManualCheckUpdate = async () => {
     try {
-      const { releaseInfo, decision } = await checkForUpdate(true);
-      if (decision.hasUpdate) {
-        if (decision.mode === 'ota') {
-          toast.info('Pembaruan OTA Tersedia', `Versi web v${decision.latestVersion} siap diunduh.`);
-        } else {
-          toast.info('Pembaruan APK Tersedia', `Versi v${decision.latestVersion} memerlukan APK baru.`);
-        }
-      } else if (releaseInfo?.error) {
-        toast.error('Pembaruan', 'Gagal memeriksa, coba lagi.');
+      const { presentation, error: checkError } = await checkForUpdate(true);
+      if (presentation.visible && presentation.mode !== 'none') {
+        toast.info(
+          presentation.mode === 'ota'
+            ? 'Pembaruan Web Cepat (OTA)'
+            : 'Pembaruan Aplikasi (Perlu APK Baru)',
+          `v${presentation.latestVersion} tersedia`
+        );
+      } else if (checkError) {
+        toast.error('Pembaruan', 'Gagal memeriksa, coba lagi');
       } else {
-        toast.success('Pembaruan', 'Sudah versi terbaru.');
+        toast.success('Pembaruan', 'Sudah versi terbaru');
       }
     } catch {
-      toast.error('Pembaruan', 'Gagal memeriksa, coba lagi.');
+      toast.error('Pembaruan', 'Gagal memeriksa, coba lagi');
     }
   };
 

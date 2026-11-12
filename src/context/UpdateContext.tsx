@@ -1,11 +1,16 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   checkLatestRelease,
   AppReleaseInfo,
-  CURRENT_APP_VERSION
+  CURRENT_APP_VERSION,
+  compareVersions,
+  parseSemver
 } from '../services/versionService.ts';
 import {
   UpdateDecision,
+  UpdatePresentation,
+  buildUpdatePresentation,
+  isValidOtaManifest,
   fetchOtaManifestAndDecide,
   downloadOtaBundleNative,
   applyOtaNative,
@@ -13,6 +18,7 @@ import {
   markBootOkNative,
   getCurrentOtaInfoNative
 } from '../services/otaService.ts';
+import { constructReleaseDownloadUrl } from '../utils/nativeHelpers.ts';
 import {
   downloadApkNative,
   installApkNative,
@@ -25,6 +31,7 @@ import { useToast } from './ToastContext.tsx';
 export interface UpdateContextType {
   releaseInfo: AppReleaseInfo | null;
   updateDecision: UpdateDecision | null;
+  presentation: UpdatePresentation;
   isChecking: boolean;
   isDownloading: boolean;
   otaProgress: number | null;
@@ -38,6 +45,8 @@ export interface UpdateContextType {
   checkForUpdate: (forceRefresh?: boolean) => Promise<{
     releaseInfo: AppReleaseInfo | null;
     decision: UpdateDecision;
+    presentation: UpdatePresentation;
+    error: boolean;
   }>;
   triggerUpdate: () => Promise<void>;
   applyOta: () => Promise<void>;
@@ -68,8 +77,25 @@ export const UpdateProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const releaseInfoRef = useRef<AppReleaseInfo | null>(null);
   releaseInfoRef.current = releaseInfo;
 
+  const nativeVersionRef = useRef<string>(nativeVersion);
+  nativeVersionRef.current = nativeVersion;
+
   const isDownloadingRef = useRef(false);
   isDownloadingRef.current = isDownloading;
+
+  const presentation = useMemo(
+    () =>
+      buildUpdatePresentation({
+        releaseInfo,
+        decision: updateDecision,
+        currentWebVersion: CURRENT_APP_VERSION,
+        nativeVersion
+      }),
+    [releaseInfo, updateDecision, nativeVersion]
+  );
+
+  const presentationRef = useRef<UpdatePresentation>(presentation);
+  presentationRef.current = presentation;
 
   const dismissPopup = useCallback(() => {
     setIsPopupDismissed(true);
@@ -91,7 +117,9 @@ export const UpdateProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const otaInfo = await getCurrentOtaInfoNative();
         setIsOtaActive(Boolean(otaInfo.isOta));
         const nv = otaInfo.nativeVersion || (await getNativeVersionNative());
-        setNativeVersion(nv);
+        if (nv) {
+          setNativeVersion(nv);
+        }
       } catch (err) {
         console.warn('Gagal membaca info OTA awal:', err);
       }
@@ -156,50 +184,126 @@ export const UpdateProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   }, [success, error, info]);
 
-  // Pemeriksaan versi terpadu (OTA manifest + GitHub Release)
+  // Pemeriksaan versi terpadu (OTA manifest + GitHub Release) dengan satu sumber kebenaran
   const checkForUpdate = useCallback(
     async (forceRefresh = false): Promise<{
       releaseInfo: AppReleaseInfo | null;
       decision: UpdateDecision;
+      presentation: UpdatePresentation;
+      error: boolean;
     }> => {
       setIsChecking(true);
       try {
-        const [relInfo, decision] = await Promise.all([
+        const [relInfo, initialDecision] = await Promise.all([
           checkLatestRelease(undefined, undefined, forceRefresh),
           fetchOtaManifestAndDecide(CURRENT_APP_VERSION)
         ]);
 
-        if (relInfo && relInfo.latestVersion) {
+        const releaseOk = Boolean(
+          relInfo && !relInfo.error && parseSemver(relInfo.latestVersion)
+        );
+        const initialManifestOk = Boolean(
+          initialDecision.manifest && isValidOtaManifest(initialDecision.manifest)
+        );
+
+        let finalDecision = initialDecision;
+
+        // Jika manifest.version < releaseInfo.latestVersion (manifest kemungkinan basi akibat cache),
+        // ulangi pengambilan manifest satu kali setelah 3 detik dengan parameter cache-busting
+        if (
+          initialManifestOk &&
+          releaseOk &&
+          compareVersions(initialDecision.manifest!.version, relInfo.latestVersion) < 0
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          const retriedDecision = await fetchOtaManifestAndDecide(
+            CURRENT_APP_VERSION,
+            undefined,
+            undefined,
+            { cacheBust: true }
+          );
+          if (
+            retriedDecision.manifest &&
+            isValidOtaManifest(retriedDecision.manifest) &&
+            compareVersions(retriedDecision.manifest.version, initialDecision.manifest!.version) >= 0
+          ) {
+            finalDecision = retriedDecision;
+          }
+        }
+
+        const effectiveNativeVersion =
+          finalDecision.nativeVersion ||
+          (await getNativeVersionNative()) ||
+          nativeVersionRef.current;
+        if (effectiveNativeVersion) {
+          setNativeVersion(effectiveNativeVersion);
+        }
+
+        const finalManifestOk = Boolean(
+          finalDecision.manifest && isValidOtaManifest(finalDecision.manifest)
+        );
+
+        // Jika semua sumber gagal, jangan timpa data valid sebelumnya dengan nilai "versi saat ini"
+        if (!releaseOk && !finalManifestOk) {
+          const preservedPresentation = buildUpdatePresentation({
+            releaseInfo: releaseInfoRef.current,
+            decision: updateDecisionRef.current,
+            currentWebVersion: CURRENT_APP_VERSION,
+            nativeVersion: effectiveNativeVersion
+          });
+          return {
+            releaseInfo: releaseInfoRef.current,
+            decision: finalDecision,
+            presentation: preservedPresentation,
+            error: true
+          };
+        }
+
+        const nextReleaseInfo = releaseOk ? relInfo : releaseInfoRef.current;
+        const nextDecision = finalDecision;
+
+        if (releaseOk) {
           setReleaseInfo(relInfo);
         }
-        setUpdateDecision(decision);
+        setUpdateDecision(nextDecision);
 
-        // Jika decision OTA atau APK punya update, sinkronkan hasUpdate
-        if (decision.hasUpdate) {
-          setReleaseInfo((prev) => ({
-            ...(prev || {
-              currentVersion: CURRENT_APP_VERSION,
-              latestVersion: decision.latestVersion
-            }),
-            hasUpdate: true,
-            latestVersion: decision.latestVersion,
-            releaseName: prev?.releaseName || `Versi ${decision.latestVersion}`
-          }));
-        }
+        const nextPresentation = buildUpdatePresentation({
+          releaseInfo: nextReleaseInfo,
+          decision: nextDecision,
+          currentWebVersion: CURRENT_APP_VERSION,
+          nativeVersion: effectiveNativeVersion
+        });
 
-        return { releaseInfo: relInfo, decision };
+        return {
+          releaseInfo: nextReleaseInfo,
+          decision: nextDecision,
+          presentation: nextPresentation,
+          error: false
+        };
       } catch (err) {
         console.warn('Pengecekan versi error:', err);
         const fallbackDecision: UpdateDecision = {
           mode: 'none',
-          latestVersion: CURRENT_APP_VERSION,
+          latestVersion: '',
           currentWebVersion: CURRENT_APP_VERSION,
           minNativeVersion: '1.0',
-          nativeVersion: '1.0',
+          nativeVersion: nativeVersionRef.current,
           hasUpdate: false,
+          error: true,
           reason: 'Pemeriksaan gagal.'
         };
-        return { releaseInfo: null, decision: fallbackDecision };
+        const preservedPresentation = buildUpdatePresentation({
+          releaseInfo: releaseInfoRef.current,
+          decision: updateDecisionRef.current,
+          currentWebVersion: CURRENT_APP_VERSION,
+          nativeVersion: nativeVersionRef.current
+        });
+        return {
+          releaseInfo: releaseInfoRef.current,
+          decision: fallbackDecision,
+          presentation: preservedPresentation,
+          error: true
+        };
       } finally {
         setIsChecking(false);
       }
@@ -207,20 +311,24 @@ export const UpdateProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     []
   );
 
-  // Alur aksi "Update" berdasarkan mode (OTA atau APK)
+  // Alur aksi "Update" berdasarkan presentation (OTA atau APK)
   const triggerUpdate = useCallback(async () => {
     if (isDownloadingRef.current) return;
 
+    const currentPresentation = presentationRef.current;
+    if (!currentPresentation.visible || currentPresentation.mode === 'none') {
+      return;
+    }
+
     const currentDecision = updateDecisionRef.current;
-    const currentRelease = releaseInfoRef.current;
 
     // Jika mode adalah OTA dan berjalan di Android
-    if (currentDecision && currentDecision.mode === 'ota' && isNativeBridgeAvailable()) {
+    if (currentPresentation.mode === 'ota' && isNativeBridgeAvailable()) {
       setIsDownloading(true);
       setOtaProgress(0);
       try {
-        const targetVer = currentDecision.manifest?.version || currentDecision.latestVersion;
-        const targetSha = currentDecision.manifest?.sha256 || '';
+        const targetVer = currentDecision?.manifest?.version || currentPresentation.latestVersion;
+        const targetSha = currentDecision?.manifest?.sha256 || '';
         info(`Memulai pengunduhan paket web OTA v${targetVer}...`);
 
         const res = await downloadOtaBundleNative(targetVer, targetSha);
@@ -237,12 +345,13 @@ export const UpdateProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    // Jika mode adalah APK (atau fallback)
-    if (!currentRelease) return;
-    const downloadUrl = currentRelease.downloadUrl || currentRelease.htmlUrl;
+    // Mode APK
+    const downloadUrl =
+      currentPresentation.downloadSource ||
+      constructReleaseDownloadUrl(currentPresentation.latestVersion);
     if (!downloadUrl) return;
 
-    const fileName = `DigiSwiss-Round-v${currentRelease.latestVersion}.apk`;
+    const fileName = `DigiSwiss-Round-v${currentPresentation.latestVersion}.apk`;
 
     if (isNativeBridgeAvailable()) {
       setIsDownloading(true);
@@ -305,6 +414,7 @@ export const UpdateProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       value={{
         releaseInfo,
         updateDecision,
+        presentation,
         isChecking,
         isDownloading,
         otaProgress,

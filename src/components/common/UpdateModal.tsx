@@ -1,13 +1,14 @@
 import React from 'react';
 import { useUpdate } from '../../context/UpdateContext.tsx';
-import { isUpdateAvailable } from '../../services/versionService.ts';
+import { compareVersions } from '../../services/versionService.ts';
+import { getUpdateModeLabel } from '../../services/otaService.ts';
 import { Button } from './Button.tsx';
 import { Sparkles, Download, RefreshCw, Zap } from 'lucide-react';
 
 export const UpdateModal: React.FC = () => {
   const {
     releaseInfo,
-    updateDecision,
+    presentation,
     isPopupDismissed,
     isDownloading,
     otaProgress,
@@ -17,19 +18,23 @@ export const UpdateModal: React.FC = () => {
     applyOta
   } = useUpdate();
 
-  const hasUpdate = Boolean(
-    (releaseInfo?.hasUpdate && isUpdateAvailable(releaseInfo.latestVersion, releaseInfo.currentVersion)) ||
-    updateDecision?.hasUpdate
-  );
-
-  // Hanya tampil bila ada pembaruan versi dan belum ditutup di sesi ini
-  if (!hasUpdate || isPopupDismissed) {
+  // Hanya tampil bila presentation menyatakan ada pembaruan valid dan belum ditutup di sesi ini
+  if (!presentation.visible || presentation.mode === 'none' || isPopupDismissed) {
     return null;
   }
 
-  const latestVer = updateDecision?.latestVersion || releaseInfo?.latestVersion || '';
-  const currentVer = updateDecision?.currentWebVersion || releaseInfo?.currentVersion || '';
-  const isOtaMode = updateDecision?.mode === 'ota';
+  const latestVer = presentation.latestVersion;
+  const currentVer = presentation.currentVersionLabel;
+  const isOtaMode = presentation.mode === 'ota';
+  const modeLabel = getUpdateModeLabel(presentation.mode);
+
+  const showReleaseNotes = Boolean(
+    releaseInfo &&
+      !releaseInfo.error &&
+      releaseInfo.releaseNotes &&
+      releaseInfo.releaseNotes.trim() &&
+      compareVersions(releaseInfo.latestVersion || '', latestVer) === 0
+  );
 
   return (
     <div
@@ -63,11 +68,11 @@ export const UpdateModal: React.FC = () => {
           <div className="mt-1">
             {isOtaMode ? (
               <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-info/10 text-info border border-info/30">
-                Pembaruan Web Cepat (OTA)
+                {modeLabel}
               </span>
             ) : (
               <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-accent/10 text-accent border border-accent/30">
-                Pembaruan Aplikasi (Perlu APK Baru)
+                {modeLabel}
               </span>
             )}
           </div>
@@ -90,9 +95,9 @@ export const UpdateModal: React.FC = () => {
         )}
 
         {/* Catatan Rilis Singkat (Maks 3 baris bisa digulir) */}
-        {releaseInfo?.releaseNotes && releaseInfo.releaseNotes.trim() && (
+        {showReleaseNotes && (
           <div className="bg-dark-surface-high/60 border border-dark-border/80 rounded-lg p-2.5 text-left text-caption text-dark-muted max-h-20 overflow-y-auto whitespace-pre-wrap leading-relaxed">
-            {releaseInfo.releaseNotes.trim()}
+            {releaseInfo!.releaseNotes!.trim()}
           </div>
         )}
 

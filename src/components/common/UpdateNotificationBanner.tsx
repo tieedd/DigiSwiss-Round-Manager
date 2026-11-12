@@ -1,12 +1,13 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useUpdate } from '../../context/UpdateContext.tsx';
-import { isUpdateAvailable } from '../../services/versionService.ts';
+import { compareVersions } from '../../services/versionService.ts';
+import { getUpdateModeLabel } from '../../services/otaService.ts';
 import { Download, X, Sparkles, Loader2, RefreshCw, Zap } from 'lucide-react';
 
 export const UpdateNotificationBanner: React.FC = () => {
   const {
     releaseInfo,
-    updateDecision,
+    presentation,
     isBannerDismissed,
     isDownloading,
     otaProgress,
@@ -19,25 +20,25 @@ export const UpdateNotificationBanner: React.FC = () => {
   const textRef = useRef<HTMLSpanElement>(null);
   const [animationDuration, setAnimationDuration] = useState(16);
 
-  const hasUpdate = Boolean(
-    (releaseInfo?.hasUpdate && isUpdateAvailable(releaseInfo.latestVersion, releaseInfo.currentVersion)) ||
-    updateDecision?.hasUpdate
-  );
-
-  const latestVer = updateDecision?.latestVersion || releaseInfo?.latestVersion || '';
-  const currentVer = updateDecision?.currentWebVersion || releaseInfo?.currentVersion || '';
-  const isOtaMode = updateDecision?.mode === 'ota';
+  const hasUpdate = presentation.visible && presentation.mode !== 'none';
+  const latestVer = presentation.latestVersion;
+  const currentVer = presentation.currentVersionLabel;
+  const isOtaMode = presentation.mode === 'ota';
+  const modeLabel = getUpdateModeLabel(presentation.mode);
 
   // Format teks berjalan
   const releaseNameExtra =
-    releaseInfo?.releaseName &&
+    releaseInfo &&
+    !releaseInfo.error &&
+    compareVersions(releaseInfo.latestVersion || '', latestVer) === 0 &&
+    releaseInfo.releaseName &&
     releaseInfo.releaseName.toLowerCase() !== `versi ${latestVer}`.toLowerCase() &&
     releaseInfo.releaseName.toLowerCase() !== `v${latestVer}`.toLowerCase()
       ? ` — ${releaseInfo.releaseName}`
       : '';
 
   const marqueeText = hasUpdate
-    ? `Versi baru v${latestVer} tersedia (${isOtaMode ? 'OTA web' : 'perlu APK baru'})! Versi Anda saat ini v${currentVer}. Perbarui sekarang untuk mendapat perbaikan dan fitur terbaru.${releaseNameExtra}`
+    ? `Versi baru v${latestVer} tersedia (${modeLabel})! Versi Anda saat ini v${currentVer}. Perbarui sekarang untuk mendapat perbaikan dan fitur terbaru.${releaseNameExtra}`
     : '';
 
   // Hitung durasi animasi berdasarkan panjang teks agar kecepatan stabil ~40px per detik (minimal 12 detik)
@@ -53,7 +54,7 @@ export const UpdateNotificationBanner: React.FC = () => {
     }
   }, [marqueeText]);
 
-  // Banner hanya dirender bila ada pembaruan dan belum ditutup
+  // Banner hanya dirender bila ada pembaruan valid dan belum ditutup
   if (!hasUpdate || isBannerDismissed) {
     return null;
   }

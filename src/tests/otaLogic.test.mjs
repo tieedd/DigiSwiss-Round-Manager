@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   isValidOtaManifest,
   validateOtaManifest,
-  resolveUpdateMode
+  resolveUpdateMode,
+  buildUpdatePresentation,
+  getUpdateModeLabel
 } from '../services/otaService.ts';
 
 test('LOGIKA OTA: isValidOtaManifest validasi ketat format manifest', () => {
@@ -213,4 +215,207 @@ test('LOGIKA OTA: resolveUpdateMode keputusan murni antara ota, apk, atau none',
   });
   assert.equal(decisionNull.hasUpdate, false);
   assert.equal(decisionNull.mode, 'none');
+});
+
+test('LOGIKA OTA: buildUpdatePresentation satu sumber kebenaran popup & banner', () => {
+  const dummySha = 'a'.repeat(64);
+
+  // 1. latest 1.9.1 dari releaseInfo, manifest gagal -> visible, latestVersion 1.9.1, mode 'apk'
+  const case1 = buildUpdatePresentation({
+    releaseInfo: {
+      hasUpdate: true,
+      currentVersion: '1.9.0',
+      latestVersion: '1.9.1',
+      error: false
+    },
+    decision: {
+      mode: 'none',
+      latestVersion: '',
+      currentWebVersion: '1.9.0',
+      minNativeVersion: '1.0',
+      nativeVersion: '1.9.0',
+      hasUpdate: false,
+      error: true,
+      reason: 'Manifest gagal'
+    },
+    currentWebVersion: '1.9.0',
+    nativeVersion: '1.9.0'
+  });
+  assert.equal(case1.visible, true);
+  assert.equal(case1.latestVersion, '1.9.1');
+  assert.equal(case1.mode, 'apk');
+  assert.equal(case1.currentVersionLabel, '1.9.0');
+  assert.equal(
+    case1.downloadSource,
+    'https://github.com/tieedd/DigiSwiss-Round-Manager/releases/download/v1.9.1/DigiSwiss-Round-v1.9.1.apk'
+  );
+  assert.equal(getUpdateModeLabel(case1.mode), 'Pembaruan Aplikasi (Perlu APK Baru)');
+
+  // 2. manifest 1.9.0 basi, releaseInfo 1.9.1 -> latestVersion 1.9.1, tidak pernah tampil 1.9.0 -> 1.9.0
+  const case2 = buildUpdatePresentation({
+    releaseInfo: {
+      hasUpdate: true,
+      currentVersion: '1.9.0',
+      latestVersion: '1.9.1',
+      error: false
+    },
+    decision: {
+      mode: 'none',
+      latestVersion: '1.9.0',
+      currentWebVersion: '1.9.0',
+      minNativeVersion: '1.9.0',
+      nativeVersion: '1.9.0',
+      hasUpdate: false,
+      manifest: {
+        version: '1.9.0',
+        bundle: 'DigiSwiss-Round-web-v1.9.0.zip',
+        sha256: dummySha,
+        minNativeVersion: '1.9.0'
+      },
+      reason: 'Stale manifest'
+    },
+    currentWebVersion: '1.9.0',
+    nativeVersion: '1.9.0'
+  });
+  assert.equal(case2.visible, true);
+  assert.equal(case2.latestVersion, '1.9.1');
+  assert.equal(case2.mode, 'apk');
+  assert.notEqual(case2.latestVersion, '1.9.0');
+  assert.equal(case2.currentVersionLabel, '1.9.0');
+
+  // 3. semua sama (1.9.1 vs 1.9.1) -> visible false
+  const case3 = buildUpdatePresentation({
+    releaseInfo: {
+      hasUpdate: false,
+      currentVersion: '1.9.1',
+      latestVersion: '1.9.1',
+      error: false
+    },
+    decision: {
+      mode: 'none',
+      latestVersion: '1.9.1',
+      currentWebVersion: '1.9.1',
+      minNativeVersion: '1.9.1',
+      nativeVersion: '1.9.1',
+      hasUpdate: false,
+      manifest: {
+        version: '1.9.1',
+        bundle: 'DigiSwiss-Round-web-v1.9.1.zip',
+        sha256: dummySha,
+        minNativeVersion: '1.9.1'
+      },
+      reason: 'Sudah terbaru'
+    },
+    currentWebVersion: '1.9.1',
+    nativeVersion: '1.9.1'
+  });
+  assert.equal(case3.visible, false);
+  assert.equal(case3.mode, 'none');
+  assert.equal(getUpdateModeLabel(case3.mode), '');
+
+  // 4. web 1.9.1, native 1.9.1, manifest 1.9.2 minNative 1.9.1 -> mode 'ota'
+  const case4 = buildUpdatePresentation({
+    releaseInfo: {
+      hasUpdate: true,
+      currentVersion: '1.9.1',
+      latestVersion: '1.9.2',
+      error: false
+    },
+    decision: {
+      mode: 'ota',
+      latestVersion: '1.9.2',
+      currentWebVersion: '1.9.1',
+      minNativeVersion: '1.9.1',
+      nativeVersion: '1.9.1',
+      hasUpdate: true,
+      manifest: {
+        version: '1.9.2',
+        bundle: 'DigiSwiss-Round-web-v1.9.2.zip',
+        sha256: dummySha,
+        minNativeVersion: '1.9.1'
+      },
+      reason: 'OTA'
+    },
+    currentWebVersion: '1.9.1',
+    nativeVersion: '1.9.1'
+  });
+  assert.equal(case4.visible, true);
+  assert.equal(case4.latestVersion, '1.9.2');
+  assert.equal(case4.mode, 'ota');
+  assert.equal(case4.currentVersionLabel, '1.9.1');
+  assert.equal(
+    case4.downloadSource,
+    'https://github.com/tieedd/DigiSwiss-Round-Manager/releases/download/v1.9.2/DigiSwiss-Round-web-v1.9.2.zip'
+  );
+  assert.equal(getUpdateModeLabel(case4.mode), 'Pembaruan Web Cepat (OTA)');
+
+  // 5. native 1.9.0, manifest 1.9.1 minNative 1.9.1 -> mode 'apk', currentVersionLabel = native
+  const case5 = buildUpdatePresentation({
+    releaseInfo: {
+      hasUpdate: true,
+      currentVersion: '1.9.0',
+      latestVersion: '1.9.1',
+      error: false
+    },
+    decision: {
+      mode: 'apk',
+      latestVersion: '1.9.1',
+      currentWebVersion: '1.9.1',
+      minNativeVersion: '1.9.1',
+      nativeVersion: '1.9.0',
+      hasUpdate: true,
+      manifest: {
+        version: '1.9.1',
+        bundle: 'DigiSwiss-Round-web-v1.9.1.zip',
+        sha256: dummySha,
+        minNativeVersion: '1.9.1'
+      },
+      reason: 'Need APK'
+    },
+    currentWebVersion: '1.9.1',
+    nativeVersion: '1.9.0'
+  });
+  assert.equal(case5.visible, true);
+  assert.equal(case5.latestVersion, '1.9.1');
+  assert.equal(case5.mode, 'apk');
+  assert.equal(case5.currentVersionLabel, '1.9.0');
+
+  // 6. semua sumber gagal -> visible false
+  const case6 = buildUpdatePresentation({
+    releaseInfo: {
+      hasUpdate: false,
+      currentVersion: '1.9.0',
+      latestVersion: '1.9.0',
+      error: true
+    },
+    decision: {
+      mode: 'none',
+      latestVersion: '',
+      currentWebVersion: '1.9.0',
+      minNativeVersion: '1.0',
+      nativeVersion: '1.9.0',
+      hasUpdate: false,
+      error: true,
+      reason: 'Gagal'
+    },
+    currentWebVersion: '1.9.0',
+    nativeVersion: '1.9.0'
+  });
+  assert.equal(case6.visible, false);
+  assert.equal(case6.mode, 'none');
+
+  // 7. Tambahan: jika native sudah >= latestVersion tapi web tertinggal dan manifest gagal -> jangan tampil vX -> vX
+  const case7 = buildUpdatePresentation({
+    releaseInfo: {
+      hasUpdate: true,
+      currentVersion: '1.9.0',
+      latestVersion: '1.9.1',
+      error: false
+    },
+    decision: null,
+    currentWebVersion: '1.9.0',
+    nativeVersion: '1.9.1'
+  });
+  assert.equal(case7.visible, false);
+  assert.equal(case7.mode, 'none');
 });
