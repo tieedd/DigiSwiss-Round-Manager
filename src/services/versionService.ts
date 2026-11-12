@@ -1,3 +1,6 @@
+import { constructReleaseDownloadUrl } from '../utils/nativeHelpers.ts';
+import { getLatestReleaseTagNative, isNativeBridgeAvailable } from './nativeBridge.ts';
+
 export interface AppReleaseInfo {
   hasUpdate: boolean;
   currentVersion: string;
@@ -6,6 +9,7 @@ export interface AppReleaseInfo {
   releaseNotes?: string;
   downloadUrl?: string;
   htmlUrl?: string;
+  error?: boolean;
 }
 
 export const CURRENT_APP_VERSION = '1.0.0';
@@ -20,7 +24,7 @@ export interface ReleaseCacheData {
 }
 
 const CACHE_KEY = 'dss_latest_release_cache';
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 menit
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 menit
 
 function getCachedRelease(): ReleaseCacheData | null {
   if (typeof window === 'undefined' || !window.localStorage) return null;
@@ -108,25 +112,45 @@ export function compareVersions(versionA: string, versionB: string): number {
 }
 
 /**
+ * Fungsi murni untuk memproses resolusi rilis dari tag (berguna untuk pengujian logika rilis)
+ */
+export function resolveReleaseFromTag(
+  tag: string,
+  currentVersion: string = CURRENT_APP_VERSION,
+  repoOwner: string = 'tieedd',
+  repoName: string = 'DigiSwiss-Round-Manager'
+): AppReleaseInfo {
+  const cleanLatest = tag.trim().replace(/^[vV]/, '').trim();
+  const tagWithV = `v${cleanLatest}`;
+  const downloadUrl = `https://github.com/${repoOwner}/${repoName}/releases/download/${tagWithV}/DigiSwiss-Round-${tagWithV}.apk`;
+  const htmlUrl = `https://github.com/${repoOwner}/${repoName}/releases/tag/${tagWithV}`;
+  const releaseName = `Versi ${cleanLatest}`;
+  return {
+    hasUpdate: isUpdateAvailable(cleanLatest, currentVersion),
+    currentVersion,
+    latestVersion: cleanLatest,
+    releaseName,
+    downloadUrl,
+    htmlUrl
+  };
+}
+
+/**
  * Memeriksa versi rilis terbaru dari GitHub Releases repo DigiSwiss-Round-Manager.
- * Menghemat panggilan GitHub API dengan cache localStorage 30 menit.
- * Gagal diam-diam jika perangkat sedang offline atau API tidak terjangkau.
+ * - Cache localStorage 5 menit.
+ * - Retry hingga 2x (jeda 1s dan 3s, timeout 8s).
+ * - Fallback ke NativeBridge getLatestReleaseTag jika REST API gagal (403, 429, timeout, dll).
+ * - Tidak menimpa cache valid jika gagal mengambil data baru.
  */
 export async function checkLatestRelease(
   repoOwner: string = 'tieedd',
   repoName: string = 'DigiSwiss-Round-Manager',
   forceRefresh: boolean = false
 ): Promise<AppReleaseInfo> {
-  const defaultResult: AppReleaseInfo = {
-    hasUpdate: false,
-    currentVersion: CURRENT_APP_VERSION,
-    latestVersion: CURRENT_APP_VERSION
-  };
-
   const cached = getCachedRelease();
   const now = Date.now();
 
-  // Gunakan cache jika masih valid (< 30 menit) dan bukan force refresh
+  // Gunakan cache jika masih valid (< 5 menit) dan bukan force refresh
   if (!forceRefresh && cached && now - cached.checkedAt < CACHE_TTL_MS) {
     const cleanLatest = cached.latestTag.replace(/^[vV]/, '').trim();
     return {
@@ -140,62 +164,51 @@ export async function checkLatestRelease(
     };
   }
 
-  // Jika sedang offline di browser, fallback ke cache jika ada
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    if (cached) {
-      const cleanLatest = cached.latestTag.replace(/^[vV]/, '').trim();
-      return {
-        hasUpdate: isUpdateAvailable(cleanLatest, CURRENT_APP_VERSION),
-        currentVersion: CURRENT_APP_VERSION,
-        latestVersion: cleanLatest,
-        releaseName: cached.releaseName,
-        releaseNotes: cached.releaseNotes,
-        downloadUrl: cached.downloadUrl,
-        htmlUrl: cached.htmlUrl
-      };
+  // Percobaan fetch ke GitHub REST API (maksimal 2x retry, timeout 8 detik)
+  const maxRetries = 2;
+  const retryDelays = [1000, 3000];
+  let apiData: any = null;
+  let lastApiError: any = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const delay = retryDelays[attempt - 1] || 1000;
+      await new Promise((r) => setTimeout(r, delay));
     }
-    return defaultResult;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 detik per percobaan
+
+      const res = await fetch(
+        `https://api.github.com/repos/${repoOwner}/${repoName}/releases/latest`,
+        {
+          headers: { Accept: 'application/vnd.github.v3+json' },
+          signal: controller.signal
+        }
+      );
+
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        apiData = await res.json();
+        break;
+      } else {
+        lastApiError = new Error(`GitHub API HTTP ${res.status}`);
+      }
+    } catch (err: any) {
+      lastApiError = err;
+    }
   }
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000); // Batas timeout 4 detik
-
-    const res = await fetch(
-      `https://api.github.com/repos/${repoOwner}/${repoName}/releases/latest`,
-      {
-        headers: { Accept: 'application/vnd.github.v3+json' },
-        signal: controller.signal
-      }
-    );
-
-    clearTimeout(timeoutId);
-
-    if (!res.ok) {
-      // Jika respons gagal (misal rate-limit atau offline), gunakan cache lama jika ada
-      if (cached) {
-        const cleanLatest = cached.latestTag.replace(/^[vV]/, '').trim();
-        return {
-          hasUpdate: isUpdateAvailable(cleanLatest, CURRENT_APP_VERSION),
-          currentVersion: CURRENT_APP_VERSION,
-          latestVersion: cleanLatest,
-          releaseName: cached.releaseName,
-          releaseNotes: cached.releaseNotes,
-          downloadUrl: cached.downloadUrl,
-          htmlUrl: cached.htmlUrl
-        };
-      }
-      return defaultResult;
-    }
-
-    const data = await res.json();
-    const tagName = data.tag_name || data.name || '';
+  // 1. Jika GitHub REST API berhasil
+  if (apiData) {
+    const tagName = apiData.tag_name || apiData.name || '';
     const cleanLatest = tagName.replace(/^[vV]/, '').trim();
 
-    // Temukan tautan unduhan APK jika tersedia di assets rilis
-    let downloadUrl = data.html_url;
-    if (Array.isArray(data.assets)) {
-      const apkAsset = data.assets.find((a: any) =>
+    let downloadUrl = apiData.html_url;
+    if (Array.isArray(apiData.assets)) {
+      const apkAsset = apiData.assets.find((a: any) =>
         a.name?.endsWith('.apk')
       );
       if (apkAsset?.browser_download_url) {
@@ -203,8 +216,8 @@ export async function checkLatestRelease(
       }
     }
 
-    const releaseName = data.name || `Versi ${cleanLatest}`;
-    const releaseNotes = data.body || '';
+    const releaseName = apiData.name || `Versi ${cleanLatest}`;
+    const releaseNotes = apiData.body || '';
 
     // Simpan ke cache localStorage
     setCachedRelease({
@@ -212,12 +225,11 @@ export async function checkLatestRelease(
       downloadUrl,
       releaseName,
       releaseNotes,
-      htmlUrl: data.html_url,
+      htmlUrl: apiData.html_url,
       checkedAt: now
     });
 
     const hasUpdate = isUpdateAvailable(cleanLatest, CURRENT_APP_VERSION);
-
     return {
       hasUpdate,
       currentVersion: CURRENT_APP_VERSION,
@@ -225,22 +237,68 @@ export async function checkLatestRelease(
       releaseName,
       releaseNotes,
       downloadUrl,
-      htmlUrl: data.html_url
+      htmlUrl: apiData.html_url
     };
-  } catch {
-    // Gagal diam-diam jika offline atau error jaringan; gunakan cache jika ada
-    if (cached) {
-      const cleanLatest = cached.latestTag.replace(/^[vV]/, '').trim();
-      return {
-        hasUpdate: isUpdateAvailable(cleanLatest, CURRENT_APP_VERSION),
-        currentVersion: CURRENT_APP_VERSION,
-        latestVersion: cleanLatest,
-        releaseName: cached.releaseName,
-        releaseNotes: cached.releaseNotes,
-        downloadUrl: cached.downloadUrl,
-        htmlUrl: cached.htmlUrl
-      };
-    }
-    return defaultResult;
   }
+
+  // 2. Jalur cadangan NativeBridge jika GitHub REST API gagal (misal kena rate-limit atau timeout)
+  console.warn('Pengecekan versi via GitHub REST API gagal, mencoba jalur cadangan NativeBridge:', lastApiError);
+
+  try {
+    if (isNativeBridgeAvailable()) {
+      const nativeRes = await getLatestReleaseTagNative();
+      if (nativeRes.ok && nativeRes.tag) {
+        const cleanLatest = nativeRes.tag.replace(/^[vV]/, '').trim();
+        if (cleanLatest) {
+          const downloadUrl = constructReleaseDownloadUrl(cleanLatest);
+          const htmlUrl = `https://github.com/${repoOwner}/${repoName}/releases/tag/v${cleanLatest}`;
+          const releaseName = `Versi ${cleanLatest}`;
+
+          // Simpan ke cache
+          setCachedRelease({
+            latestTag: cleanLatest,
+            downloadUrl,
+            releaseName,
+            releaseNotes: '',
+            htmlUrl,
+            checkedAt: now
+          });
+
+          return {
+            hasUpdate: isUpdateAvailable(cleanLatest, CURRENT_APP_VERSION),
+            currentVersion: CURRENT_APP_VERSION,
+            latestVersion: cleanLatest,
+            releaseName,
+            downloadUrl,
+            htmlUrl
+          };
+        }
+      }
+    }
+  } catch (nativeErr) {
+    console.warn('Jalur cadangan NativeBridge juga gagal:', nativeErr);
+  }
+
+  // 3. Jika semua jalur gagal: jangan menimpa cache valid!
+  console.warn('Semua jalur pengecekan pembaruan gagal.');
+  if (cached) {
+    const cleanLatest = cached.latestTag.replace(/^[vV]/, '').trim();
+    return {
+      hasUpdate: isUpdateAvailable(cleanLatest, CURRENT_APP_VERSION),
+      currentVersion: CURRENT_APP_VERSION,
+      latestVersion: cleanLatest,
+      releaseName: cached.releaseName,
+      releaseNotes: cached.releaseNotes,
+      downloadUrl: cached.downloadUrl,
+      htmlUrl: cached.htmlUrl,
+      error: true
+    };
+  }
+
+  return {
+    hasUpdate: false,
+    currentVersion: CURRENT_APP_VERSION,
+    latestVersion: CURRENT_APP_VERSION,
+    error: true
+  };
 }

@@ -18,6 +18,8 @@ import { RoundsView } from './views/placeholders/RoundsView';
 import { OrganizerTournamentsView } from './views/placeholders/OrganizerTournamentsView';
 import { AdminInactivityWarning } from './components/common/AdminInactivityWarning';
 import { UpdateNotificationBanner } from './components/common/UpdateNotificationBanner';
+import { UpdateModal } from './components/common/UpdateModal';
+import { UpdateProvider, useUpdate } from './context/UpdateContext';
 import { AccessDeniedView } from './components/common/AccessDeniedView';
 import { UserRole } from './types';
 
@@ -31,8 +33,23 @@ const MainAppContent: React.FC = () => {
     adminInactivityCountdown,
     dismissAdminInactivityWarning,
   } = useAuth();
+  const { checkForUpdate, resetPopupOnNewLogin } = useUpdate();
 
   const [activeTab, setActiveTab] = useState<NavTabKey>('tournaments');
+  const lastUidCheckedRef = React.useRef<string | null>(null);
+
+  // Pengecekan versi wajib berjalan segera setelah login berhasil dengan forceRefresh (lewati cache)
+  useEffect(() => {
+    if (currentUser?.uid && userProfile && !userProfile.mustChangePassword && hasPin === true) {
+      if (lastUidCheckedRef.current !== currentUser.uid) {
+        lastUidCheckedRef.current = currentUser.uid;
+        resetPopupOnNewLogin();
+        checkForUpdate(true);
+      }
+    } else if (!currentUser) {
+      lastUidCheckedRef.current = null;
+    }
+  }, [currentUser?.uid, userProfile?.mustChangePassword, hasPin, checkForUpdate, resetPopupOnNewLogin]);
 
   // Reset tab default saat peran (role) berubah
   useEffect(() => {
@@ -148,6 +165,9 @@ const MainAppContent: React.FC = () => {
 
       <BottomNav role={role} activeTab={activeTab} onTabChange={setActiveTab} />
 
+      {/* Popup Modal Pemberitahuan Versi Baru Setelah Login */}
+      <UpdateModal />
+
       {/* Peringatan Inaktivitas Sesi Admin (1 menit sebelum 30 menit) */}
       <AdminInactivityWarning
         isOpen={adminInactivityWarning}
@@ -162,7 +182,9 @@ export const App: React.FC = () => {
   return (
     <AuthProvider>
       <AppToastProvider>
-        <MainAppContent />
+        <UpdateProvider>
+          <MainAppContent />
+        </UpdateProvider>
       </AppToastProvider>
     </AuthProvider>
   );

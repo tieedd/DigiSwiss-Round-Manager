@@ -61,8 +61,14 @@ test('Tahap 10 TES VALIDASI URL APK: isAllowedApkUrl memverifikasi protokol http
     true
   );
   assert.equal(
-    isAllowedApkUrl('https://github.com/user/repo/releases/download/v2.0.0/digiswiss.apk'),
+    isAllowedApkUrl('https://github.com/tieedd/DigiSwiss-Round-Manager/releases/download/v1.0.1/DigiSwiss-Round-v1.0.1.apk'),
     true
+  );
+
+  // Ditolak: repositori di luar tieedd/DigiSwiss-Round-Manager
+  assert.equal(
+    isAllowedApkUrl('https://github.com/user/repo/releases/download/v2.0.0/digiswiss.apk'),
+    false
   );
 
   // Asset host redirect resmi GitHub

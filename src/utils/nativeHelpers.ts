@@ -1,7 +1,8 @@
 /**
  * Validasi ketat URL APK pembaruan:
  * - Protokol wajib https
- * - Host: github.com (path mengandung /releases/download/ dan berakhiran .apk) ATAU objects.githubusercontent.com
+ * - Host: github.com (wajib diawali /tieedd/DigiSwiss-Round-Manager/, mengandung /releases/download/ dan berakhiran .apk)
+ *   ATAU objects.githubusercontent.com (host redirect unduhan resmi GitHub Release Asset)
  */
 export function isAllowedApkUrl(url: string | null | undefined): boolean {
   if (!url || typeof url !== 'string') return false;
@@ -13,9 +14,11 @@ export function isAllowedApkUrl(url: string | null | undefined): boolean {
     const pathname = parsed.pathname;
 
     if (host === 'github.com') {
+      const lower = pathname.toLowerCase();
       return (
-        pathname.includes('/releases/download/') &&
-        pathname.toLowerCase().endsWith('.apk')
+        lower.startsWith('/tieedd/digiswiss-round-manager/') &&
+        lower.includes('/releases/download/') &&
+        lower.endsWith('.apk')
       );
     }
 
@@ -27,6 +30,27 @@ export function isAllowedApkUrl(url: string | null | undefined): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Membentuk URL unduhan APK resmi dari tag versi
+ */
+export function constructReleaseDownloadUrl(tag: string): string {
+  const clean = String(tag || '').trim().replace(/^[vV]/, '').trim();
+  const tagWithV = `v${clean}`;
+  return `https://github.com/tieedd/DigiSwiss-Round-Manager/releases/download/${tagWithV}/DigiSwiss-Round-${tagWithV}.apk`;
+}
+
+/**
+ * Evaluasi murni apakah modal popup pembaruan harus ditampilkan
+ * Hanya tampil jika ada update, belum ditutup pada sesi saat ini, dan berada di layar utama yang diizinkan
+ */
+export function shouldShowUpdatePopup(params: {
+  hasUpdate: boolean;
+  isPopupDismissed: boolean;
+  isAllowedScreen: boolean;
+}): boolean {
+  return Boolean(params.hasUpdate && !params.isPopupDismissed && params.isAllowedScreen);
 }
 
 /**

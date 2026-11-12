@@ -138,7 +138,7 @@ fun DigiSwissWebView(
         webViewClient = object : WebViewClient() {
           override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
             val url = request?.url?.toString() ?: return false
-            if (url.startsWith("file:///android_asset/")) {
+            if (url.startsWith("file://")) {
               return false
             }
             if (url.startsWith("http://") || url.startsWith("https://")) {
@@ -165,7 +165,8 @@ fun DigiSwissWebView(
           }
         }
 
-        loadUrl("file:///android_asset/dist/index.html")
+        val initialUrl = OtaManager.resolveInitialUrl(activity)
+        loadUrl(initialUrl)
       }
     }
   )

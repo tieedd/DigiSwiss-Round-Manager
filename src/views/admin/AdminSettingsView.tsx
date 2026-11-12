@@ -3,6 +3,8 @@ import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { AuditLog } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { useUpdate } from '../../context/UpdateContext';
 import { CURRENT_APP_VERSION } from '../../services/versionService';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
@@ -26,12 +28,39 @@ const LOGS_PAGE_SIZE = 20;
 
 export const AdminSettingsView: React.FC = () => {
   const { userProfile, clockOffset, logout } = useAuth();
+  const toast = useToast();
+  const {
+    checkForUpdate,
+    isChecking: isCheckingUpdate,
+    isOtaActive,
+    nativeVersion,
+    resetToDefault
+  } = useUpdate();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [currentLogsPage, setCurrentLogsPage] = useState(1);
 
   const [isChangePassOpen, setIsChangePassOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+
+  const handleManualCheckUpdate = async () => {
+    try {
+      const { releaseInfo, decision } = await checkForUpdate(true);
+      if (decision.hasUpdate) {
+        if (decision.mode === 'ota') {
+          toast.info('Pembaruan OTA Tersedia', `Versi web v${decision.latestVersion} siap diunduh.`);
+        } else {
+          toast.info('Pembaruan APK Tersedia', `Versi v${decision.latestVersion} memerlukan APK baru.`);
+        }
+      } else if (releaseInfo?.error) {
+        toast.error('Pembaruan', 'Gagal memeriksa, coba lagi.');
+      } else {
+        toast.success('Pembaruan', 'Sudah versi terbaru.');
+      }
+    } catch {
+      toast.error('Pembaruan', 'Gagal memeriksa, coba lagi.');
+    }
+  };
 
   const fetchAuditLogs = async () => {
     setLoadingLogs(true);
@@ -85,8 +114,15 @@ export const AdminSettingsView: React.FC = () => {
                 DigiSwiss-Round
               </h3>
               <p className="text-caption text-dark-muted font-mono">
-                Versi aplikasi: v{CURRENT_APP_VERSION} &bull; Akun: @{userProfile?.username}
+                Versi web: v{CURRENT_APP_VERSION} &bull; Native: v{nativeVersion || '-'} &bull; Akun: @{userProfile?.username}
               </p>
+              {isOtaActive && (
+                <div className="mt-1">
+                  <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded bg-brand-primary/15 text-brand-primary border border-brand-primary/30">
+                    Paket OTA Aktif
+                  </span>
+                </div>
+              )}
             </div>
           </div>
           <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-accent/10 text-accent border border-accent/30 font-semibold">
@@ -110,6 +146,33 @@ export const AdminSettingsView: React.FC = () => {
               <span>Batas Sesi Inaktivitas:</span>
             </span>
             <span className="font-mono text-dark-text">30 Menit (Peringatan di menit ke-29)</span>
+          </div>
+          <div className="flex items-center justify-between pt-1 border-t border-dark-border/60 flex-wrap gap-2">
+            <span className="text-dark-muted">Pembaruan Sistem:</span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                onClick={handleManualCheckUpdate}
+                disabled={isCheckingUpdate}
+                isLoading={isCheckingUpdate}
+                className="!min-h-[30px] !py-0.5 !px-2.5 !text-[11px]"
+              >
+                {isCheckingUpdate ? 'Memeriksa...' : 'Cek pembaruan'}
+              </Button>
+              {isOtaActive && (
+                <Button
+                  variant="danger"
+                  onClick={async () => {
+                    if (window.confirm('Kembalikan ke versi web bawaan dari APK? Aplikasi akan dimuat ulang.')) {
+                      await resetToDefault();
+                    }
+                  }}
+                  className="!min-h-[30px] !py-0.5 !px-2.5 !text-[11px]"
+                >
+                  Kembali ke versi bawaan
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </Card>

@@ -1,125 +1,43 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { checkLatestRelease, AppReleaseInfo, isUpdateAvailable } from '../../services/versionService';
-import {
-  downloadApkNative,
-  installApkNative,
-  addNativeEventListener,
-  isNativeBridgeAvailable
-} from '../../services/nativeBridge';
-import { useToast } from '../../context/ToastContext';
-import { Download, X, Sparkles, Loader2 } from 'lucide-react';
+import React, { useRef, useEffect, useState } from 'react';
+import { useUpdate } from '../../context/UpdateContext.tsx';
+import { isUpdateAvailable } from '../../services/versionService.ts';
+import { Download, X, Sparkles, Loader2, RefreshCw, Zap } from 'lucide-react';
 
 export const UpdateNotificationBanner: React.FC = () => {
-  const { success, error, info } = useToast();
-  const [releaseInfo, setReleaseInfo] = useState<AppReleaseInfo | null>(null);
-  const [dismissed, setDismissed] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
+  const {
+    releaseInfo,
+    updateDecision,
+    isBannerDismissed,
+    isDownloading,
+    otaProgress,
+    isOtaReadyToApply,
+    dismissBanner,
+    triggerUpdate,
+    applyOta
+  } = useUpdate();
+
   const textRef = useRef<HTMLSpanElement>(null);
   const [animationDuration, setAnimationDuration] = useState(16);
 
-  useEffect(() => {
-    let isMounted = true;
+  const hasUpdate = Boolean(
+    (releaseInfo?.hasUpdate && isUpdateAvailable(releaseInfo.latestVersion, releaseInfo.currentVersion)) ||
+    updateDecision?.hasUpdate
+  );
 
-    const performCheck = async () => {
-      try {
-        const infoRes = await checkLatestRelease();
-        if (isMounted) {
-          if (infoRes.hasUpdate && isUpdateAvailable(infoRes.latestVersion, infoRes.currentVersion)) {
-            setReleaseInfo(infoRes);
-          } else {
-            setReleaseInfo(null);
-          }
-        }
-      } catch {
-        // Gagal diam-diam jika offline atau ada kesalahan jaringan
-      }
-    };
-
-    // Pengecekan saat aplikasi dibuka
-    performCheck();
-
-    // Pengecekan saat aplikasi kembali aktif dari latar belakang (visibilitychange)
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        performCheck();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      isMounted = false;
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
-  // Pasang pendengar event native 'digiswiss-native'
-  useEffect(() => {
-    const unsubscribe = addNativeEventListener((detail) => {
-      if (detail.type === 'download-started') {
-        setIsDownloading(true);
-      } else if (detail.type === 'download-complete') {
-        setIsDownloading(false);
-        if (detail.ok) {
-          const fileName = detail.fileName || 'aplikasi';
-          success(
-            'Unduhan berhasil',
-            `File ${fileName} tersimpan di folder Unduhan.`,
-            {
-              label: 'Pasang sekarang',
-              onClick: () => {
-                installApkNative();
-              }
-            }
-          );
-        } else {
-          error('Unduhan gagal. Periksa koneksi lalu coba lagi.');
-        }
-      } else if (detail.type === 'download-failed') {
-        setIsDownloading(false);
-        error('Unduhan gagal. Periksa koneksi lalu coba lagi.');
-      } else if (detail.type === 'install-permission-needed') {
-        info('Izinkan DigiSwiss-Round memasang aplikasi, lalu kembali dan tekan Pasang.');
-      }
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [success, error, info]);
-
-  // Handler klik tombol unduh APK
-  const handleDownloadClick = async () => {
-    if (!releaseInfo || isDownloading) return;
-
-    const downloadUrl = releaseInfo.downloadUrl || releaseInfo.htmlUrl;
-    if (!downloadUrl) return;
-
-    const fileName = `DigiSwiss-Round-v${releaseInfo.latestVersion}.apk`;
-
-    if (isNativeBridgeAvailable()) {
-      setIsDownloading(true);
-      const res = await downloadApkNative(downloadUrl, fileName);
-      if (!res.ok) {
-        setIsDownloading(false);
-        error('Unduhan gagal. Periksa koneksi lalu coba lagi.');
-      }
-    } else {
-      // Browser fallback
-      await downloadApkNative(downloadUrl, fileName);
-    }
-  };
+  const latestVer = updateDecision?.latestVersion || releaseInfo?.latestVersion || '';
+  const currentVer = updateDecision?.currentWebVersion || releaseInfo?.currentVersion || '';
+  const isOtaMode = updateDecision?.mode === 'ota';
 
   // Format teks berjalan
   const releaseNameExtra =
     releaseInfo?.releaseName &&
-    releaseInfo.releaseName.toLowerCase() !== `versi ${releaseInfo.latestVersion}`.toLowerCase() &&
-    releaseInfo.releaseName.toLowerCase() !== `v${releaseInfo.latestVersion}`.toLowerCase()
+    releaseInfo.releaseName.toLowerCase() !== `versi ${latestVer}`.toLowerCase() &&
+    releaseInfo.releaseName.toLowerCase() !== `v${latestVer}`.toLowerCase()
       ? ` — ${releaseInfo.releaseName}`
       : '';
 
-  const marqueeText = releaseInfo
-    ? `Versi baru v${releaseInfo.latestVersion} tersedia! Versi Anda saat ini v${releaseInfo.currentVersion}. Perbarui sekarang untuk mendapat perbaikan dan fitur terbaru.${releaseNameExtra}`
+  const marqueeText = hasUpdate
+    ? `Versi baru v${latestVer} tersedia (${isOtaMode ? 'OTA web' : 'perlu APK baru'})! Versi Anda saat ini v${currentVer}. Perbarui sekarang untuk mendapat perbaikan dan fitur terbaru.${releaseNameExtra}`
     : '';
 
   // Hitung durasi animasi berdasarkan panjang teks agar kecepatan stabil ~40px per detik (minimal 12 detik)
@@ -135,13 +53,8 @@ export const UpdateNotificationBanner: React.FC = () => {
     }
   }, [marqueeText]);
 
-  // Banner hanya dirender bila isUpdateAvailable bernilai true dan belum ditutup
-  if (
-    !releaseInfo ||
-    !releaseInfo.hasUpdate ||
-    !isUpdateAvailable(releaseInfo.latestVersion, releaseInfo.currentVersion) ||
-    dismissed
-  ) {
+  // Banner hanya dirender bila ada pembaruan dan belum ditutup
+  if (!hasUpdate || isBannerDismissed) {
     return null;
   }
 
@@ -152,7 +65,11 @@ export const UpdateNotificationBanner: React.FC = () => {
     >
       {/* Ikon kiri diam */}
       <div className="flex-shrink-0 flex items-center pl-0.5">
-        <Sparkles size={16} className="text-accent animate-pulse" />
+        {isOtaMode ? (
+          <Zap size={16} className="text-accent animate-pulse" />
+        ) : (
+          <Sparkles size={16} className="text-accent animate-pulse" />
+        )}
       </div>
 
       {/* Kontainer Marquee overflow-hidden dengan efek pudar halus di tepi kiri dan kanan */}
@@ -188,31 +105,51 @@ export const UpdateNotificationBanner: React.FC = () => {
         </div>
       </div>
 
-      {/* Tombol "Unduh APK" (sekarang button, bukan <a>) dan tutup (X) */}
+      {/* Tombol Aksi: Muat Ulang atau Update */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
+        {isOtaReadyToApply ? (
+          <button
+            type="button"
+            onClick={applyOta}
+            title="Muat ulang paket OTA yang telah diunduh"
+            aria-label="Muat ulang aplikasi"
+            className="flex items-center gap-1 px-2.5 py-1 rounded bg-accent text-dark-bg font-semibold text-[11px] hover:bg-accent/90 transition-colors shadow-sm active:scale-95"
+          >
+            <RefreshCw size={12} />
+            <span>Muat Ulang</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={triggerUpdate}
+            disabled={isDownloading}
+            title="Update aplikasi ke versi terbaru"
+            aria-label="Update aplikasi"
+            className={`flex items-center gap-1 px-2.5 py-1 rounded bg-accent text-dark-bg font-semibold text-[11px] hover:bg-accent/90 transition-colors shadow-sm active:scale-95 ${
+              isDownloading ? 'opacity-70 cursor-not-allowed' : ''
+            }`}
+          >
+            {isDownloading ? (
+              <>
+                <Loader2 size={12} className="animate-spin" />
+                <span>
+                  {isOtaMode && otaProgress !== null
+                    ? `${otaProgress}%`
+                    : 'Mengunduh...'}
+                </span>
+              </>
+            ) : (
+              <>
+                <Download size={12} />
+                <span>Update</span>
+              </>
+            )}
+          </button>
+        )}
+
         <button
           type="button"
-          onClick={handleDownloadClick}
-          disabled={isDownloading}
-          className={`flex items-center gap-1 px-2.5 py-1 rounded bg-accent text-dark-bg font-semibold text-[11px] hover:bg-accent/90 transition-colors shadow-sm active:scale-95 ${
-            isDownloading ? 'opacity-70 cursor-not-allowed' : ''
-          }`}
-        >
-          {isDownloading ? (
-            <>
-              <Loader2 size={12} className="animate-spin" />
-              <span>Mengunduh...</span>
-            </>
-          ) : (
-            <>
-              <Download size={12} />
-              <span>Unduh APK</span>
-            </>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => setDismissed(true)}
+          onClick={dismissBanner}
           className="text-dark-muted hover:text-dark-text p-1 transition-colors rounded-full hover:bg-white/5 active:bg-white/10"
           title="Tutup pemberitahuan"
           aria-label="Tutup pemberitahuan"

@@ -13,6 +13,7 @@ import { recordAuditLog } from '../services/authService';
 import { CURRENT_APP_VERSION } from '../services/versionService';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 import { useToast } from '../context/ToastContext';
+import { useUpdate } from '../context/UpdateContext';
 import { changeUserPin, resetUserPinWithPassword, verifyUserPin } from '../services/pinService';
 import { isWeakPin, isPinFormatValid } from '../utils/pinSecurityLogic';
 import {
@@ -35,8 +36,34 @@ import {
 export const ProfileView: React.FC = () => {
   const { userProfile, currentUser, hasPin, logout, clockOffset, refreshProfile } = useAuth();
   const toast = useToast();
+  const {
+    checkForUpdate,
+    isChecking: isCheckingUpdate,
+    isOtaActive,
+    nativeVersion,
+    resetToDefault
+  } = useUpdate();
   const [isChangePassOpen, setIsChangePassOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+
+  const handleManualCheckUpdate = async () => {
+    try {
+      const { releaseInfo, decision } = await checkForUpdate(true);
+      if (decision.hasUpdate) {
+        if (decision.mode === 'ota') {
+          toast.info('Pembaruan OTA Tersedia', `Versi web v${decision.latestVersion} siap diunduh.`);
+        } else {
+          toast.info('Pembaruan APK Tersedia', `Versi v${decision.latestVersion} memerlukan APK baru.`);
+        }
+      } else if (releaseInfo?.error) {
+        toast.error('Pembaruan', 'Gagal memeriksa, coba lagi.');
+      } else {
+        toast.success('Pembaruan', 'Sudah versi terbaru.');
+      }
+    } catch {
+      toast.error('Pembaruan', 'Gagal memeriksa, coba lagi.');
+    }
+  };
 
   // Verifikasi PIN sebelum Ganti Password
   const [isVerifyPinOpen, setIsVerifyPinOpen] = useState(false);
@@ -458,11 +485,45 @@ export const ProfileView: React.FC = () => {
           </div>
         </Card>
 
-        {/* Informasi Versi Aplikasi */}
-        <div className="text-center pt-2 pb-1">
-          <span className="text-caption text-dark-muted font-mono">
-            Versi aplikasi: v{CURRENT_APP_VERSION}
-          </span>
+        {/* Informasi Versi Aplikasi & Tombol Cek Pembaruan */}
+        <div className="flex flex-col items-center gap-2 pt-2 pb-1 text-center">
+          <div className="flex flex-col items-center gap-0.5">
+            <span className="text-caption text-dark-muted font-mono">
+              Versi web: v{CURRENT_APP_VERSION}
+            </span>
+            <span className="text-caption text-dark-muted font-mono">
+              Versi aplikasi (native): v{nativeVersion || '-'}
+            </span>
+            {isOtaActive && (
+              <span className="inline-block mt-1 px-2 py-0.5 text-[10px] font-semibold rounded bg-brand-primary/15 text-brand-primary border border-brand-primary/30">
+                Paket OTA Aktif
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap justify-center mt-1">
+            <Button
+              variant="secondary"
+              onClick={handleManualCheckUpdate}
+              disabled={isCheckingUpdate}
+              isLoading={isCheckingUpdate}
+              className="!min-h-[34px] !py-1 !px-3 !text-[12px]"
+            >
+              {isCheckingUpdate ? 'Memeriksa...' : 'Cek pembaruan'}
+            </Button>
+            {isOtaActive && (
+              <Button
+                variant="danger"
+                onClick={async () => {
+                  if (window.confirm('Kembalikan ke versi web bawaan dari APK? Aplikasi akan dimuat ulang.')) {
+                    await resetToDefault();
+                  }
+                }}
+                className="!min-h-[34px] !py-1 !px-3 !text-[12px]"
+              >
+                Kembali ke versi bawaan
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 

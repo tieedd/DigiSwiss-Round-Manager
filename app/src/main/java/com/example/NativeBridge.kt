@@ -19,7 +19,9 @@ import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
 import java.net.URI
+import java.net.URL
 
 class NativeBridge(
   private val activity: Activity,
@@ -304,6 +306,154 @@ class NativeBridge(
   }
 
 
+  @JavascriptInterface
+  fun getLatestReleaseTag(): String {
+    val result = JSONObject()
+    var connection: HttpURLConnection? = null
+    try {
+      val url = URL("https://github.com/tieedd/DigiSwiss-Round-Manager/releases/latest")
+      connection = (url.openConnection() as HttpURLConnection).apply {
+        instanceFollowRedirects = false
+        connectTimeout = 8000
+        readTimeout = 8000
+        requestMethod = "GET"
+        setRequestProperty("User-Agent", "DigiSwiss-Round-Android")
+      }
+      connection.connect()
+      val code = connection.responseCode
+      val location = connection.getHeaderField("Location") ?: ""
+      if (location.isNotEmpty()) {
+        val marker = "/releases/tag/"
+        val idx = location.indexOf(marker)
+        if (idx != -1) {
+          val tag = location.substring(idx + marker.length).substringBefore("?").substringBefore("#").trim()
+          if (tag.isNotEmpty()) {
+            result.put("ok", true)
+            result.put("tag", tag)
+            result.put("location", location)
+            return result.toString()
+          }
+        }
+      }
+      result.put("ok", false)
+      result.put("message", "Tag tidak ditemukan dari Location header (HTTP $code)")
+      return result.toString()
+    } catch (e: Exception) {
+      result.put("ok", false)
+      result.put("message", e.message ?: "Gagal mengambil tag rilis terbaru")
+      return result.toString()
+    } finally {
+      try {
+        connection?.disconnect()
+      } catch (_: Exception) {}
+    }
+  }
+
+  @JavascriptInterface
+  fun getNativeVersion(): String {
+    return try {
+      val pInfo = activity.packageManager.getPackageInfo(activity.packageName, 0)
+      pInfo.versionName ?: "1.0"
+    } catch (_: Exception) {
+      "1.0"
+    }
+  }
+
+  @JavascriptInterface
+  fun fetchOtaManifest(): String {
+    val res = OtaManager.fetchManifest()
+    return res.toString()
+  }
+
+  @JvmOverloads
+  @JavascriptInterface
+  fun downloadOtaBundle(version: String, expectedSha256: String = ""): String {
+    val res = OtaManager.downloadAndExtractBundle(activity, version, expectedSha256) { progress, received, total ->
+      val detail = JSONObject().apply {
+        put("type", "ota-download-progress")
+        put("progress", progress)
+        put("receivedBytes", received)
+        put("totalBytes", total)
+        put("version", version)
+      }
+      dispatchNativeEvent("ota-download-progress", detail)
+    }
+
+    val ok = res.optBoolean("ok", false)
+    val detail = JSONObject().apply {
+      put("type", if (ok) "ota-download-complete" else "ota-download-failed")
+      put("ok", ok)
+      put("version", version)
+      put("message", res.optString("message"))
+    }
+    dispatchNativeEvent(if (ok) "ota-download-complete" else "ota-download-failed", detail)
+
+    return res.toString()
+  }
+
+  @JavascriptInterface
+  fun applyOta(): String {
+    val result = JSONObject()
+    try {
+      val currentFile = OtaManager.getCurrentJsonFile(activity)
+      if (!currentFile.exists()) {
+        result.put("ok", false)
+        result.put("message", "Paket OTA belum terpasang")
+        return result.toString()
+      }
+      val json = JSONObject(currentFile.readText())
+      val dirName = json.optString("dir")
+      val indexFile = File(OtaManager.getOtaDir(activity), "$dirName/index.html")
+      if (!indexFile.exists()) {
+        result.put("ok", false)
+        result.put("message", "index.html tidak ditemukan pada folder $dirName")
+        return result.toString()
+      }
+
+      val url = indexFile.toURI().toString()
+      activity.runOnUiThread {
+        webView.loadUrl(url)
+      }
+      result.put("ok", true)
+      result.put("message", "Memuat ulang aplikasi dengan paket OTA")
+      return result.toString()
+    } catch (e: Exception) {
+      result.put("ok", false)
+      result.put("message", e.message ?: "Gagal memuat ulang paket OTA")
+      return result.toString()
+    }
+  }
+
+  @JavascriptInterface
+  fun markBootOk(): String {
+    OtaManager.markBootOk(activity)
+    val result = JSONObject().apply { put("ok", true) }
+    return result.toString()
+  }
+
+  @JavascriptInterface
+  fun resetToDefaultAssets(): String {
+    val result = JSONObject()
+    try {
+      OtaManager.resetToDefault(activity)
+      activity.runOnUiThread {
+        webView.loadUrl(OtaManager.DEFAULT_ASSET_URL)
+      }
+      result.put("ok", true)
+      result.put("message", "Kembali ke versi bawaan APK")
+      return result.toString()
+    } catch (e: Exception) {
+      result.put("ok", false)
+      result.put("message", e.message ?: "Gagal kembali ke versi bawaan")
+      return result.toString()
+    }
+  }
+
+  @JavascriptInterface
+  fun getCurrentOtaInfo(): String {
+    return OtaManager.getCurrentOtaInfo(activity).toString()
+  }
+
   companion object {
     const val REQUEST_CODE_STORAGE = 1001
 
@@ -329,7 +479,10 @@ class NativeBridge(
         val path = uri.path ?: ""
         if (scheme != "https") return false
         if (host == "github.com") {
-          path.contains("/releases/download/") && path.endsWith(".apk", ignoreCase = true)
+          val lower = path.lowercase()
+          lower.startsWith("/tieedd/digiswiss-round-manager/") &&
+            lower.contains("/releases/download/") &&
+            lower.endsWith(".apk")
         } else if (host == "objects.githubusercontent.com") {
           true
         } else {

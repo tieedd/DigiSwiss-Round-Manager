@@ -31,7 +31,7 @@ on:
   workflow_dispatch:
     inputs:
       jenis_update:
-        description: 'Jenis update (otomatis = dibaca dari pesan commit). patch: 1.4.0 -> 1.5.0, minor: 1.4.0 -> 1.5.0, major: 1.4.0 -> 2.0.0'
+        description: 'Jenis update (otomatis = dibaca dari pesan commit). patch: 1.4.0 -> 1.4.1, minor: 1.4.0 -> 1.5.0, major: 1.4.0 -> 2.0.0'
         type: choice
         default: otomatis
         options:
@@ -213,6 +213,43 @@ jobs:
       - name: Pastikan hasil build web ada
         run: test -f app/src/main/assets/dist/index.html
 
+      # 7b. Paket OTA: bundle web (dist.zip) dan manifest.json untuk pembaruan tanpa APK.
+      #     minNativeVersion = versi terendah APK yang boleh memakai paket web ini.
+      #     Naik otomatis ke versi ini bila kode native (Kotlin, manifest, resource, Gradle)
+      #     berubah sejak rilis sebelumnya; selain itu nilai dari rilis sebelumnya dipertahankan.
+      - name: Siapkan paket OTA
+        run: |
+          set -eu
+          ZIP="DigiSwiss-Round-web-v${APP_VERSION}.zip"
+          (cd app/src/main/assets/dist && zip -qr "${GITHUB_WORKSPACE}/${ZIP}" .)
+          OTA_SHA256=$(sha256sum "$ZIP" | cut -d' ' -f1)
+
+          PREV_MIN=$(curl -fsSL --max-time 20 "https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/manifest.json" 2>/dev/null \
+            | sed -n 's/.*"minNativeVersion":"\([0-9][0-9.]*\)".*/\1/p' || true)
+
+          NATIVE_BERUBAH=true
+          if [ -n "${PREV_TAG:-}" ]; then
+            if git diff --quiet "${PREV_TAG}" HEAD -- \
+                app/src/main/java app/src/main/AndroidManifest.xml app/src/main/res \
+                app/build.gradle.kts build.gradle.kts settings.gradle.kts gradle.properties gradle; then
+              NATIVE_BERUBAH=false
+            fi
+          fi
+
+          if [ "$NATIVE_BERUBAH" = "true" ] || [ -z "$PREV_MIN" ]; then
+            MIN_NATIVE="${APP_VERSION}"
+          else
+            MIN_NATIVE="${PREV_MIN}"
+          fi
+
+          printf '{"version":"%s","bundle":"%s","sha256":"%s","minNativeVersion":"%s"}\n' \
+            "$APP_VERSION" "$ZIP" "$OTA_SHA256" "$MIN_NATIVE" > manifest.json
+          echo "Kode native berubah : ${NATIVE_BERUBAH}"
+          echo "minNativeVersion    : ${MIN_NATIVE}"
+          cat manifest.json
+          echo "OTA_SHA256=${OTA_SHA256}" >> "$GITHUB_ENV"
+          echo "OTA_ZIP=${ZIP}" >> "$GITHUB_ENV"
+
       # 8. Terima lisensi Android SDK bawaan runner
       - name: Terima lisensi Android SDK
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
@@ -271,7 +308,8 @@ jobs:
             echo "**Cara pasang:** unduh file .apk di bagian Assets, buka di HP Android,"
             echo "lalu aktifkan \"Pasang dari sumber tidak dikenal\" jika diminta."
             echo
-            echo "SHA-256: \`${APK_SHA256}\`"
+            echo "SHA-256 APK: \`${APK_SHA256}\`"
+            echo "SHA-256 paket web (OTA): \`${OTA_SHA256}\`"
           } > catatan-rilis.md
           cat catatan-rilis.md
 
@@ -280,10 +318,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: digiswiss-round-apk
-          path: DigiSwiss-Round-v${{ env.APP_VERSION }}.apk
+          path: |
+            DigiSwiss-Round-v${{ env.APP_VERSION }}.apk
+            DigiSwiss-Round-web-v${{ env.APP_VERSION }}.zip
+            manifest.json
           retention-days: 14
 
-      # 15. Buat Release dan lampirkan APK
+      # 15. Buat Release dan lampirkan APK, paket web (OTA), dan manifest.json
       - name: Buat GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -292,4 +333,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           body_path: catatan-rilis.md
           make_latest: true
-          files: DigiSwiss-Round-v${{ env.APP_VERSION }}.apk
+          files: |
+            DigiSwiss-Round-v${{ env.APP_VERSION }}.apk
+            DigiSwiss-Round-web-v${{ env.APP_VERSION }}.zip
+            manifest.json
