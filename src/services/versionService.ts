@@ -302,3 +302,6 @@ export async function checkLatestRelease(
     error: true
   };
 }
+
+export { isValidOtaManifest, validateOtaManifest } from './otaService.ts';
+

@@ -1,16 +1,124 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  isValidOtaManifest,
   validateOtaManifest,
   resolveUpdateMode
 } from '../services/otaService.ts';
+
+test('LOGIKA OTA: isValidOtaManifest validasi ketat format manifest', () => {
+  // 1. Valid manifest
+  assert.equal(
+    isValidOtaManifest({
+      version: '1.2.0',
+      bundle: 'DigiSwiss-Round-web-v1.2.0.zip',
+      sha256: 'a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0',
+      minNativeVersion: '1.0.0'
+    }),
+    true
+  );
+
+  // 2. Hash kosong
+  assert.equal(
+    isValidOtaManifest({
+      version: '1.2.0',
+      bundle: 'DigiSwiss-Round-web-v1.2.0.zip',
+      sha256: '',
+      minNativeVersion: '1.0.0'
+    }),
+    false
+  );
+
+  // 3. Hash salah panjang (misal 32 karakter atau 63 karakter)
+  assert.equal(
+    isValidOtaManifest({
+      version: '1.2.0',
+      bundle: 'DigiSwiss-Round-web-v1.2.0.zip',
+      sha256: 'a'.repeat(63),
+      minNativeVersion: '1.0.0'
+    }),
+    false
+  );
+  assert.equal(
+    isValidOtaManifest({
+      version: '1.2.0',
+      bundle: 'DigiSwiss-Round-web-v1.2.0.zip',
+      sha256: 'a'.repeat(65),
+      minNativeVersion: '1.0.0'
+    }),
+    false
+  );
+  assert.equal(
+    isValidOtaManifest({
+      version: '1.2.0',
+      bundle: 'DigiSwiss-Round-web-v1.2.0.zip',
+      sha256: 'not-hex'.repeat(10),
+      minNativeVersion: '1.0.0'
+    }),
+    false
+  );
+
+  // 4. Versi aneh seperti "../1.0.0" atau "invalid"
+  assert.equal(
+    isValidOtaManifest({
+      version: '../1.0.0',
+      bundle: 'bundle.zip',
+      sha256: 'a'.repeat(64),
+      minNativeVersion: '1.0.0'
+    }),
+    false
+  );
+  assert.equal(
+    isValidOtaManifest({
+      version: '1.0',
+      bundle: 'bundle.zip',
+      sha256: 'a'.repeat(64),
+      minNativeVersion: '1.0.0'
+    }),
+    false
+  );
+
+  // 5. Bundle berisi path traversal atau bukan file zip murni
+  assert.equal(
+    isValidOtaManifest({
+      version: '1.2.0',
+      bundle: '../bundle.zip',
+      sha256: 'a'.repeat(64),
+      minNativeVersion: '1.0.0'
+    }),
+    false
+  );
+  assert.equal(
+    isValidOtaManifest({
+      version: '1.2.0',
+      bundle: 'folder/bundle.zip',
+      sha256: 'a'.repeat(64),
+      minNativeVersion: '1.0.0'
+    }),
+    false
+  );
+  assert.equal(
+    isValidOtaManifest({
+      version: '1.2.0',
+      bundle: 'bundle.tar.gz',
+      sha256: 'a'.repeat(64),
+      minNativeVersion: '1.0.0'
+    }),
+    false
+  );
+
+  // 6. Manifest bukan objek atau null
+  assert.equal(isValidOtaManifest(null), false);
+  assert.equal(isValidOtaManifest(undefined), false);
+  assert.equal(isValidOtaManifest('string'), false);
+});
 
 test('LOGIKA OTA: validateOtaManifest validasi format manifest dan hash sha256', () => {
   // 1. Manifest valid lengkap
   const validManifest = {
     version: '1.2.0',
     bundle: 'DigiSwiss-Round-web-v1.2.0.zip',
-    sha256: 'a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0',
+    sha256: 'A1B2C3D4E5F67890123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0',
     minNativeVersion: '1.0.0'
   };
   const res1 = validateOtaManifest(validManifest);
@@ -31,7 +139,7 @@ test('LOGIKA OTA: validateOtaManifest validasi format manifest dan hash sha256',
   assert.equal(res2.valid, true);
   assert.equal(res2.manifest?.minNativeVersion, '1.0');
 
-  // 3. Kasus invalid: bukan objek, version kosong, bundle kosong, sha256 terlalu pendek
+  // 3. Kasus invalid
   assert.equal(validateOtaManifest(null).valid, false);
   assert.equal(validateOtaManifest(undefined).valid, false);
   assert.equal(validateOtaManifest('string').valid, false);

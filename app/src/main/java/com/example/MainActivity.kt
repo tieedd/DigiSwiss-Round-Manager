@@ -135,10 +135,18 @@ fun DigiSwissWebView(
         addJavascriptInterface(bridge, "AndroidBridge")
         onBridgeCreated(bridge)
 
+        val otaCanonicalDir = try {
+          OtaManager.getOtaDir(activity).canonicalPath
+        } catch (_: Exception) {
+          ""
+        }
+        val otaPrefix = if (otaCanonicalDir.isNotEmpty()) "file://$otaCanonicalDir/" else ""
+
         webViewClient = object : WebViewClient() {
           override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
             val url = request?.url?.toString() ?: return false
-            if (url.startsWith("file://")) {
+            // Hanya izinkan awalan "file:///android_asset/" dan folder OTA aplikasi
+            if (url.startsWith("file:///android_asset/") || (otaPrefix.isNotEmpty() && url.startsWith(otaPrefix))) {
               return false
             }
             if (url.startsWith("http://") || url.startsWith("https://")) {
@@ -152,7 +160,8 @@ fun DigiSwissWebView(
                 return false
               }
             }
-            return false
+            // URL file:// lain atau skema selain di atas tidak dimuat di WebView
+            return true
           }
         }
 

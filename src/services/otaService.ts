@@ -30,6 +30,35 @@ export interface UpdateDecision {
   manifest?: OtaManifest;
 }
 
+const OTA_VERSION_REGEX = /^\d+\.\d+\.\d+$/;
+const OTA_SHA256_REGEX = /^[0-9a-fA-F]{64}$/;
+
+/**
+ * Fungsi murni untuk memeriksa apakah objek manifest OTA valid sesuai spesifikasi:
+ * - version cocok ^\d+\.\d+\.\d+$
+ * - sha256 cocok ^[0-9a-fA-F]{64}$ (64 karakter hex)
+ * - bundle berupa string berakhiran .zip tanpa "/" atau ".."
+ * - minNativeVersion berformat versi (misal: "1.0", "1.0.0")
+ */
+export function isValidOtaManifest(m: any): boolean {
+  if (!m || typeof m !== 'object') return false;
+
+  const rawVer = typeof m.version === 'string' ? m.version.trim().replace(/^[vV]/, '') : '';
+  if (!OTA_VERSION_REGEX.test(rawVer)) return false;
+
+  const rawSha = typeof m.sha256 === 'string' ? m.sha256.trim() : '';
+  if (!OTA_SHA256_REGEX.test(rawSha)) return false;
+
+  const rawBundle = typeof m.bundle === 'string' ? m.bundle.trim() : '';
+  if (!rawBundle.endsWith('.zip')) return false;
+  if (rawBundle.includes('/') || rawBundle.includes('\\') || rawBundle.includes('..')) return false;
+
+  const minNative = typeof m.minNativeVersion === 'string' ? m.minNativeVersion.trim().replace(/^[vV]/, '') : '1.0';
+  if (!/^\d+(\.\d+)*$/.test(minNative)) return false;
+
+  return true;
+}
+
 /**
  * Validasi ketat format objek manifest.json
  */
@@ -38,32 +67,23 @@ export function validateOtaManifest(raw: any): {
   manifest?: OtaManifest;
   error?: string;
 } {
-  if (!raw || typeof raw !== 'object') {
-    return { valid: false, error: 'Manifest bukan objek JSON yang valid.' };
+  if (!isValidOtaManifest(raw)) {
+    console.warn('Manifest OTA tidak valid dan diabaikan:', raw);
+    return { valid: false, error: 'Manifest OTA tidak valid.' };
   }
 
-  const version = typeof raw.version === 'string' ? raw.version.trim() : '';
-  const bundle = typeof raw.bundle === 'string' ? raw.bundle.trim() : '';
-  const sha256 = typeof raw.sha256 === 'string' ? raw.sha256.trim() : '';
-  const minNativeVersion = typeof raw.minNativeVersion === 'string' ? raw.minNativeVersion.trim() : '1.0';
-
-  if (!version) {
-    return { valid: false, error: 'Field "version" tidak ditemukan di manifest.' };
-  }
-  if (!bundle) {
-    return { valid: false, error: 'Field "bundle" tidak ditemukan di manifest.' };
-  }
-  if (!sha256 || sha256.length < 32) {
-    return { valid: false, error: 'Field "sha256" tidak valid di manifest.' };
-  }
+  const cleanVer = String(raw.version).trim().replace(/^[vV]/, '');
+  const cleanSha = String(raw.sha256).trim().toLowerCase();
+  const cleanBundle = String(raw.bundle).trim();
+  const cleanMinNative = typeof raw.minNativeVersion === 'string' ? raw.minNativeVersion.trim().replace(/^[vV]/, '') : '1.0';
 
   return {
     valid: true,
     manifest: {
-      version,
-      bundle,
-      sha256,
-      minNativeVersion
+      version: cleanVer,
+      bundle: cleanBundle,
+      sha256: cleanSha,
+      minNativeVersion: cleanMinNative
     }
   };
 }

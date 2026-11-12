@@ -25,6 +25,14 @@ object OtaManager {
   private const val MAX_EXTRACT_ENTRIES = 1000
   private const val MANIFEST_URL = "https://github.com/tieedd/DigiSwiss-Round-Manager/releases/latest/download/manifest.json"
 
+  private val VERSION_REGEX = Regex("""^\d+\.\d+\.\d+$""")
+  private val SHA256_REGEX = Regex("""^[0-9a-fA-F]{64}$""")
+
+  fun isValidVersion(version: String): Boolean {
+    val clean = version.trim().removePrefix("v").removePrefix("V")
+    return VERSION_REGEX.matches(clean)
+  }
+
   fun getOtaDir(context: Context): File {
     return File(context.filesDir, OTA_DIR_NAME).apply {
       if (!exists()) mkdirs()
@@ -52,8 +60,17 @@ object OtaManager {
     try {
       val raw = currentFile.readText()
       val json = JSONObject(raw)
+      val version = json.optString("version")
+      val cleanVer = version.trim().removePrefix("v").removePrefix("V")
+      if (!VERSION_REGEX.matches(cleanVer)) {
+        Log.w(TAG, "Versi pada current.json tidak valid: $version, kembali ke bawaan")
+        resetToDefault(context)
+        return DEFAULT_ASSET_URL
+      }
+
       val dirName = json.optString("dir")
-      if (dirName.isNullOrEmpty()) {
+      if (dirName.isNullOrEmpty() || dirName != "web-$cleanVer") {
+        Log.w(TAG, "Nama folder pada current.json tidak sesuai ($dirName vs web-$cleanVer), reset")
         resetToDefault(context)
         return DEFAULT_ASSET_URL
       }
@@ -160,6 +177,15 @@ object OtaManager {
 
       val rawJson = out.toString("UTF-8")
       val manifestJson = JSONObject(rawJson)
+
+      // Validasi versi dari manifest
+      val manifestVer = manifestJson.optString("version").trim().removePrefix("v").removePrefix("V")
+      if (!VERSION_REGEX.matches(manifestVer)) {
+        result.put("ok", false)
+        result.put("message", "Format versi pada manifest tidak valid: ${manifestJson.optString("version")}")
+        return result
+      }
+
       result.put("ok", true)
       result.put("manifest", manifestJson)
       return result
@@ -184,9 +210,16 @@ object OtaManager {
   ): JSONObject {
     val result = JSONObject()
     val cleanVer = version.trim().removePrefix("v").removePrefix("V")
-    if (cleanVer.isEmpty()) {
+    if (!VERSION_REGEX.matches(cleanVer)) {
       result.put("ok", false)
-      result.put("message", "Versi OTA tidak valid")
+      result.put("message", "Format versi OTA tidak valid, wajib format mayor.minor.patch")
+      return result
+    }
+
+    val cleanSha = expectedSha256.trim()
+    if (!SHA256_REGEX.matches(cleanSha)) {
+      result.put("ok", false)
+      result.put("message", "Format SHA-256 tidak valid, wajib 64 karakter heksadesimal")
       return result
     }
 
@@ -251,12 +284,12 @@ object OtaManager {
       outputStream.close()
       inputStream.close()
 
-      // 1. Verifikasi SHA-256
+      // 1. Verifikasi SHA-256 (Wajib cocok persis)
       val actualSha = digest.digest().joinToString("") { "%02x".format(it) }
-      if (expectedSha256.isNotEmpty() && !actualSha.equals(expectedSha256.trim(), ignoreCase = true)) {
+      if (!actualSha.equals(cleanSha, ignoreCase = true)) {
         tempZip.delete()
         result.put("ok", false)
-        result.put("message", "Verifikasi SHA-256 gagal! Diharapkan: $expectedSha256, didapat: $actualSha")
+        result.put("message", "Verifikasi SHA-256 gagal! Diharapkan: $cleanSha, didapat: $actualSha")
         return result
       }
 

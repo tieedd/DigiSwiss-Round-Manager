@@ -10,7 +10,6 @@
     "test": "node --test src/tests/*.test.mjs"
   },
   "dependencies": {
-    "@capacitor/core": "^6.2.0",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.20",
     "firebase": "^11.3.0",

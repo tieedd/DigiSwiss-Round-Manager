@@ -1,6 +1,6 @@
 # DigiSwiss-Round
 
-**DigiSwiss-Round** adalah aplikasi manajer turnamen sistem Swiss Round khusus untuk **Digimon Card Game (TCG)** resmi Bandai. Aplikasi ini dirancang *mobile-first*, dibangun menggunakan **React 18 + TypeScript + Tailwind CSS**, dibungkus dalam arsitektur hybrid Android dengan Capacitor (`appId: com.digiswiss.round`), dan didukung oleh backend cloud **Firebase Authentication & Firestore**.
+**DigiSwiss-Round** adalah aplikasi manajer turnamen sistem Swiss Round khusus untuk **Digimon Card Game (TCG)** resmi Bandai. Aplikasi ini dirancang *mobile-first*, dibangun menggunakan **React 18 + TypeScript + Tailwind CSS**, dibungkus dalam proyek Android native (**Kotlin, WebView**) yang memuat hasil build web dari `app/src/main/assets/dist`, dengan pembaruan web lewat **OTA GitHub Release** dan pembaruan APK untuk perubahan native, serta didukung oleh backend cloud **Firebase Authentication & Firestore**.
 
 ---
 
@@ -102,21 +102,14 @@ firebase deploy --only firestore:rules
 
 ## Prosedur Lupa Password
 
-Demi menjaga prinsip zero-trust dan keamanan tanpa server (Spark tier), aplikasi tidak menyediakan fitur "reset password" maupun "hapus akun" yang tidak terotentikasi dari sisi klien. Prosedur lupa password dilakukan sebagai berikut:
+Demi menjaga prinsip zero-trust dan keamanan tanpa server (Spark tier), aplikasi tidak menyediakan fitur "reset password" maupun "hapus akun" yang tidak terotentikasi dari sisi klien. Prosedur lupa password dilakukan langsung melalui **Firebase Console**:
 
-### Opsi 1: Melalui Dashboard Admin Aplikasi
-Jika administrator sedang masuk ke aplikasi:
-1. Administrator membuka menu **Pengguna**.
-2. Cari nama pemain atau organizer yang lupa password.
-3. Administrator dapat mengatur ulang password sementara pengguna tersebut (memerlukan konfirmasi password admin).
-4. Akun akan ditandai `mustChangePassword: true`, sehingga pengguna diwajibkan mengganti password baru saat login pertama kali.
-
-### Opsi 2: Melalui Firebase Console
 1. Administrator membuka [Firebase Console](https://console.firebase.google.com/).
 2. Masuk ke menu **Authentication** > **Users**.
-3. Cari email semu pemain yang bersangkutan (`<username>@digiswiss.app`).
-4. Klik menu opsi tiga titik pada baris pengguna, lalu pilih **Reset password** (atau atur password baru).
-5. Informasikan password sementara kepada pengguna.
+3. Cari email semu pengguna yang bersangkutan (`<username>@digiswiss.app`).
+4. Klik menu opsi tiga titik pada baris pengguna, lalu pilih **Reset password** (atau atur password baru sementara).
+5. Informasikan password sementara tersebut kepada pengguna.
+6. **Catatan Penting:** Setelah password direset di Firebase Console, pengguna sangat disarankan untuk segera memperbarui password kembali melalui menu **Ubah Password** begitu berhasil masuk ke aplikasi demi keamanan akun.
 
 ---
 
