@@ -333,6 +333,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // 7. Koleksi Guard & Kode Reset Password (Hanya diakses dari server): resetGuards & resetCodes
+    match /resetGuards/{docId} {
+      allow read, write: if false;
+    }
+
+    match /resetCodes/{docId} {
+      allow read, write: if false;
+    }
+
     // Default deny untuk seluruh dokumen lainnya
     match /{document=**} {
       allow read, write: if false;

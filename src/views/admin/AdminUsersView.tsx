@@ -10,6 +10,9 @@ import { StatusBadge } from '../../components/common/StatusBadge';
 import { BottomSheet } from '../../components/common/BottomSheet';
 import { AccessDeniedView } from '../../components/common/AccessDeniedView';
 import { recordAuditLog, reauthenticateCurrentUser } from '../../services/authService';
+import { createResetCodeAsAdmin, CreateResetCodeResponse } from '../../services/passwordResetService';
+import { copyTextNative } from '../../services/nativeBridge';
+import { formatIndonesianDateTime } from '../../utils/dateHelpers';
 import { canAccessAdminUsers, validateRoleChange, validateStatusToggle } from '../../utils/adminHelpers';
 import {
   Users,
@@ -23,7 +26,10 @@ import {
   ShieldAlert,
   Eye,
   EyeOff,
-  AlertCircle
+  AlertCircle,
+  KeyRound,
+  Copy,
+  Check
 } from 'lucide-react';
 
 interface UserItem extends UserProfile {
@@ -51,6 +57,17 @@ export const AdminUsersView: React.FC<{ onNavigateHome?: () => void }> = ({ onNa
   // State Konfirmasi Ubah Status Aktif/Nonaktif
   const [statusToggleModalOpen, setStatusToggleModalOpen] = useState(false);
   const [targetStatus, setTargetStatus] = useState<boolean>(false);
+
+  // State Pembuatan Kode Reset Darurat
+  const [resetCodeModalOpen, setResetCodeModalOpen] = useState(false);
+  const [resetTargetUser, setResetTargetUser] = useState<UserItem | null>(null);
+  const [resetDurationMinutes, setResetDurationMinutes] = useState<number>(60);
+  const [resetAdminPassword, setResetAdminPassword] = useState('');
+  const [showResetAdminPassword, setShowResetAdminPassword] = useState(false);
+  const [resetCodeLoading, setResetCodeLoading] = useState(false);
+  const [resetCodeError, setResetCodeError] = useState('');
+  const [generatedResetResult, setGeneratedResetResult] = useState<CreateResetCodeResponse | null>(null);
+  const [copiedResetCode, setCopiedResetCode] = useState(false);
 
   // Akses Gate: Hanya role 'admin' yang dapat mengakses
   if (!canAccessAdminUsers(currentAdminProfile?.role)) {
@@ -242,6 +259,65 @@ export const AdminUsersView: React.FC<{ onNavigateHome?: () => void }> = ({ onNa
     }
   };
 
+  // Penanganan buka/tutup & pembuatan Kode Reset Darurat
+  const handleOpenResetCodeModal = (user: UserItem) => {
+    if (user.username === 'admindss' || !user.active) return;
+    setResetTargetUser(user);
+    setResetDurationMinutes(60);
+    setResetAdminPassword('');
+    setShowResetAdminPassword(false);
+    setResetCodeError('');
+    setGeneratedResetResult(null);
+    setCopiedResetCode(false);
+    setResetCodeModalOpen(true);
+  };
+
+  const handleCloseResetCodeModal = () => {
+    if (resetCodeLoading) return;
+    setResetCodeModalOpen(false);
+    setResetTargetUser(null);
+    setResetAdminPassword('');
+    setShowResetAdminPassword(false);
+    setResetCodeError('');
+    setGeneratedResetResult(null);
+    setCopiedResetCode(false);
+  };
+
+  const handleGenerateResetCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetTargetUser || resetCodeLoading) return;
+
+    if (!resetAdminPassword) {
+      setResetCodeError('Password Admin wajib diisi.');
+      return;
+    }
+
+    setResetCodeLoading(true);
+    setResetCodeError('');
+    try {
+      const result = await createResetCodeAsAdmin(
+        resetTargetUser.username,
+        resetDurationMinutes,
+        resetAdminPassword
+      );
+      setResetAdminPassword('');
+      setShowResetAdminPassword(false);
+      setGeneratedResetResult(result);
+    } catch (err: any) {
+      setResetCodeError(err?.message || 'Gagal membuat kode reset password.');
+    } finally {
+      setResetCodeLoading(false);
+    }
+  };
+
+  const handleCopyResetCode = async () => {
+    if (!generatedResetResult?.code) return;
+    const res = await copyTextNative(generatedResetResult.code);
+    if (res.ok) {
+      setCopiedResetCode(true);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -347,9 +423,19 @@ export const AdminUsersView: React.FC<{ onNavigateHome?: () => void }> = ({ onNa
                     )}
                   </div>
 
-                  {/* Tombol Toggle Aktif / Nonaktif */}
+                  {/* Tombol Aksi Admin: Kode Reset & Toggle Aktif / Nonaktif */}
                   {!isMainAdmin && (
-                    <div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {u.active && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenResetCodeModal(u)}
+                          className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline px-2 py-1 min-h-[34px] rounded hover:bg-accent/10 transition-colors"
+                        >
+                          <KeyRound size={14} />
+                          <span>Kode Reset</span>
+                        </button>
+                      )}
                       {u.active ? (
                         <button
                           type="button"
@@ -570,6 +656,146 @@ export const AdminUsersView: React.FC<{ onNavigateHome?: () => void }> = ({ onNa
               </Button>
             </div>
           </form>
+        )}
+      </BottomSheet>
+
+      {/* Bottom Sheet Kode Reset Password Darurat */}
+      <BottomSheet
+        isOpen={resetCodeModalOpen}
+        onClose={handleCloseResetCodeModal}
+        title="Kode Reset Password"
+      >
+        {resetTargetUser && (
+          generatedResetResult ? (
+            <div className="flex flex-col gap-3.5 py-1">
+              <div className="p-3 bg-dark-surface-high rounded-btn border border-dark-border text-caption">
+                Akun:{' '}
+                <strong className="text-dark-text">
+                  {resetTargetUser.displayName || resetTargetUser.username} (@{resetTargetUser.username})
+                </strong>
+              </div>
+
+              <div className="p-4 bg-dark-surface-high rounded-btn border border-accent/40 flex flex-col items-center gap-2 text-center">
+                <span className="text-[11px] uppercase tracking-wider text-dark-muted font-medium">
+                  Kode Reset Sekali Pakai
+                </span>
+                <div className="font-mono text-2xl font-bold tracking-[0.22em] text-accent select-all break-all">
+                  {generatedResetResult.code}
+                </div>
+                <span className="text-caption text-dark-muted">
+                  Berlaku hingga{' '}
+                  <strong className="text-dark-text">
+                    {formatIndonesianDateTime(generatedResetResult.expiresAt)}
+                  </strong>
+                </span>
+              </div>
+
+              <Button
+                variant="secondary"
+                fullWidth
+                type="button"
+                onClick={handleCopyResetCode}
+                icon={copiedResetCode ? <Check size={16} /> : <Copy size={16} />}
+              >
+                {copiedResetCode ? 'Kode Tersalin' : 'Salin'}
+              </Button>
+
+              <div className="flex items-start gap-2 p-2.5 rounded-btn bg-status-yellow/10 border border-status-yellow/30 text-caption text-status-yellow">
+                <ShieldAlert size={16} className="flex-shrink-0 mt-0.5 stroke-[1.5]" />
+                <span>
+                  Kode hanya ditampilkan sekali. Serahkan langsung ke pemain, jangan lewat grup.
+                </span>
+              </div>
+
+              <Button
+                variant="primary"
+                fullWidth
+                type="button"
+                onClick={handleCloseResetCodeModal}
+              >
+                Tutup
+              </Button>
+            </div>
+          ) : (
+            <form onSubmit={handleGenerateResetCode} className="flex flex-col gap-3.5 py-1">
+              <div className="p-3 bg-dark-surface-high rounded-btn border border-dark-border text-caption flex flex-col gap-1.5">
+                <div>
+                  Akun:{' '}
+                  <strong className="text-dark-text">
+                    {resetTargetUser.displayName || resetTargetUser.username} (@{resetTargetUser.username})
+                  </strong>
+                </div>
+                <p className="text-dark-muted leading-relaxed">
+                  Pemain memakai kode ini di layar Lupa password. PIN lama akan dihapus dan pemain membuat PIN baru.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <span className="text-caption font-medium text-dark-text">Masa Berlaku Kode</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { label: '30 menit', value: 30 },
+                    { label: '1 jam', value: 60 },
+                    { label: '6 jam', value: 360 },
+                    { label: '24 jam', value: 1440 },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      disabled={resetCodeLoading}
+                      onClick={() => setResetDurationMinutes(opt.value)}
+                      className={`min-h-[40px] px-2.5 py-1.5 rounded-btn border text-caption font-medium transition-colors ${
+                        resetDurationMinutes === opt.value
+                          ? 'bg-accent text-[#0B0F14] border-accent font-semibold'
+                          : 'bg-dark-surface-high text-dark-text border-dark-border hover:border-accent/50'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <Input
+                label="Password Admin"
+                type={showResetAdminPassword ? 'text' : 'password'}
+                placeholder="Password Admin"
+                value={resetAdminPassword}
+                onChange={(e) => {
+                  setResetAdminPassword(e.target.value);
+                  if (resetCodeError) setResetCodeError('');
+                }}
+                error={resetCodeError}
+                disabled={resetCodeLoading}
+                autoComplete="current-password"
+                rightIcon={
+                  <button
+                    type="button"
+                    onClick={() => setShowResetAdminPassword(!showResetAdminPassword)}
+                    className="p-1 text-dark-muted hover:text-dark-text focus:outline-none"
+                    aria-label={showResetAdminPassword ? 'Sembunyikan' : 'Tampilkan'}
+                  >
+                    {showResetAdminPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                }
+              />
+
+              <div className="flex flex-col gap-2 mt-1">
+                <Button variant="primary" fullWidth type="submit" isLoading={resetCodeLoading}>
+                  Buat Kode
+                </Button>
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  type="button"
+                  disabled={resetCodeLoading}
+                  onClick={handleCloseResetCodeModal}
+                >
+                  Batal
+                </Button>
+              </div>
+            </form>
+          )
         )}
       </BottomSheet>
     </div>

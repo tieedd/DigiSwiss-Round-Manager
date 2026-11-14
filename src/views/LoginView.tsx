@@ -4,7 +4,18 @@ import { Button } from '../components/common/Button';
 import { Input } from '../components/common/Input';
 import { loginUser, registerUser, getRateLimitStatus } from '../services/authService';
 import { getBootstrapError, BootstrapError } from '../services/bootstrapService';
-import { LogIn, UserPlus, Eye, EyeOff, ShieldAlert, CheckCircle2, AlertTriangle } from 'lucide-react';
+import {
+  normalizeResetCode,
+  normalizeResetPin,
+  normalizeResetUsername,
+  PasswordResetError,
+  resetPasswordWithCode,
+  resetPasswordWithPin,
+} from '../services/passwordResetService';
+import { evaluatePasswordStrength, validateNewPassword } from '../utils/authHelpers';
+import { isPinFormatValid } from '../utils/pinSecurityLogic';
+import { BottomSheet } from '../components/common/BottomSheet';
+import { LogIn, UserPlus, Eye, EyeOff, ShieldAlert, CheckCircle2, AlertTriangle, KeyRound } from 'lucide-react';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 
 export const LoginView: React.FC = () => {
@@ -34,6 +45,24 @@ export const LoginView: React.FC = () => {
   // Status error bootstrap admin otomatis
   const [bootstrapErr, setBootstrapErr] = useState<BootstrapError | null>(null);
 
+  // State Lupa Password
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [resetMode, setResetMode] = useState<'pin' | 'code'>('pin');
+  const [resetUsername, setResetUsername] = useState('');
+  const [resetPin, setResetPin] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [showResetNewPassword, setShowResetNewPassword] = useState(false);
+  const [showResetConfirmPassword, setShowResetConfirmPassword] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState('');
+  const [resetRemainingAttempts, setResetRemainingAttempts] = useState<number | null>(null);
+  const [resetLockedUntil, setResetLockedUntil] = useState<number | null>(null);
+  const [resetNowMs, setResetNowMs] = useState<number>(() => Date.now());
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [resetNeedsNewPin, setResetNeedsNewPin] = useState(false);
+
   useEffect(() => {
     const checkState = () => {
       const status = getRateLimitStatus();
@@ -49,6 +78,144 @@ export const LoginView: React.FC = () => {
     const interval = setInterval(checkState, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!forgotOpen || !resetLockedUntil) return;
+    setResetNowMs(Date.now());
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setResetNowMs(now);
+      if (now >= resetLockedUntil) {
+        setResetLockedUntil(null);
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [forgotOpen, resetLockedUntil]);
+
+  const clearForgotSensitiveFields = () => {
+    setResetPin('');
+    setResetCode('');
+    setResetNewPassword('');
+    setResetConfirmPassword('');
+    setShowResetNewPassword(false);
+    setShowResetConfirmPassword(false);
+  };
+
+  const handleOpenForgotSheet = () => {
+    clearForgotSensitiveFields();
+    setResetMode('pin');
+    setResetUsername(normalizeResetUsername(loginUsername));
+    setResetError('');
+    setResetRemainingAttempts(null);
+    setResetLockedUntil(null);
+    setResetSuccess(false);
+    setResetNeedsNewPin(false);
+    setForgotOpen(true);
+  };
+
+  const handleCloseForgotSheet = () => {
+    if (resetLoading) return;
+    setForgotOpen(false);
+    clearForgotSensitiveFields();
+    setResetError('');
+    setResetRemainingAttempts(null);
+    setResetLockedUntil(null);
+    setResetSuccess(false);
+    setResetNeedsNewPin(false);
+  };
+
+  const resetLockRemainingMs = resetLockedUntil ? Math.max(0, resetLockedUntil - resetNowMs) : 0;
+  const isResetLocked = resetLockRemainingMs > 0;
+  const resetLockRemainingMinutes = isResetLocked ? Math.max(1, Math.ceil(resetLockRemainingMs / 60000)) : 0;
+  const resetPasswordStrength = evaluatePasswordStrength(resetNewPassword);
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (resetLoading || isResetLocked) return;
+
+    setResetError('');
+    setResetRemainingAttempts(null);
+
+    const cleanUsername = normalizeResetUsername(resetUsername);
+    if (!cleanUsername) {
+      setResetError('Username wajib diisi.');
+      return;
+    }
+
+    if (resetMode === 'pin') {
+      const cleanPin = normalizeResetPin(resetPin);
+      if (!isPinFormatValid(cleanPin)) {
+        setResetError('PIN harus berupa tepat 6 digit angka.');
+        return;
+      }
+    } else {
+      const cleanCode = normalizeResetCode(resetCode);
+      if (cleanCode.length !== 10) {
+        setResetError('Kode reset harus terdiri dari 10 karakter tanpa spasi.');
+        return;
+      }
+    }
+
+    const passwordCheck = validateNewPassword(resetNewPassword, {
+      isAdmin: false,
+      username: cleanUsername,
+    });
+    if (!passwordCheck.valid) {
+      setResetError(passwordCheck.error || 'Password baru tidak memenuhi persyaratan.');
+      return;
+    }
+
+    if (resetNewPassword !== resetConfirmPassword) {
+      setResetError('Konfirmasi password baru tidak cocok.');
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      const result =
+        resetMode === 'pin'
+          ? await resetPasswordWithPin(cleanUsername, resetPin, resetNewPassword)
+          : await resetPasswordWithCode(cleanUsername, resetCode, resetNewPassword);
+
+      setResetUsername(cleanUsername);
+      setResetNeedsNewPin(Boolean(result.needsNewPin));
+      setResetSuccess(true);
+      setResetError('');
+      setResetRemainingAttempts(null);
+      setResetLockedUntil(null);
+      clearForgotSensitiveFields();
+    } catch (err: any) {
+      const resetErr = err instanceof PasswordResetError ? err : null;
+      setResetError(err?.message || 'Gagal mereset password. Silakan coba lagi.');
+
+      if (resetErr?.code === 'mismatch' && typeof resetErr.remainingAttempts === 'number') {
+        setResetRemainingAttempts(resetErr.remainingAttempts);
+      }
+
+      if (resetErr?.code === 'locked' && typeof resetErr.lockedUntil === 'number') {
+        setResetNowMs(Date.now());
+        setResetLockedUntil(resetErr.lockedUntil);
+      }
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const handleGoToLoginAfterReset = () => {
+    const cleanUsername = normalizeResetUsername(resetUsername);
+    setForgotOpen(false);
+    clearForgotSensitiveFields();
+    setResetError('');
+    setResetRemainingAttempts(null);
+    setResetLockedUntil(null);
+    setResetSuccess(false);
+    setResetNeedsNewPin(false);
+    setTab('login');
+    setLoginUsername(cleanUsername);
+    setLoginPassword('');
+    setLoginError('');
+    setLoginErrorCode('');
+  };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -232,6 +399,17 @@ export const LoginView: React.FC = () => {
                 }
               />
 
+              <div className="flex justify-end -mt-1.5">
+                <button
+                  type="button"
+                  onClick={handleOpenForgotSheet}
+                  disabled={loginLoading}
+                  className="text-caption text-accent hover:underline py-1 min-h-[36px] inline-flex items-center focus:outline-none"
+                >
+                  Lupa password?
+                </button>
+              </div>
+
               {/* Tampilan Galat Login + Kode Error Saja */}
               {loginError && (
                 <div className="flex flex-col items-center py-1 gap-0.5">
@@ -350,6 +528,247 @@ export const LoginView: React.FC = () => {
         </Card>
       </div>
       </div>
+
+      {/* Bottom Sheet Lupa Password */}
+      <BottomSheet
+        isOpen={forgotOpen}
+        onClose={handleCloseForgotSheet}
+        title="Lupa Password"
+      >
+        {resetSuccess ? (
+          <div className="flex flex-col gap-3.5 py-2">
+            <div className="p-3.5 bg-status-green/10 border border-status-green/30 rounded-btn flex items-start gap-2.5 text-caption text-status-green">
+              <CheckCircle2 size={18} className="flex-shrink-0 mt-0.5" />
+              <div className="flex flex-col gap-1">
+                <span className="font-semibold text-body">Password berhasil diganti</span>
+                {resetNeedsNewPin && (
+                  <span className="text-dark-text">
+                    Anda akan diminta membuat PIN baru setelah masuk.
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <Button
+              variant="primary"
+              fullWidth
+              type="button"
+              onClick={handleGoToLoginAfterReset}
+              icon={<LogIn size={18} />}
+            >
+              Masuk sekarang
+            </Button>
+          </div>
+        ) : (
+          <form onSubmit={handleForgotSubmit} className="flex flex-col gap-3.5 py-1">
+            {/* Pilihan Metode Reset */}
+            <div className="grid grid-cols-2 p-1 bg-dark-surface-high border border-dark-border rounded-btn">
+              <button
+                type="button"
+                disabled={resetLoading}
+                onClick={() => {
+                  setResetMode('pin');
+                  setResetCode('');
+                  setResetError('');
+                  setResetRemainingAttempts(null);
+                }}
+                className={`min-h-[38px] flex items-center justify-center text-caption font-medium rounded-lg transition-colors ${
+                  resetMode === 'pin'
+                    ? 'bg-accent text-[#0B0F14] font-semibold'
+                    : 'text-dark-muted hover:text-dark-text'
+                }`}
+              >
+                Pakai PIN
+              </button>
+              <button
+                type="button"
+                disabled={resetLoading}
+                onClick={() => {
+                  setResetMode('code');
+                  setResetPin('');
+                  setResetError('');
+                  setResetRemainingAttempts(null);
+                }}
+                className={`min-h-[38px] flex items-center justify-center text-caption font-medium rounded-lg transition-colors ${
+                  resetMode === 'code'
+                    ? 'bg-accent text-[#0B0F14] font-semibold'
+                    : 'text-dark-muted hover:text-dark-text'
+                }`}
+              >
+                Kode dari Admin
+              </button>
+            </div>
+
+            <Input
+              label="Username"
+              placeholder="Username"
+              value={resetUsername}
+              onChange={(e) => {
+                setResetUsername(e.target.value.toLowerCase());
+                if (resetError) setResetError('');
+              }}
+              disabled={resetLoading}
+              autoComplete="username"
+              autoCapitalize="none"
+            />
+
+            {resetMode === 'pin' ? (
+              <Input
+                label="PIN Keamanan (6 Digit)"
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="••••••"
+                value={resetPin}
+                onChange={(e) => {
+                  setResetPin(normalizeResetPin(e.target.value));
+                  if (resetError) setResetError('');
+                }}
+                disabled={resetLoading}
+                autoComplete="off"
+                helperText="Masukkan PIN 6 digit angka milik akun Anda."
+              />
+            ) : (
+              <Input
+                label="Kode Reset dari Admin (10 Karakter)"
+                type="text"
+                maxLength={10}
+                placeholder="XXXXXXXXXX"
+                value={resetCode}
+                onChange={(e) => {
+                  setResetCode(normalizeResetCode(e.target.value).slice(0, 10));
+                  if (resetError) setResetError('');
+                }}
+                disabled={resetLoading}
+                autoComplete="off"
+                autoCapitalize="characters"
+                className="font-mono tracking-wider uppercase"
+                helperText="Masukkan kode 10 karakter tanpa spasi dari Admin."
+              />
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <Input
+                label="Password Baru"
+                type={showResetNewPassword ? 'text' : 'password'}
+                placeholder="Password Baru"
+                value={resetNewPassword}
+                onChange={(e) => {
+                  setResetNewPassword(e.target.value);
+                  if (resetError) setResetError('');
+                }}
+                disabled={resetLoading}
+                autoComplete="new-password"
+                helperText="Minimal 8 karakter dan tidak boleh memuat username."
+                rightIcon={
+                  <button
+                    type="button"
+                    onClick={() => setShowResetNewPassword(!showResetNewPassword)}
+                    className="p-1 text-dark-muted hover:text-dark-text focus:outline-none"
+                    aria-label={showResetNewPassword ? 'Sembunyikan password baru' : 'Tampilkan password baru'}
+                  >
+                    {showResetNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                }
+              />
+
+              {resetNewPassword && (
+                <div className="mt-0.5 flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-dark-muted">Kekuatan Sandi:</span>
+                    <span
+                      className={`font-semibold ${
+                        resetPasswordStrength.strength === 'Kuat'
+                          ? 'text-status-green'
+                          : resetPasswordStrength.strength === 'Sedang'
+                          ? 'text-status-yellow'
+                          : 'text-status-red'
+                      }`}
+                    >
+                      {resetPasswordStrength.strength}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1 h-1.5 w-full bg-dark-surface-high rounded-full overflow-hidden">
+                    <div className={`h-full ${resetPasswordStrength.score >= 1 ? resetPasswordStrength.color : 'bg-transparent'}`} />
+                    <div className={`h-full ${resetPasswordStrength.score >= 2 ? resetPasswordStrength.color : 'bg-transparent'}`} />
+                    <div className={`h-full ${resetPasswordStrength.score >= 3 ? resetPasswordStrength.color : 'bg-transparent'}`} />
+                    <div className={`h-full ${resetPasswordStrength.score >= 4 ? resetPasswordStrength.color : 'bg-transparent'}`} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Input
+              label="Konfirmasi Password Baru"
+              type={showResetConfirmPassword ? 'text' : 'password'}
+              placeholder="Konfirmasi Password Baru"
+              value={resetConfirmPassword}
+              onChange={(e) => {
+                setResetConfirmPassword(e.target.value);
+                if (resetError) setResetError('');
+              }}
+              disabled={resetLoading}
+              autoComplete="new-password"
+              rightIcon={
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirmPassword(!showResetConfirmPassword)}
+                  className="p-1 text-dark-muted hover:text-dark-text focus:outline-none"
+                  aria-label={showResetConfirmPassword ? 'Sembunyikan konfirmasi password' : 'Tampilkan konfirmasi password'}
+                >
+                  {showResetConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              }
+            />
+
+            {isResetLocked && (
+              <div className="p-2.5 bg-status-red/10 border border-status-red/30 rounded-btn flex items-start gap-2 text-caption text-status-red">
+                <ShieldAlert size={16} className="flex-shrink-0 mt-0.5" />
+                <span>
+                  Percobaan reset dikunci sementara. Tunggu{' '}
+                  <strong className="font-mono">{resetLockRemainingMinutes} menit</strong> sebelum mencoba lagi.
+                </span>
+              </div>
+            )}
+
+            {resetError && (
+              <div className="p-2.5 bg-status-red/10 border border-status-red/30 rounded-btn flex items-start gap-2 text-caption text-status-red">
+                <ShieldAlert size={16} className="flex-shrink-0 mt-0.5" />
+                <div className="flex flex-col gap-0.5">
+                  <span>{resetError}</span>
+                  {resetRemainingAttempts !== null && (
+                    <span className="font-medium">
+                      Sisa percobaan: {resetRemainingAttempts} kali
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2 mt-1">
+              <Button
+                variant="primary"
+                fullWidth
+                type="submit"
+                isLoading={resetLoading}
+                disabled={resetLoading || isResetLocked}
+                icon={!resetLoading ? <KeyRound size={18} /> : undefined}
+              >
+                {resetLoading ? 'Memeriksa... mohon tunggu' : 'Simpan Password Baru'}
+              </Button>
+              <Button
+                variant="secondary"
+                fullWidth
+                type="button"
+                disabled={resetLoading}
+                onClick={handleCloseForgotSheet}
+              >
+                Batal
+              </Button>
+            </div>
+          </form>
+        )}
+      </BottomSheet>
     </div>
   );
 };

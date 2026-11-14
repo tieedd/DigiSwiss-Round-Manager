@@ -102,14 +102,19 @@ firebase deploy --only firestore:rules
 
 ## Prosedur Lupa Password
 
-Demi menjaga prinsip zero-trust dan keamanan tanpa server (Spark tier), aplikasi tidak menyediakan fitur "reset password" maupun "hapus akun" yang tidak terotentikasi dari sisi klien. Prosedur lupa password dilakukan langsung melalui **Firebase Console**:
+Aplikasi menyediakan tiga jalur pemulihan password sesuai peran pengguna:
 
-1. Administrator membuka [Firebase Console](https://console.firebase.google.com/).
-2. Masuk ke menu **Authentication** > **Users**.
-3. Cari email semu pengguna yang bersangkutan (`<username>@digiswiss.app`).
-4. Klik menu opsi tiga titik pada baris pengguna, lalu pilih **Reset password** (atau atur password baru sementara).
-5. Informasikan password sementara tersebut kepada pengguna.
-6. **Catatan Penting:** Setelah password direset di Firebase Console, pengguna sangat disarankan untuk segera memperbarui password kembali melalui menu **Ubah Password** begitu berhasil masuk ke aplikasi demi keamanan akun.
+1. **Pemain memakai PIN keamanan (mandiri):**
+   - Di halaman **Masuk**, ketuk **Lupa password?** lalu pilih tab **Pakai PIN**.
+   - Masukkan **Username**, **PIN 6 digit**, dan **Password Baru** (minimal 8 karakter).
+   - Untuk mencegah tebakan paksa, salah memasukkan PIN 5 kali berturut-turut akan mengunci percobaan reset selama **15 menit**.
+2. **Pemain lupa password sekaligus lupa PIN (Kode Reset dari Admin):**
+   - Minta **Kode Reset** sekali pakai (10 karakter, berbatas waktu) kepada Administrator melalui menu **Kelola Pengguna > Kode Reset**.
+   - Di layar **Lupa Password**, pilih tab **Kode dari Admin**, masukkan username, kode 10 karakter, dan password baru.
+   - Setelah reset lewat kode berhasil, PIN lama otomatis dihapus dan pemain akan diminta membuat **PIN baru** pada login berikutnya.
+3. **Admin Utama atau jalur cadangan:**
+   - Akun Admin Utama (`admindss`) tidak dapat direset menggunakan PIN maupun Kode Reset dari aplikasi.
+   - Pemulihan Admin Utama atau jalur cadangan dilakukan langsung melalui **Firebase Console** > **Authentication** > **Users** > pilih akun `<username>@digiswiss.app` > **Reset password**.
 
 ---
 
@@ -191,4 +196,10 @@ File APK debug akan dihasilkan pada direktori:
 ### 3. Ekspor Gambar & Teks (Organizer & Lokasi)
 - Format ekspor kartu gambar (PNG) dan teks ringkasan menyertakan informasi **Organizer** dan **Lokasi turnamen**.
 - Kanvas ekspor mengukur dimensi teks secara presisi (`measureText`) dan memotong teks panjang secara proporsional dengan elipsis (`…`) agar pas dalam batas kartu 1000px tanpa terpotong.
+
+### 4. Server reset password (Google Apps Script)
+- **Fungsi:** Menangani permintaan reset password dengan PIN (`resetWithPin`), penukaran kode reset darurat (`resetWithCode`), dan pembuatan kode reset oleh Admin (`createResetCode`) secara aman di sisi server tanpa menyimpan kunci privat di klien. Koleksi internal `resetGuards` dan `resetCodes` ditolak total pada `firestore.rules`.
+- **Lokasi Sumber:** Skrip server berada di direktori `server/reset-password/` (`Code.gs` dan `appsscript.json`).
+- **Keamanan Akses:** Karena Web App berjalan dengan hak akses pemilik proyek Firebase, akses edit proyek Google Apps Script harus dibatasi hanya kepada pemilik proyek yang berwenang.
+- **Pembaruan Deployment:** Jika mengubah skrip di Google Apps Script, perbarui lewat **Deploy > Kelola deployment > Edit (ikon pensil) > Versi baru** agar alamat endpoint tetap sama dan aplikasi yang sudah terpasang tetap kompatibel.
 
