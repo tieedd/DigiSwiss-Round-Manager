@@ -319,12 +319,14 @@ export const ProfileView: React.FC = () => {
 
         {/* Informasi Detail Akun & Waktu Login Terakhir */}
         <div className="pt-3 border-t border-dark-border flex flex-col gap-2.5 text-caption">
-          <div className="flex items-center justify-between text-dark-muted">
-            <span className="flex items-center gap-1.5">
+          <div className="flex items-start justify-between gap-2 text-dark-muted min-w-0">
+            <span className="flex items-center gap-1.5 flex-shrink-0">
               <Mail size={15} />
               <span>Email Sistem:</span>
             </span>
-            <span className="font-mono text-dark-text">{currentUser?.email || '-'}</span>
+            <span className="font-mono text-dark-text min-w-0 break-words [overflow-wrap:anywhere] text-right">
+              {currentUser?.email || '-'}
+            </span>
           </div>
 
           <div className="flex items-center justify-between text-dark-muted">

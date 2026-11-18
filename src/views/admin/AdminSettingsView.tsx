@@ -11,6 +11,7 @@ import { Button } from '../../components/common/Button';
 import { BottomSheet } from '../../components/common/BottomSheet';
 import { ChangePasswordView } from '../ChangePasswordView';
 import { formatIndonesianDateTime } from '../../utils/dateHelpers';
+import { formatAuditLogValue } from '../../utils/auditLogDisplay';
 import {
   ShieldCheck,
   History,
@@ -104,17 +105,17 @@ export const AdminSettingsView: React.FC = () => {
       </div>
 
       {/* Informasi Versi & Sesi Admin */}
-      <Card variant="surface" className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-btn bg-accent/10 text-accent flex items-center justify-center">
+      <Card variant="surface" className="flex flex-col gap-3 min-w-0">
+        <div className="flex items-start justify-between gap-2 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="w-10 h-10 rounded-btn bg-accent/10 text-accent flex items-center justify-center flex-shrink-0">
               <ShieldCheck size={22} className="stroke-[1.5]" />
             </div>
-            <div>
+            <div className="min-w-0 flex-1">
               <h3 className="text-body font-semibold text-dark-text">
                 DigiSwiss-Round
               </h3>
-              <p className="text-caption text-dark-muted font-mono">
+              <p className="text-caption text-dark-muted font-mono break-words [overflow-wrap:anywhere]">
                 Versi web: v{CURRENT_APP_VERSION} &bull; Native: v{nativeVersion || '-'} &bull; Akun: @{userProfile?.username}
               </p>
               {isOtaActive && (
@@ -126,7 +127,7 @@ export const AdminSettingsView: React.FC = () => {
               )}
             </div>
           </div>
-          <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-accent/10 text-accent border border-accent/30 font-semibold">
+          <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-accent/10 text-accent border border-accent/30 font-semibold flex-shrink-0 whitespace-nowrap">
             Admin Utama
           </span>
         </div>
@@ -244,7 +245,7 @@ export const AdminSettingsView: React.FC = () => {
           </button>
         </div>
 
-        <Card variant="surface" padding="sm" className="flex flex-col gap-2 border-dark-border">
+        <Card variant="surface" padding="sm" className="flex flex-col gap-2 border-dark-border min-w-0 overflow-x-clip">
           {loadingLogs ? (
             <p className="text-caption text-dark-muted text-center py-6">
               Memuat log keamanan...
@@ -254,31 +255,92 @@ export const AdminSettingsView: React.FC = () => {
               Belum ada catatan aktivitas keamanan.
             </p>
           ) : (
-            <div className="flex flex-col divide-y divide-dark-border/80">
-              {paginatedLogs.map((log) => (
-                <div key={log.id} className="py-2.5 first:pt-1 last:pb-1 flex flex-col gap-1 text-caption">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="font-semibold text-accent font-mono text-[11px] px-1.5 py-0.5 rounded bg-accent/10 border border-accent/20">
-                      {log.action}
-                    </span>
-                    <span className="text-dark-muted text-[11px] tabular-nums">
-                      {formatIndonesianDateTime(log.createdAt)}
-                    </span>
-                  </div>
+            <div className="flex flex-col divide-y divide-dark-border/80 min-w-0">
+              {paginatedLogs.map((log) => {
+                const hasValues = Boolean(log.oldValue || log.newValue);
+                const oldFormatted = hasValues ? formatAuditLogValue(log.oldValue) : null;
+                const newFormatted = hasValues ? formatAuditLogValue(log.newValue) : null;
+                const isMultiline =
+                  oldFormatted?.kind === 'json' || newFormatted?.kind === 'json';
 
-                  <div className="text-dark-text mt-0.5">
-                    Pelaku: <strong className="text-dark-text">{log.actorName}</strong> &bull; Target:{' '}
-                    <span className="font-mono text-dark-muted text-[12px]">{log.target}</span>
-                  </div>
-
-                  {log.oldValue && log.newValue && (
-                    <div className="text-[11px] text-dark-muted font-mono bg-dark-surface-high/60 px-2 py-1 rounded border border-dark-border mt-0.5">
-                      <span className="text-status-red">{log.oldValue}</span> &rarr;{' '}
-                      <span className="text-status-green">{log.newValue}</span>
+                return (
+                  <div key={log.id} className="py-2.5 first:pt-1 last:pb-1 flex flex-col gap-1.5 text-caption min-w-0">
+                    <div className="flex items-center justify-between gap-2 flex-wrap min-w-0">
+                      <span className="font-semibold text-accent font-mono text-[11px] px-1.5 py-0.5 rounded bg-accent/10 border border-accent/20 max-w-full break-words [overflow-wrap:anywhere]">
+                        {log.action}
+                      </span>
+                      <span className="text-dark-muted text-[11px] tabular-nums whitespace-nowrap flex-shrink-0">
+                        {formatIndonesianDateTime(log.createdAt)}
+                      </span>
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    <div className="text-dark-text mt-0.5 min-w-0 break-words [overflow-wrap:anywhere]">
+                      Pelaku: <strong className="text-dark-text break-words [overflow-wrap:anywhere]">{log.actorName}</strong>{' '}
+                      &bull; Target:{' '}
+                      <span className="font-mono text-dark-muted text-[12px] break-words [overflow-wrap:anywhere]">
+                        {log.target}
+                      </span>
+                    </div>
+
+                    {hasValues && oldFormatted && newFormatted && (
+                      <div className="text-[11px] text-dark-muted font-mono bg-dark-surface-high/60 px-2.5 py-2 rounded border border-dark-border mt-0.5 min-w-0">
+                        <div
+                          className={`flex min-w-0 ${
+                            isMultiline
+                              ? 'flex-col gap-1.5'
+                              : 'flex-wrap items-start gap-x-1.5 gap-y-1'
+                          }`}
+                        >
+                          <div className="min-w-0 max-w-full text-status-red">
+                            {oldFormatted.kind === 'json' ? (
+                              <div className="flex flex-col gap-0.5 min-w-0">
+                                {oldFormatted.lines.map((item, idx) => (
+                                  <div
+                                    key={`${item.key}-${idx}`}
+                                    className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] min-w-0"
+                                  >
+                                    <span className="text-dark-muted">{item.key}:</span> {item.value}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] block min-w-0">
+                                {oldFormatted.text}
+                              </span>
+                            )}
+                          </div>
+
+                          <span
+                            aria-hidden="true"
+                            className="text-dark-muted font-sans flex-shrink-0 select-none leading-tight"
+                          >
+                            &rarr;
+                          </span>
+
+                          <div className="min-w-0 max-w-full text-status-green">
+                            {newFormatted.kind === 'json' ? (
+                              <div className="flex flex-col gap-0.5 min-w-0">
+                                {newFormatted.lines.map((item, idx) => (
+                                  <div
+                                    key={`${item.key}-${idx}`}
+                                    className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] min-w-0"
+                                  >
+                                    <span className="text-dark-muted">{item.key}:</span> {item.value}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] block min-w-0">
+                                {newFormatted.text}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 
