@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   DeckColor,
   LeagueDeckEntry,
@@ -6,6 +7,10 @@ import {
 } from '../../types';
 import { Button } from '../../components/common/Button';
 import { DeckColorDots } from '../../components/common/DeckColorDots';
+import {
+  useVisibleViewportHeight,
+  scrollFocusedInputIntoView,
+} from '../../utils/useVisibleViewportHeight';
 import {
   OFFICIAL_DECK_COLORS,
   DECK_COLOR_STYLES,
@@ -73,6 +78,17 @@ export const LeagueDeckModal: React.FC<LeagueDeckModalProps> = ({
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const { maxHeightCss } = useVisibleViewportHeight(isOpen);
+
+  useEffect(() => {
+    if (!isOpen || typeof document === 'undefined') return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -198,6 +214,7 @@ export const LeagueDeckModal: React.FC<LeagueDeckModalProps> = ({
           <select
             defaultValue=""
             disabled={saving}
+            onFocus={(e) => scrollFocusedInputIntoView(e.currentTarget)}
             onChange={(e) => {
               const val = e.target.value;
               if (val) {
@@ -232,6 +249,7 @@ export const LeagueDeckModal: React.FC<LeagueDeckModalProps> = ({
           maxLength={MAX_LEAGUE_DECK_NAME_LENGTH}
           value={nameVal}
           disabled={saving}
+          onFocus={(e) => scrollFocusedInputIntoView(e.currentTarget)}
           onChange={(e) => {
             setNameVal(e.target.value);
             if (errorMsg) setErrorMsg(null);
@@ -293,11 +311,22 @@ export const LeagueDeckModal: React.FC<LeagueDeckModalProps> = ({
     </div>
   );
 
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-md max-h-[90vh] bg-dark-surface border border-dark-border rounded-card shadow-2xl overflow-hidden flex flex-col">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between p-4 border-b border-dark-border flex-shrink-0">
+  const formId = 'league-deck-form';
+
+  const modalContent = (
+    <div
+      className="fixed inset-0 z-[70] flex flex-col items-center justify-end px-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+      style={{
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
+      }}
+    >
+      <div
+        className="w-full max-w-md bg-dark-surface border border-dark-border rounded-card shadow-2xl overflow-hidden flex flex-col"
+        style={{ maxHeight: maxHeightCss }}
+      >
+        {/* Modal Header (tetap di atas) */}
+        <div className="shrink-0 flex items-center justify-between p-4 border-b border-dark-border">
           <div className="flex items-center gap-2 min-w-0">
             <Layers className="text-amber-300 flex-shrink-0" size={20} />
             <div className="min-w-0">
@@ -323,10 +352,11 @@ export const LeagueDeckModal: React.FC<LeagueDeckModalProps> = ({
           </button>
         </div>
 
-        {/* Scrollable Body */}
+        {/* Scrollable Form Body */}
         <form
+          id={formId}
           onSubmit={handleSubmit}
-          className="p-4 flex flex-col gap-3 overflow-y-auto"
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 flex flex-col gap-3"
         >
           <div className="p-2.5 rounded-btn bg-amber-500/10 border border-amber-400/30 text-[11px] text-amber-200 leading-relaxed">
             Isi <strong>Deck 1</strong> dan <strong>Deck 2</strong> (nama kedua deck tidak boleh sama). Kedua deck disembunyikan dari pemain lain dan hanya terbaca oleh Anda dan organizer.
@@ -341,30 +371,36 @@ export const LeagueDeckModal: React.FC<LeagueDeckModalProps> = ({
 
           {renderDeckSection(1, deck1Name, setDeck1Name, deck1Colors)}
           {renderDeckSection(2, deck2Name, setDeck2Name, deck2Colors)}
-
-          {/* Footer Buttons */}
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-dark-border mt-1">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onClose}
-              disabled={saving}
-              className="!min-h-[38px] !px-4"
-            >
-              {allowSkip ? 'Isi Nanti' : 'Batal'}
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              isLoading={saving}
-              disabled={saving}
-              className="!min-h-[38px] !px-4"
-            >
-              Simpan 2 Deck
-            </Button>
-          </div>
         </form>
+
+        {/* Footer Tombol (selalu terlihat di luar area scroll) */}
+        <div className="shrink-0 flex items-center justify-end gap-2 p-4 pt-3 border-t border-dark-border bg-dark-surface">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onClose}
+            disabled={saving}
+            className="!min-h-[38px] !px-4"
+          >
+            {allowSkip ? 'Isi Nanti' : 'Batal'}
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="primary"
+            isLoading={saving}
+            disabled={saving}
+            className="!min-h-[38px] !px-4"
+          >
+            Simpan 2 Deck
+          </Button>
+        </div>
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined' && document.body) {
+    return createPortal(modalContent, document.body);
+  }
+  return modalContent;
 };

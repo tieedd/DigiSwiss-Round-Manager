@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Participation, DeckColor } from '../../types';
 import { Button } from '../../components/common/Button';
+import {
+  useVisibleViewportHeight,
+  scrollFocusedInputIntoView,
+} from '../../utils/useVisibleViewportHeight';
 import {
   OFFICIAL_DECK_COLORS,
   DECK_COLOR_STYLES,
@@ -49,6 +54,18 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const isModalVisible = isOpen && Boolean(participation);
+  const { maxHeightCss } = useVisibleViewportHeight(isModalVisible);
+
+  useEffect(() => {
+    if (!isModalVisible || typeof document === 'undefined') return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isModalVisible]);
 
   // Inisialisasi data dari participation
   useEffect(() => {
@@ -139,32 +156,49 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-md bg-dark-surface border border-dark-border rounded-card shadow-2xl overflow-hidden flex flex-col">
+  const formId = 'deck-registration-form';
+
+  const modalContent = (
+    <div
+      className="fixed inset-0 z-[70] flex flex-col items-center justify-end px-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+      style={{
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
+      }}
+    >
+      <div
+        className="w-full max-w-md bg-dark-surface border border-dark-border rounded-card shadow-2xl overflow-hidden flex flex-col"
+        style={{ maxHeight: maxHeightCss }}
+      >
         {/* Modal Header */}
-        <div className="flex items-center justify-between p-4 border-b border-dark-border">
-          <div className="flex items-center gap-2">
-            <Layers className="text-accent" size={20} />
-            <div>
-              <h3 className="text-body font-semibold text-dark-text">
+        <div className="shrink-0 flex items-center justify-between p-4 border-b border-dark-border">
+          <div className="flex items-center gap-2 min-w-0">
+            <Layers className="text-accent flex-shrink-0" size={20} />
+            <div className="min-w-0">
+              <h3 className="text-body font-semibold text-dark-text truncate">
                 {isOrganizer ? 'Kelola Deck Pemain' : 'Daftarkan Deck Anda'}
               </h3>
-              <p className="text-caption text-dark-muted">
+              <p className="text-caption text-dark-muted truncate">
                 Pemain: <strong className="text-dark-text">{participation.name}</strong> ({participation.tournamentName})
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="text-dark-muted hover:text-dark-text p-1 rounded-btn hover:bg-dark-surface-high transition-colors"
+            aria-label="Tutup"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Modal Body */}
-        <form onSubmit={handleSubmit} className="p-4 flex flex-col gap-4">
+        <form
+          id={formId}
+          onSubmit={handleSubmit}
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 flex flex-col gap-4"
+        >
           {errorMsg && (
             <div className="p-2.5 rounded bg-status-red/10 border border-status-red/30 text-status-red text-caption flex items-center gap-2">
               <AlertCircle size={15} className="flex-shrink-0" />
@@ -189,6 +223,7 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
 
               <select
                 defaultValue=""
+                onFocus={(e) => scrollFocusedInputIntoView(e.currentTarget)}
                 onChange={(e) => {
                   const val = e.target.value;
                   if (val) {
@@ -236,6 +271,7 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
               required
               maxLength={40}
               value={deckName}
+              onFocus={(e) => scrollFocusedInputIntoView(e.currentTarget)}
               onChange={(e) => {
                 setDeckName(e.target.value);
                 setSuccessMsg(null);
@@ -289,29 +325,35 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
               })}
             </div>
           </div>
-
-          {/* Tombol Aksi */}
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-dark-border mt-1">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onClose}
-              disabled={saving}
-              className="!min-h-[38px] !px-4"
-            >
-              {successMsg ? 'Tutup' : 'Batal'}
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              isLoading={saving}
-              className="!min-h-[38px] !px-4"
-            >
-              Simpan Deck
-            </Button>
-          </div>
         </form>
+
+        {/* Tombol Aksi (selalu terlihat di luar area scroll) */}
+        <div className="shrink-0 flex items-center justify-end gap-2 p-4 pt-3 border-t border-dark-border bg-dark-surface">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onClose}
+            disabled={saving}
+            className="!min-h-[38px] !px-4"
+          >
+            {successMsg ? 'Tutup' : 'Batal'}
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="primary"
+            isLoading={saving}
+            className="!min-h-[38px] !px-4"
+          >
+            Simpan Deck
+          </Button>
+        </div>
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined' && document.body) {
+    return createPortal(modalContent, document.body);
+  }
+  return modalContent;
 };

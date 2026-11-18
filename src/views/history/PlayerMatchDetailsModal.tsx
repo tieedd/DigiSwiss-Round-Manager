@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Participation, TournamentMatch } from '../../types';
 import { getAllTournamentMatches } from '../../services/roundService';
 import { Button } from '../../components/common/Button';
@@ -6,6 +7,7 @@ import { StatusBadge } from '../../components/common/StatusBadge';
 import { DeckColorDots } from '../../components/common/DeckColorDots';
 import { LeagueSeasonBadge } from '../../components/tournaments/LeagueSeasonBadge';
 import { FinalStandingsCard } from './FinalStandingsCard';
+import { useVisibleViewportHeight } from '../../utils/useVisibleViewportHeight';
 import {
   X,
   Trophy,
@@ -34,6 +36,18 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
   const [matches, setMatches] = useState<TournamentMatch[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const isModalVisible = isOpen && Boolean(participation);
+  const { maxHeightCss } = useVisibleViewportHeight(isModalVisible);
+
+  useEffect(() => {
+    if (!isModalVisible || typeof document === 'undefined') return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isModalVisible]);
+
   useEffect(() => {
     if (!isOpen || !participation) return;
 
@@ -54,11 +68,20 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
 
   if (!isOpen || !participation) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-md bg-dark-surface border border-dark-border rounded-card shadow-2xl overflow-hidden flex flex-col max-h-[88vh]">
+  const modalContent = (
+    <div
+      className="fixed inset-0 z-50 flex flex-col items-center justify-end px-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+      style={{
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
+      }}
+    >
+      <div
+        className="w-full max-w-md bg-dark-surface border border-dark-border rounded-card shadow-2xl overflow-hidden flex flex-col"
+        style={{ maxHeight: maxHeightCss }}
+      >
         {/* Header Modal */}
-        <div className="flex items-center justify-between p-4 border-b border-dark-border">
+        <div className="shrink-0 flex items-center justify-between p-4 border-b border-dark-border">
           <div className="flex items-center gap-2">
             <Trophy className="text-accent" size={20} />
             <div>
@@ -88,7 +111,7 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
         </div>
 
         {/* Ringkasan Hasil Pemain */}
-        <div className="p-3.5 bg-dark-bg/60 border-b border-dark-border flex flex-col gap-2">
+        <div className="shrink-0 p-3.5 bg-dark-bg/60 border-b border-dark-border flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div
@@ -139,7 +162,7 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
         </div>
 
         {/* Segmented Tab: Klasemen Akhir vs Pertandingan Saya */}
-        <div className="flex p-1 bg-dark-bg/80 border-b border-dark-border gap-1 px-3">
+        <div className="shrink-0 flex p-1 bg-dark-bg/80 border-b border-dark-border gap-1 px-3">
           <button
             type="button"
             onClick={() => setActiveTab('standings')}
@@ -165,7 +188,7 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
         </div>
 
         {/* Konten Tab */}
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 flex flex-col gap-3">
           {activeTab === 'standings' ? (
             <FinalStandingsCard
               tournamentId={participation.tournamentId}
@@ -246,4 +269,9 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined' && document.body) {
+    return createPortal(modalContent, document.body);
+  }
+  return modalContent;
 };
