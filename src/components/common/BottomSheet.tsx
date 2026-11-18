@@ -5,6 +5,7 @@ interface BottomSheetProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
+  zIndexClass?: string;
   children: React.ReactNode;
 }
 
@@ -12,6 +13,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
   isOpen,
   onClose,
   title,
+  zIndexClass = 'z-50',
   children,
 }) => {
   useEffect(() => {
@@ -28,7 +30,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+    <div className={`fixed inset-0 ${zIndexClass} flex flex-col justify-end`}>
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/60 transition-opacity duration-200"

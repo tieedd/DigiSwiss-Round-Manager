@@ -10,6 +10,7 @@ import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { BottomSheet } from '../../components/common/BottomSheet';
+import { ConfirmSheet } from '../../components/common/ConfirmSheet';
 import { ReauthModal } from '../../components/common/ReauthModal';
 import {
   getTournamentPlayers,
@@ -33,6 +34,20 @@ import {
   findAccountPlayerWithSameName,
   detectPreflightIssues,
 } from '../../utils/playerLinkLogic';
+import {
+  buildWaitingStatusConfirmContent,
+  filterWaitingPlayers,
+  getAlreadyProcessedMessage,
+  getWaitingStatusSuccessToast,
+  isPlayerStillWaitingInList,
+  WaitingStatusConfirmRequest,
+} from '../../utils/playerStatusConfirmLogic';
+import {
+  buildPlayerActionConfirmContent,
+  getPlayerActionSuccessToast,
+  PlayerActionConfirmRequest,
+  PlayerActionConfirmType,
+} from '../../utils/playerActionConfirmLogic';
 import { executeLinkManualPlayerToAccount } from '../../services/playerLinkService';
 import {
   Swords,
@@ -131,7 +146,16 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
   const [startWarningMessage, setStartWarningMessage] = useState('');
   const [startLoading, setStartLoading] = useState(false);
 
-  const { success: showToastSuccess } = useToast();
+  // Waiting List Status Confirmation
+  const [statusConfirmRequest, setStatusConfirmRequest] = useState<WaitingStatusConfirmRequest | null>(null);
+  const [statusConfirmLoading, setStatusConfirmLoading] = useState(false);
+
+  // Drop / Delete Manual Player Confirmation
+  const [playerActionConfirmRequest, setPlayerActionConfirmRequest] =
+    useState<PlayerActionConfirmRequest | null>(null);
+  const [playerActionConfirmLoading, setPlayerActionConfirmLoading] = useState(false);
+
+  const { success: showToastSuccess, info: showToastInfo } = useToast();
 
   // Admin Delete Tournament Reauth & Progress
   const [deleteReauthOpen, setDeleteReauthOpen] = useState(false);
@@ -166,6 +190,10 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
       fetchPlayers();
       setActionMessage('');
       setCopiedCode(false);
+      setStatusConfirmRequest(null);
+      setStatusConfirmLoading(false);
+      setPlayerActionConfirmRequest(null);
+      setPlayerActionConfirmLoading(false);
     }
   }, [isOpen, tournament]);
 
@@ -309,24 +337,137 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
     }
   };
 
-  // Organizer: Accept / Reject / Drop Player
-  const handleUpdateStatus = async (pid: string, status: PlayerStatus) => {
+  // Organizer: Konfirmasi Drop / Hapus Peserta Manual
+  const handleOpenPlayerActionConfirm = (
+    action: PlayerActionConfirmType,
+    player: TournamentPlayer
+  ) => {
+    if (playerActionConfirmLoading) return;
+    setPlayerActionConfirmRequest({
+      action,
+      playerId: player.id,
+      playerName: player.name,
+    });
+  };
+
+  const handleClosePlayerActionConfirm = () => {
+    if (playerActionConfirmLoading) return;
+    setPlayerActionConfirmRequest(null);
+  };
+
+  const handleExecutePlayerActionConfirm = async () => {
+    if (!playerActionConfirmRequest || playerActionConfirmLoading) return;
+
+    setPlayerActionConfirmLoading(true);
     try {
-      await updatePlayerStatus(tournament.id, pid, status);
+      if (playerActionConfirmRequest.action === 'drop') {
+        await dropPlayer(tournament.id, playerActionConfirmRequest.playerId);
+      } else {
+        await cancelRegistration(tournament.id, playerActionConfirmRequest.playerId);
+      }
       await fetchPlayers();
       if (onTournamentUpdated) onTournamentUpdated();
+      const toastMessage = getPlayerActionSuccessToast(
+        playerActionConfirmRequest.action,
+        playerActionConfirmRequest.playerName
+      );
+      setPlayerActionConfirmRequest(null);
+      showToastSuccess(toastMessage);
     } catch (err: any) {
-      alert(err.message || 'Gagal memperbarui status peserta.');
+      alert(
+        err?.message ||
+          (playerActionConfirmRequest.action === 'drop'
+            ? 'Gagal menandai peserta sebagai dropped.'
+            : 'Gagal menghapus peserta manual.')
+      );
+    } finally {
+      setPlayerActionConfirmLoading(false);
     }
   };
 
-  const handleAcceptAll = async () => {
+  const handleOpenStatusConfirm = (action: 'accept' | 'reject', player: TournamentPlayer) => {
+    if (statusConfirmLoading) return;
+    setStatusConfirmRequest({
+      action,
+      playerId: player.id,
+      playerName: player.name,
+    });
+  };
+
+  const handleOpenAcceptAllConfirm = () => {
+    if (statusConfirmLoading || waitingPlayers.length === 0) return;
+    setStatusConfirmRequest({
+      action: 'acceptAll',
+      waitingCount: waitingPlayers.length,
+    });
+  };
+
+  const handleCloseStatusConfirm = () => {
+    if (statusConfirmLoading) return;
+    setStatusConfirmRequest(null);
+  };
+
+  const handleExecuteStatusConfirm = async () => {
+    if (!statusConfirmRequest || statusConfirmLoading) return;
+
+    setStatusConfirmLoading(true);
     try {
-      await acceptAllWaitingPlayers(tournament.id, waitingPlayers);
-      await fetchPlayers();
-      if (onTournamentUpdated) onTournamentUpdated();
+      const latestPlayers = await getTournamentPlayers(tournament.id);
+
+      if (statusConfirmRequest.action === 'acceptAll') {
+        const currentWaiting = filterWaitingPlayers(latestPlayers);
+        if (currentWaiting.length === 0) {
+          setPlayers(latestPlayers);
+          if (onTournamentUpdated) onTournamentUpdated();
+          setStatusConfirmRequest(null);
+          showToastInfo(getAlreadyProcessedMessage('acceptAll'));
+          return;
+        }
+
+        await acceptAllWaitingPlayers(tournament.id, currentWaiting);
+        await fetchPlayers();
+        if (onTournamentUpdated) onTournamentUpdated();
+        setStatusConfirmRequest(null);
+        showToastSuccess(
+          getWaitingStatusSuccessToast('acceptAll', { count: currentWaiting.length })
+        );
+      } else {
+        const targetId = statusConfirmRequest.playerId || '';
+        const targetStatus: PlayerStatus =
+          statusConfirmRequest.action === 'accept' ? 'accepted' : 'rejected';
+
+        if (!isPlayerStillWaitingInList(latestPlayers, targetId)) {
+          setPlayers(latestPlayers);
+          if (onTournamentUpdated) onTournamentUpdated();
+          setStatusConfirmRequest(null);
+          showToastInfo(
+            getAlreadyProcessedMessage(
+              statusConfirmRequest.action,
+              statusConfirmRequest.playerName
+            )
+          );
+          return;
+        }
+
+        await updatePlayerStatus(tournament.id, targetId, targetStatus);
+        await fetchPlayers();
+        if (onTournamentUpdated) onTournamentUpdated();
+        setStatusConfirmRequest(null);
+        showToastSuccess(
+          getWaitingStatusSuccessToast(statusConfirmRequest.action, {
+            playerName: statusConfirmRequest.playerName,
+          })
+        );
+      }
     } catch (err: any) {
-      alert(err.message || 'Gagal menerima semua peserta.');
+      alert(
+        err?.message ||
+          (statusConfirmRequest.action === 'acceptAll'
+            ? 'Gagal menerima semua peserta.'
+            : 'Gagal memperbarui status peserta.')
+      );
+    } finally {
+      setStatusConfirmLoading(false);
     }
   };
 
@@ -527,7 +668,8 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
               <Button
                 variant="secondary"
                 className="!min-h-[32px] !px-2.5 !text-[11px]"
-                onClick={handleAcceptAll}
+                onClick={handleOpenAcceptAllConfirm}
+                disabled={statusConfirmLoading}
               >
                 Terima Semua
               </Button>
@@ -547,16 +689,18 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => handleUpdateStatus(p.id, 'accepted')}
-                      className="p-1.5 rounded-btn bg-status-green/10 text-status-green border border-status-green/30 hover:bg-status-green/20"
+                      onClick={() => handleOpenStatusConfirm('accept', p)}
+                      disabled={statusConfirmLoading}
+                      className="p-1.5 rounded-btn bg-status-green/10 text-status-green border border-status-green/30 hover:bg-status-green/20 disabled:opacity-50"
                       title="Terima Peserta"
                     >
                       <CheckCircle2 size={16} />
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleUpdateStatus(p.id, 'rejected')}
-                      className="p-1.5 rounded-btn bg-status-red/10 text-status-red border border-status-red/30 hover:bg-status-red/20"
+                      onClick={() => handleOpenStatusConfirm('reject', p)}
+                      disabled={statusConfirmLoading}
+                      className="p-1.5 rounded-btn bg-status-red/10 text-status-red border border-status-red/30 hover:bg-status-red/20 disabled:opacity-50"
                       title="Tolak Peserta"
                     >
                       <XCircle size={16} />
@@ -666,14 +810,9 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
                     {isOrganizerOwner && isRegistration && p.manual && (
                       <button
                         type="button"
-                        onClick={async () => {
-                          if (confirm(`Hapus peserta manual ${p.name}?`)) {
-                            await cancelRegistration(tournament.id, p.id);
-                            await fetchPlayers();
-                            if (onTournamentUpdated) onTournamentUpdated();
-                          }
-                        }}
-                        className="text-[11px] text-dark-muted hover:text-status-red hover:underline px-1.5 py-1"
+                        disabled={playerActionConfirmLoading}
+                        onClick={() => handleOpenPlayerActionConfirm('deleteManual', p)}
+                        className="text-[11px] text-dark-muted hover:text-status-red hover:underline px-1.5 py-1 disabled:opacity-50"
                         title="Hapus Peserta Manual"
                       >
                         Hapus
@@ -684,8 +823,9 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
                     {isOrganizerOwner && isRunning && (
                       <button
                         type="button"
-                        onClick={() => handleUpdateStatus(p.id, 'dropped')}
-                        className="text-[11px] text-status-red hover:underline px-2 py-1"
+                        disabled={playerActionConfirmLoading}
+                        onClick={() => handleOpenPlayerActionConfirm('drop', p)}
+                        className="text-[11px] text-status-red hover:underline px-2 py-1 disabled:opacity-50"
                       >
                         Tandai Dropped
                       </button>
@@ -912,14 +1052,16 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
                               <Button
                                 variant="primary"
                                 className="!min-h-[26px] !px-2.5 !text-[11px]"
-                                onClick={() => handleUpdateStatus(p.id, 'accepted')}
+                                disabled={statusConfirmLoading}
+                                onClick={() => handleOpenStatusConfirm('accept', p)}
                               >
                                 Terima
                               </Button>
                               <Button
                                 variant="danger"
                                 className="!min-h-[26px] !px-2.5 !text-[11px]"
-                                onClick={() => handleUpdateStatus(p.id, 'rejected')}
+                                disabled={statusConfirmLoading}
+                                onClick={() => handleOpenStatusConfirm('reject', p)}
                               >
                                 Tolak
                               </Button>
@@ -961,12 +1103,8 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
                               <Button
                                 variant="danger"
                                 className="!min-h-[26px] !px-2.5 !text-[11px]"
-                                onClick={async () => {
-                                  if (confirm(`Hapus peserta manual ${manualPlayer.name}?`)) {
-                                    await cancelRegistration(tournament.id, manualPlayer.id);
-                                    await fetchPlayers();
-                                  }
-                                }}
+                                disabled={playerActionConfirmLoading}
+                                onClick={() => handleOpenPlayerActionConfirm('deleteManual', manualPlayer)}
                               >
                                 Hapus manual
                               </Button>
@@ -1228,6 +1366,50 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
         tournamentId={tournament.id}
         tournamentName={tournament.name}
       />
+
+      {/* ConfirmSheet Konfirmasi Terima / Tolak Waiting List */}
+      {(() => {
+        const confirmContent = statusConfirmRequest
+          ? buildWaitingStatusConfirmContent(statusConfirmRequest)
+          : null;
+
+        return (
+          <ConfirmSheet
+            isOpen={Boolean(statusConfirmRequest && confirmContent)}
+            title={confirmContent?.title || ''}
+            message={confirmContent?.message || ''}
+            confirmLabel={confirmContent?.confirmLabel || 'Konfirmasi'}
+            cancelLabel={confirmContent?.cancelLabel || 'Batal'}
+            variant={confirmContent?.confirmVariant || 'primary'}
+            isLoading={statusConfirmLoading}
+            zIndexClass="z-[60]"
+            onConfirm={handleExecuteStatusConfirm}
+            onCancel={handleCloseStatusConfirm}
+          />
+        );
+      })()}
+
+      {/* ConfirmSheet Konfirmasi Drop / Hapus Peserta Manual */}
+      {(() => {
+        const actionContent = playerActionConfirmRequest
+          ? buildPlayerActionConfirmContent(playerActionConfirmRequest)
+          : null;
+
+        return (
+          <ConfirmSheet
+            isOpen={Boolean(playerActionConfirmRequest && actionContent)}
+            title={actionContent?.title || ''}
+            message={actionContent?.message || ''}
+            confirmLabel={actionContent?.confirmLabel || 'Konfirmasi'}
+            cancelLabel={actionContent?.cancelLabel || 'Batal'}
+            variant={actionContent?.variant || 'danger'}
+            isLoading={playerActionConfirmLoading}
+            zIndexClass="z-[60]"
+            onConfirm={handleExecutePlayerActionConfirm}
+            onCancel={handleClosePlayerActionConfirm}
+          />
+        );
+      })()}
     </BottomSheet>
   );
 };
