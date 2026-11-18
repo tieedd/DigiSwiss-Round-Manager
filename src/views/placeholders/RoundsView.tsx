@@ -7,7 +7,8 @@ import {
   TournamentMatch,
   TournamentPlayer,
   MatchStatus,
-  TopCutSize
+  TopCutSize,
+  MatchGameRecord
 } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
@@ -62,6 +63,9 @@ import {
   isRoundTimerEnabledForTournament,
   isTopCutMandatoryForTournament
 } from '../../utils/seasonLogic';
+import { LeagueMatchGamesModal } from '../../components/rounds/LeagueMatchGamesModal';
+import { MatchGamesBreakdown } from '../../components/rounds/MatchGamesBreakdown';
+import { isLeaguePerGameMatch } from '../../utils/matchGamesLogic';
 import {
   Timer,
   Play,
@@ -266,7 +270,8 @@ export const RoundsView: React.FC = () => {
     matchId: string,
     p1Score: number,
     p2Score: number,
-    confirm: boolean
+    confirm: boolean,
+    games?: MatchGameRecord[]
   ) => {
     if (!selectedTournament || !currentUser || !userProfile) return;
     const targetMatch = matches.find((m) => m.id === matchId);
@@ -297,7 +302,8 @@ export const RoundsView: React.FC = () => {
       targetMatch,
       p1Score,
       p2Score,
-      organizerInfo
+      organizerInfo,
+      games
     );
 
     // Tandai ronde completed bila semua match terkonfirmasi (tidak otomatis mengakhiri turnamen)
@@ -1159,6 +1165,19 @@ export const RoundsView: React.FC = () => {
                           </div>
                         </div>
 
+                        {/* Rincian Per Game (bila Turnamen Liga & sudah ada input game) */}
+                        {!isBye && match.games && match.games.length > 0 && (
+                          <MatchGamesBreakdown
+                            games={match.games}
+                            p1Name={match.p1Name}
+                            p2Name={match.p2Name}
+                            p1Decks={match.p1Decks}
+                            p2Decks={match.p2Decks}
+                            compact
+                            className="mb-2.5"
+                          />
+                        )}
+
                         {/* Petunjuk Interaksi Organizer */}
                         {isOrganizer && !isBye && (
                           <div className="pt-2 border-t border-dark-border/40 flex items-center justify-between text-[11px] text-dark-muted">
@@ -1189,19 +1208,32 @@ export const RoundsView: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Input Skor Organizer */}
-      <MatchScoreModal
-        isOpen={Boolean(scoreModalMatch)}
-        onClose={() => setScoreModalMatch(null)}
-        match={scoreModalMatch}
-        format={selectedTournament?.format || 'BO3'}
-        roundLabel={
-          scoreModalMatch
-            ? getRoundDisplayLabel(scoreModalMatch.round, totalRounds, topCutSize)
-            : undefined
-        }
-        onSaveScore={handleSaveScore}
-      />
+      {/* Modal Input Skor Organizer: Liga (Per-Game & Deck) vs Reguler */}
+      {scoreModalMatch && isLeaguePerGameMatch(scoreModalMatch) ? (
+        <LeagueMatchGamesModal
+          isOpen={Boolean(scoreModalMatch)}
+          onClose={() => setScoreModalMatch(null)}
+          match={scoreModalMatch}
+          roundLabel={getRoundDisplayLabel(scoreModalMatch.round, totalRounds, topCutSize)}
+          mode="organizer"
+          onSaveGames={(matchId, games, p1Score, p2Score) =>
+            handleSaveScore(matchId, p1Score, p2Score, true, games)
+          }
+        />
+      ) : (
+        <MatchScoreModal
+          isOpen={Boolean(scoreModalMatch)}
+          onClose={() => setScoreModalMatch(null)}
+          match={scoreModalMatch}
+          format={selectedTournament?.format || 'BO3'}
+          roundLabel={
+            scoreModalMatch
+              ? getRoundDisplayLabel(scoreModalMatch.round, totalRounds, topCutSize)
+              : undefined
+          }
+          onSaveScore={handleSaveScore}
+        />
+      )}
 
       {/* Modal Tukar Pairing Manual */}
       <ManualSwapModal

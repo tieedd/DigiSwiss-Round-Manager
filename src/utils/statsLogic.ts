@@ -30,6 +30,9 @@ export interface Participation {
   ogw?: number;
   deckName?: string;
   deckColors?: DeckColor[];
+  decks?: Array<{ name: string; colors: DeckColor[] }>;
+  tournamentType?: 'regular' | 'league';
+  season?: { number: number; month: number; year: number };
   createdAt?: number;
 }
 
@@ -136,6 +139,43 @@ const ALL_OFFICIAL_COLORS: DeckColor[] = [
   'Putih'
 ];
 
+interface ExtractedDeckItem {
+  name: string;
+  colors: DeckColor[];
+}
+
+function extractParticipationDecksForStats(p: Participation): ExtractedDeckItem[] {
+  if (Array.isArray(p.decks) && p.decks.length > 0) {
+    const items: ExtractedDeckItem[] = [];
+    for (const d of p.decks) {
+      if (!d) continue;
+      const cleanName = typeof d.name === 'string' ? d.name.trim() : '';
+      const cleanColors = Array.isArray(d.colors)
+        ? Array.from(
+            new Set(d.colors.filter((c) => ALL_OFFICIAL_COLORS.includes(c as DeckColor)))
+          ) as DeckColor[]
+        : [];
+      if (cleanName.length > 0 || cleanColors.length > 0) {
+        items.push({ name: cleanName, colors: cleanColors });
+      }
+    }
+    return items;
+  }
+
+  const cleanName = typeof p.deckName === 'string' ? p.deckName.trim() : '';
+  const cleanColors = Array.isArray(p.deckColors)
+    ? Array.from(
+        new Set(p.deckColors.filter((c) => ALL_OFFICIAL_COLORS.includes(c as DeckColor)))
+      ) as DeckColor[]
+    : [];
+
+  if (cleanName.length > 0 || cleanColors.length > 0) {
+    return [{ name: cleanName, colors: cleanColors }];
+  }
+
+  return [];
+}
+
 /**
  * Menghitung statistik performa seorang pemain dari daftar partisipasinya
  */
@@ -190,26 +230,32 @@ export function calculatePlayerStats(participations: Participation[]): PlayerSta
       points: p.points ?? 0
     });
 
-    // Deck stats
-    if (p.deckName && p.deckName.trim().length > 0) {
-      const dName = p.deckName.trim();
-      const current = deckMap.get(dName) || { count: 0, wins: 0, losses: 0 };
-      current.count += 1;
-      current.wins += p.wins || 0;
-      current.losses += p.losses || 0;
-      deckMap.set(dName, current);
-    }
+    const extractedDecks = extractParticipationDecksForStats(p);
 
-    // Color stats
-    if (Array.isArray(p.deckColors)) {
-      p.deckColors.forEach((color) => {
-        const cData = colorMap.get(color as DeckColor) || { count: 0, wins: 0, losses: 0 };
+    // Deck stats (hitung kedua deck untuk Liga, tanpa menduplikasi totalTournaments / W-L global)
+    const seenDeckNamesInPart = new Set<string>();
+    extractedDecks.forEach((deck) => {
+      if (deck.name.length > 0) {
+        const dedupKey = deck.name.toLowerCase();
+        if (!seenDeckNamesInPart.has(dedupKey)) {
+          seenDeckNamesInPart.add(dedupKey);
+          const current = deckMap.get(deck.name) || { count: 0, wins: 0, losses: 0 };
+          current.count += 1;
+          current.wins += p.wins || 0;
+          current.losses += p.losses || 0;
+          deckMap.set(deck.name, current);
+        }
+      }
+
+      // Color stats per deck
+      deck.colors.forEach((color) => {
+        const cData = colorMap.get(color) || { count: 0, wins: 0, losses: 0 };
         cData.count += 1;
         cData.wins += p.wins || 0;
         cData.losses += p.losses || 0;
-        colorMap.set(color as DeckColor, cData);
+        colorMap.set(color, cData);
       });
-    }
+    });
   });
 
   const totalMatches = totalWins + totalLosses;
@@ -310,14 +356,19 @@ export function calculateOrganizerStats(
   let totalColorAppearances = 0;
 
   participations.forEach((p) => {
-    if (p.deckName && p.deckName.trim().length > 0) {
-      const d = p.deckName.trim();
-      deckCountMap.set(d, (deckCountMap.get(d) || 0) + 1);
-    }
+    const extractedDecks = extractParticipationDecksForStats(p);
+    const seenDeckNamesInPart = new Set<string>();
 
-    if (Array.isArray(p.deckColors)) {
-      p.deckColors.forEach((color) => {
-        const c = color as DeckColor;
+    extractedDecks.forEach((deck) => {
+      if (deck.name.length > 0) {
+        const dedupKey = deck.name.toLowerCase();
+        if (!seenDeckNamesInPart.has(dedupKey)) {
+          seenDeckNamesInPart.add(dedupKey);
+          deckCountMap.set(deck.name, (deckCountMap.get(deck.name) || 0) + 1);
+        }
+      }
+
+      deck.colors.forEach((c) => {
         colorCountMap.set(c, (colorCountMap.get(c) || 0) + 1);
         totalColorAppearances += 1;
 
@@ -326,7 +377,7 @@ export function calculateOrganizerStats(
         m.losses += p.losses || 0;
         colorMatchMap.set(c, m);
       });
-    }
+    });
   });
 
   // Popular decks
@@ -423,17 +474,22 @@ export function calculateAdminStats(
   ALL_OFFICIAL_COLORS.forEach((c) => colorMap.set(c, 0));
 
   participations.forEach((p) => {
-    if (p.deckName && p.deckName.trim().length > 0) {
-      const name = p.deckName.trim();
-      deckMap.set(name, (deckMap.get(name) || 0) + 1);
-    }
-    if (Array.isArray(p.deckColors)) {
-      p.deckColors.forEach((color) => {
-        const c = color as DeckColor;
+    const extractedDecks = extractParticipationDecksForStats(p);
+    const seenDeckNamesInPart = new Set<string>();
+
+    extractedDecks.forEach((deck) => {
+      if (deck.name.length > 0) {
+        const dedupKey = deck.name.toLowerCase();
+        if (!seenDeckNamesInPart.has(dedupKey)) {
+          seenDeckNamesInPart.add(dedupKey);
+          deckMap.set(deck.name, (deckMap.get(deck.name) || 0) + 1);
+        }
+      }
+      deck.colors.forEach((c) => {
         colorMap.set(c, (colorMap.get(c) || 0) + 1);
         totalColors += 1;
       });
-    }
+    });
   });
 
   const topDecksGlobal: AdminStatsSummary['topDecksGlobal'] = [];

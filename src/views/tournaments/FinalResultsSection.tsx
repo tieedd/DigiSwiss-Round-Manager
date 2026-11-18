@@ -11,7 +11,9 @@ import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import {
   finalizeTournamentResults,
-  getTournamentParticipations
+  getTournamentParticipations,
+  syncLeagueParticipationsDecksFromRegistration,
+  updateParticipationLeagueDecksIfExists
 } from '../../services/participationService';
 import {
   calculateDeckFillProgress,
@@ -21,27 +23,30 @@ import {
 import { exportStandingsToImage } from '../../utils/canvasExport';
 import { DeckColorDots } from '../../components/common/DeckColorDots';
 import { DeckRegistrationModal } from './DeckRegistrationModal';
+import { LeagueDeckModal } from './LeagueDeckModal';
+import { LeagueDecksChips } from '../../components/tournaments/LeagueDecksChips';
 import { LeagueSeasonBadge } from '../../components/tournaments/LeagueSeasonBadge';
+import { ConfirmSheet } from '../../components/common/ConfirmSheet';
 import {
   buildTournamentExportFileName,
   formatSeasonLabel,
   isLeagueTournament
 } from '../../utils/seasonLogic';
+import { hasValidParticipationTwoDecks } from '../../utils/leagueFinalDecksLogic';
 import { useToast } from '../../context/ToastContext';
 import { saveFileNative, copyTextNative } from '../../services/nativeBridge';
 import {
   Trophy,
   Award,
   Layers,
-  Download,
   FileSpreadsheet,
   FileText,
   Image as ImageIcon,
-  CheckCircle2,
   AlertCircle,
-  Copy,
   Check,
-  Edit2
+  Edit2,
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
 
 interface FinalResultsSectionProps {
@@ -67,9 +72,15 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
 
-  // Modal edit deck
+  // Modal edit deck (Reguler & Liga)
   const [selectedParticipation, setSelectedParticipation] = useState<Participation | null>(null);
   const [deckModalOpen, setDeckModalOpen] = useState(false);
+  const [leagueDeckTarget, setLeagueDeckTarget] = useState<Participation | null>(null);
+
+  // Sync & ringkasan peserta tanpa deck pada Turnamen Liga
+  const [finalizeMissingDeckPlayers, setFinalizeMissingDeckPlayers] = useState<string[]>([]);
+  const [syncConfirmOpen, setSyncConfirmOpen] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
 
   // Muat data participations jika turnamen sudah finalized
   const fetchParticipations = async () => {
@@ -85,10 +96,17 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
   };
 
   useEffect(() => {
+    setFinalizeMissingDeckPlayers([]);
     if (tournament.finalized) {
       fetchParticipations();
+    } else {
+      setParticipations([]);
     }
   }, [tournament.id, tournament.finalized]);
+
+  const isLeague = isLeagueTournament(tournament);
+  const canManageLeague = isOrganizer || userProfile?.role === 'admin';
+  const seasonLabel = formatSeasonLabel(tournament.season);
 
   // Handler Finalisasi Hasil oleh Organizer
   const handleFinalize = async () => {
@@ -96,13 +114,22 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
     setErrorMsg(null);
     setFinalizing(true);
     try {
-      await finalizeTournamentResults(
+      const result = await finalizeTournamentResults(
         tournament,
         players,
         matches,
         currentUser.uid,
         userProfile?.displayName || userProfile?.username || 'Organizer'
       );
+      setFinalizeMissingDeckPlayers(result.missingDeckPlayers || []);
+      if (isLeague && result.missingDeckPlayers.length > 0) {
+        showToastError(
+          'Finalisasi selesai dengan catatan',
+          `${result.missingDeckPlayers.length} peserta belum memiliki 2 deck: ${result.missingDeckPlayers.join(', ')}`
+        );
+      } else {
+        showToastSuccess('Finalisasi berhasil', `Hasil resmi untuk ${result.count} peserta telah disimpan.`);
+      }
       await fetchParticipations();
       onTournamentUpdated?.();
     } catch (err: any) {
@@ -112,8 +139,45 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
     }
   };
 
-  const isLeague = isLeagueTournament(tournament);
-  const seasonLabel = formatSeasonLabel(tournament.season);
+  const handleConfirmSyncLeagueDecks = async () => {
+    if (!currentUser || syncLoading) return;
+    setSyncLoading(true);
+    try {
+      const result = await syncLeagueParticipationsDecksFromRegistration(
+        tournament,
+        participations,
+        {
+          uid: currentUser.uid,
+          name: userProfile?.displayName || userProfile?.username || 'Organizer'
+        }
+      );
+      setSyncConfirmOpen(false);
+      await fetchParticipations();
+      onTournamentUpdated?.();
+
+      if (result.syncedCount > 0) {
+        const extra =
+          result.missingPlayers.length > 0
+            ? ` (${result.missingPlayers.length} peserta belum punya 2 deck di pendaftaran: ${result.missingPlayers.join(', ')})`
+            : '';
+        showToastSuccess(
+          'Sinkronisasi berhasil',
+          `${result.syncedCount} partisipasi diperbarui dengan 2 deck pendaftaran.${extra}`
+        );
+      } else if (result.missingPlayers.length > 0) {
+        showToastError(
+          'Tidak ada data deck baru',
+          `Peserta berikut belum mengisi 2 deck di pendaftaran: ${result.missingPlayers.join(', ')}`
+        );
+      } else {
+        showToastSuccess('Sudah sinkron', 'Semua partisipasi liga sudah memiliki 2 deck.');
+      }
+    } catch (err: any) {
+      showToastError('Sinkronisasi gagal', err?.message || 'Gagal menyinkronkan 2 deck liga.');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
 
   // Ekspor CSV
   const handleExportCsv = async () => {
@@ -191,6 +255,9 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
   };
 
   const progress = calculateDeckFillProgress(participations);
+  const leagueParticipationsNeedingSync = isLeague
+    ? participations.filter((p) => !hasValidParticipationTwoDecks(p))
+    : [];
 
   return (
     <div className="flex flex-col gap-4 mt-2">
@@ -205,12 +272,14 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
                   Turnamen Telah Selesai
                 </h3>
                 <p className="text-caption text-dark-muted mt-0.5">
-                  Seluruh ronde telah tuntas dipertandingkan. Organizer dapat melakukan finalisasi hasil resmi untuk membuka pengisian deck pemain dan ekspor laporan.
+                  {isLeague
+                    ? 'Seluruh ronde telah tuntas dipertandingkan. Organizer dapat melakukan finalisasi hasil resmi untuk menyalin 2 deck pendaftaran dan membuka ekspor laporan.'
+                    : 'Seluruh ronde telah tuntas dipertandingkan. Organizer dapat melakukan finalisasi hasil resmi untuk membuka pengisian deck pemain dan ekspor laporan.'}
                 </p>
               </div>
             </div>
 
-            {isOrganizer && (
+            {canManageLeague && (
               <Button
                 variant="primary"
                 className="!min-h-[38px] !px-4 !text-caption whitespace-nowrap shadow-md"
@@ -254,20 +323,47 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
                 </p>
               </div>
 
-              {/* Penghitung Progres Deck */}
-              <div className="flex items-center gap-2 bg-dark-surface px-3 py-1.5 rounded-card border border-dark-border">
-                <Layers size={16} className="text-accent" />
-                <div className="flex flex-col">
-                  <span className="text-[11px] text-dark-muted leading-tight">
-                    Pengisian Deck
-                  </span>
-                  <span className="text-caption font-bold font-mono text-dark-text leading-tight">
-                    {progress.filled} dari {progress.total} deck sudah diisi{' '}
-                    <span className="text-accent text-[11px]">({progress.percentage}%)</span>
+              {/* Penghitung Progres Deck (hanya untuk Turnamen Reguler) */}
+              {!isLeague && (
+                <div className="flex items-center gap-2 bg-dark-surface px-3 py-1.5 rounded-card border border-dark-border">
+                  <Layers size={16} className="text-accent" />
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-dark-muted leading-tight">
+                      Pengisian Deck
+                    </span>
+                    <span className="text-caption font-bold font-mono text-dark-text leading-tight">
+                      {progress.filled} dari {progress.total} deck sudah diisi{' '}
+                      <span className="text-accent text-[11px]">({progress.percentage}%)</span>
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Tombol Sinkronisasi 2 Deck Liga untuk data yang terlanjur finalized */}
+              {isLeague && canManageLeague && leagueParticipationsNeedingSync.length > 0 && (
+                <Button
+                  variant="secondary"
+                  className="!min-h-[36px] !px-3 !text-caption border-amber-400/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+                  onClick={() => setSyncConfirmOpen(true)}
+                  icon={<RefreshCw size={14} />}
+                >
+                  Sinkronkan Deck dari Pendaftaran
+                </Button>
+              )}
+            </div>
+
+            {isLeague &&
+              (finalizeMissingDeckPlayers.length > 0 ||
+                leagueParticipationsNeedingSync.length > 0) && (
+                <div className="p-2.5 rounded-btn bg-status-yellow/10 border border-status-yellow/30 text-[11px] text-status-yellow flex items-start gap-2">
+                  <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                  <span>
+                    {finalizeMissingDeckPlayers.length > 0
+                      ? `Peserta tanpa data 2 deck saat finalisasi: ${finalizeMissingDeckPlayers.join(', ')}.`
+                      : `${leagueParticipationsNeedingSync.length} peserta belum memiliki 2 deck pada hasil akhir.`}
                   </span>
                 </div>
-              </div>
-            </div>
+              )}
 
             {/* Bilah Tombol Ekspor (Gambar, Teks, CSV) */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
@@ -378,36 +474,60 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
 
                       {/* Info Deck & Tombol Aksi */}
                       <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-1 sm:pt-0 border-t sm:border-t-0 border-dark-border">
-                        {hasDeck ? (
-                          <div className="flex items-center gap-1.5 sm:justify-end min-w-0">
-                            <span
-                              className="text-caption font-semibold text-dark-text truncate max-w-[130px] sm:max-w-[180px]"
-                              title={p.deckName}
-                            >
-                              {p.deckName}
-                            </span>
-                            <DeckColorDots colors={p.deckColors} size="sm" />
-                          </div>
+                        {isLeague ? (
+                          <>
+                            <LeagueDecksChips
+                              decks={p.decks}
+                              emptyLabel="Deck belum diisi"
+                              className="sm:justify-end"
+                            />
+                            {canManageLeague && (
+                              <button
+                                type="button"
+                                onClick={() => setLeagueDeckTarget(p)}
+                                className="min-h-[32px] px-2.5 rounded-btn text-caption font-medium flex items-center gap-1 transition-colors bg-dark-surface-high hover:bg-dark-surface border border-dark-border text-dark-text shrink-0"
+                              >
+                                <Edit2 size={12} />
+                                <span>
+                                  {hasValidParticipationTwoDecks(p) ? 'Edit 2 Deck' : 'Isi 2 Deck'}
+                                </span>
+                              </button>
+                            )}
+                          </>
                         ) : (
-                          <span className="text-[11px] text-dark-muted italic">
-                            Deck belum diisi
-                          </span>
-                        )}
+                          <>
+                            {hasDeck ? (
+                              <div className="flex items-center gap-1.5 sm:justify-end min-w-0">
+                                <span
+                                  className="text-caption font-semibold text-dark-text truncate max-w-[130px] sm:max-w-[180px]"
+                                  title={p.deckName}
+                                >
+                                  {p.deckName}
+                                </span>
+                                <DeckColorDots colors={p.deckColors} size="sm" />
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-dark-muted italic">
+                                Deck belum diisi
+                              </span>
+                            )}
 
-                        {/* Tombol Input/Edit Deck */}
-                        {canEditDeck && (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenDeckModal(p)}
-                            className={`min-h-[32px] px-2.5 rounded-btn text-caption font-medium flex items-center gap-1 transition-colors ${
-                              hasDeck
-                                ? 'bg-dark-surface-high hover:bg-dark-surface border border-dark-border text-dark-text'
-                                : 'bg-accent/20 hover:bg-accent/30 text-accent border border-accent/40 font-semibold'
-                            }`}
-                          >
-                            <Edit2 size={12} />
-                            <span>{hasDeck ? 'Ubah' : 'Isi Deck'}</span>
-                          </button>
+                            {/* Tombol Input/Edit Deck Reguler */}
+                            {canEditDeck && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDeckModal(p)}
+                                className={`min-h-[32px] px-2.5 rounded-btn text-caption font-medium flex items-center gap-1 transition-colors ${
+                                  hasDeck
+                                    ? 'bg-dark-surface-high hover:bg-dark-surface border border-dark-border text-dark-text'
+                                    : 'bg-accent/20 hover:bg-accent/30 text-accent border border-accent/40 font-semibold'
+                                }`}
+                              >
+                                <Edit2 size={12} />
+                                <span>{hasDeck ? 'Ubah' : 'Isi Deck'}</span>
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
@@ -419,7 +539,7 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
         </div>
       )}
 
-      {/* Modal Pendaftaran Deck */}
+      {/* Modal Pendaftaran Deck Reguler */}
       <DeckRegistrationModal
         isOpen={deckModalOpen}
         onClose={() => {
@@ -429,8 +549,57 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
         participation={selectedParticipation}
         actorId={currentUser?.uid || ''}
         actorName={userProfile?.displayName || userProfile?.username || 'User'}
-        isOrganizer={isOrganizer}
+        isOrganizer={canManageLeague}
         onDeckUpdated={fetchParticipations}
+      />
+
+      {/* Modal Edit 2 Deck Liga oleh Organizer/Admin */}
+      {leagueDeckTarget && currentUser && (
+        <LeagueDeckModal
+          isOpen={Boolean(leagueDeckTarget)}
+          onClose={() => setLeagueDeckTarget(null)}
+          tournamentId={tournament.id}
+          tournamentName={tournament.name}
+          playerId={leagueDeckTarget.playerId}
+          playerName={leagueDeckTarget.name}
+          playerUid={leagueDeckTarget.uid}
+          initialDecks={
+            hasValidParticipationTwoDecks(leagueDeckTarget)
+              ? leagueDeckTarget.decks || null
+              : null
+          }
+          isOrganizerMode={true}
+          allowSkip={false}
+          actor={{
+            uid: currentUser.uid,
+            name: userProfile?.displayName || userProfile?.username || 'Organizer'
+          }}
+          onSaved={async (saved) => {
+            await updateParticipationLeagueDecksIfExists(
+              tournament.id,
+              leagueDeckTarget.playerId,
+              saved.decks
+            );
+            await fetchParticipations();
+            onTournamentUpdated?.();
+          }}
+        />
+      )}
+
+      {/* ConfirmSheet Sinkronisasi Deck Liga dari Pendaftaran */}
+      <ConfirmSheet
+        isOpen={syncConfirmOpen}
+        title="Sinkronkan 2 Deck Liga?"
+        message={`Salin data 2 deck peserta dari pendaftaran turnamen ke ${leagueParticipationsNeedingSync.length} hasil partisipasi yang belum memiliki 2 deck?`}
+        confirmLabel="Ya, Sinkronkan"
+        cancelLabel="Batal"
+        variant="primary"
+        isLoading={syncLoading}
+        zIndexClass="z-[60]"
+        onConfirm={handleConfirmSyncLeagueDecks}
+        onCancel={() => {
+          if (!syncLoading) setSyncConfirmOpen(false);
+        }}
       />
     </div>
   );

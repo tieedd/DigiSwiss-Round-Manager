@@ -25,7 +25,7 @@ interface LeagueInviteJoinSheetProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: { uid: string; name: string } | null;
-  onRegistered: (tournament: Tournament, inviteCode: string) => void;
+  onRegistered: (tournament: Tournament) => void;
 }
 
 export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
@@ -96,7 +96,7 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
         lookupResult.code,
         currentUser
       );
-      onRegistered(lookupResult.tournament, lookupResult.code);
+      onRegistered(lookupResult.tournament);
     } catch (err: any) {
       console.error('Gagal mendaftar Turnamen Liga:', err);
       const code = err?.code || '';

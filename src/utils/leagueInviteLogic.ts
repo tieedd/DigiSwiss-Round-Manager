@@ -1,5 +1,6 @@
 import type {
   LeagueInvite,
+  LeagueInviteClaim,
   Tournament,
   TournamentPlayer,
 } from '../types/index.ts';
@@ -11,6 +12,7 @@ import { isLeagueTournament } from './seasonLogic.ts';
 export const LEAGUE_INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const LEAGUE_INVITE_CODE_LENGTH = 8;
 export const LEAGUE_INVITE_QR_PREFIX = 'digiswiss:liga:';
+export const LEAGUE_INVITE_CLAIMS_VERSION = 2;
 
 const VALID_INVITE_CODE_REGEX = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/;
 
@@ -169,4 +171,72 @@ export function validateLeagueInviteForRegistration(params: {
     valid: true,
     code,
   };
+}
+
+/**
+ * Membentuk payload dokumen klaim undangan privat: tournaments/{tid}/inviteClaims/{uid}.
+ */
+export function buildLeagueInviteClaimPayload(
+  inviteCode: string,
+  createdAt: number = Date.now()
+): LeagueInviteClaim {
+  return {
+    inviteCode: normalizeLeagueInviteInput(inviteCode),
+    createdAt,
+  };
+}
+
+/**
+ * Membentuk payload dokumen peserta liga TANPA field inviteCode agar tidak terbaca pengguna lain.
+ */
+export function buildLeaguePlayerPayload(
+  player: { uid: string; name: string },
+  joinedAt: number = Date.now()
+): TournamentPlayer {
+  return {
+    id: player.uid,
+    name: player.name,
+    uid: player.uid,
+    manual: false,
+    status: 'accepted',
+    joinedAt,
+  };
+}
+
+/**
+ * Menjalankan pendaftaran liga dua langkah secara aman:
+ * 1) Buat klaim undangan (inviteClaims/{uid})
+ * 2) Buat dokumen pemain tanpa inviteCode (players/{uid})
+ * Jika langkah 2 gagal, hapus kembali klaim yang baru dibuat (rollback).
+ */
+export async function executeTwoStepLeagueRegistration(steps: {
+  createClaim: () => Promise<void>;
+  createPlayer: () => Promise<void>;
+  rollbackClaim: () => Promise<void>;
+}): Promise<{ claimCreated: boolean; playerCreated: boolean }> {
+  await steps.createClaim();
+
+  try {
+    await steps.createPlayer();
+    return { claimCreated: true, playerCreated: true };
+  } catch (playerErr) {
+    try {
+      await steps.rollbackClaim();
+    } catch (rollbackErr) {
+      console.warn('Gagal menghapus klaim undangan setelah gagal membuat dokumen pemain:', rollbackErr);
+    }
+    throw playerErr;
+  }
+}
+
+/**
+ * Menentukan apakah peringatan "Buat Ulang Kode" perlu ditampilkan untuk liga lama
+ * (yang dibuat sebelum pembaruan inviteClaims / inviteVersion v2).
+ */
+export function shouldShowLegacyInviteRegenerateWarning(
+  currentInvite: Partial<LeagueInvite> | null | undefined
+): boolean {
+  if (!currentInvite) return false;
+  if (currentInvite.active !== true) return false;
+  return currentInvite.inviteVersion !== LEAGUE_INVITE_CLAIMS_VERSION;
 }

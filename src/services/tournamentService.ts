@@ -330,14 +330,16 @@ export async function registerPlayer(
 
 /**
  * Pemain membatalkan pendaftaran / Organizer menghapus peserta:
- * menghapus dokumen player dan dokumen deck privatnya secara atomik dalam writeBatch.
+ * menghapus dokumen player, dokumen deck privatnya, dan klaim undangan liga secara atomik dalam writeBatch.
  */
 export async function cancelRegistration(tid: string, uid: string): Promise<void> {
   const batch = writeBatch(db);
   const playerRef = doc(db, 'tournaments', tid, 'players', uid);
   const deckRef = doc(db, 'tournaments', tid, 'decks', uid);
+  const claimRef = doc(db, 'tournaments', tid, 'inviteClaims', uid);
   batch.delete(playerRef);
   batch.delete(deckRef);
+  batch.delete(claimRef);
   await batch.commit();
 }
 

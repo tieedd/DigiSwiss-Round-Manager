@@ -107,11 +107,14 @@ export function exportStandingsToImage(
   }
 
   const hasSeasonBanner = Boolean(seasonLabel || isLeague);
+  const totalRows = Math.min(parts.length, 32);
+  const hasTwoDeckRows =
+    isLeague ||
+    parts.slice(0, totalRows).some((p) => Array.isArray(p.decks) && p.decks.length > 0);
   const width = 1000;
-  const rowHeight = 44;
+  const rowHeight = hasTwoDeckRows ? 56 : 44;
   const headerHeight = hasSeasonBanner ? 215 : 185;
   const padding = 30;
-  const totalRows = Math.min(parts.length, 32);
 
   // Ambil hanya warna deck yang ada di tabel hasil
   const usedColors = getUsedDeckColors(parts, totalRows);
@@ -199,8 +202,70 @@ export function exportStandingsToImage(
   const deckColStartX = padding + 340;
   const maxColWidth = 260; // Dari x=370 ke kolom PTS di x=650
 
+  const drawSingleDeckLine = (
+    deckName: string,
+    deckColors: DeckColor[] | undefined,
+    textBaselineY: number,
+    dotCenterY: number,
+    rowBg: string,
+    fontSize: number,
+    dotRadius: number
+  ) => {
+    ctx.font = `${fontSize}px sans-serif`;
+    const colors = (deckColors || []).filter((c) =>
+      OFFICIAL_DECK_COLORS.includes(c as DeckColor)
+    ) as DeckColor[];
+
+    const step = dotRadius * 1.5;
+    const dotsWidth =
+      colors.length > 0 ? dotRadius * 2 + (colors.length - 1) * step : 0;
+    const gap = colors.length > 0 ? 8 : 0;
+    const maxTextWidth = Math.max(40, maxColWidth - dotsWidth - gap);
+
+    const truncatedName = truncateTextToWidth(
+      (str) => ctx.measureText(str).width,
+      deckName.trim(),
+      maxTextWidth
+    );
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText(truncatedName, deckColStartX, textBaselineY);
+
+    if (colors.length > 0) {
+      const textWidth = ctx.measureText(truncatedName).width;
+      let dotCenterX = deckColStartX + textWidth + gap + dotRadius;
+
+      colors.forEach((c) => {
+        const hex = DECK_COLOR_HEX[c] || '#94A3B8';
+
+        ctx.beginPath();
+        ctx.arc(dotCenterX, dotCenterY, dotRadius + 1.5, 0, Math.PI * 2);
+        ctx.fillStyle = rowBg;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(dotCenterX, dotCenterY, dotRadius, 0, Math.PI * 2);
+        ctx.fillStyle = hex;
+        ctx.fill();
+
+        if (c === 'Hitam') {
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = '#94A3B8';
+          ctx.stroke();
+        } else if (c === 'Putih') {
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = '#CBD5E1';
+          ctx.stroke();
+        }
+
+        dotCenterX += step;
+      });
+    }
+  };
+
   parts.slice(0, totalRows).forEach((p, idx) => {
     const rowBg = idx % 2 === 0 ? '#131d31' : '#0f172a';
+    const textMidY = currentY + (hasTwoDeckRows ? 33 : 27);
 
     // Alternating row background
     ctx.fillStyle = rowBg;
@@ -215,7 +280,7 @@ export function exportStandingsToImage(
     // Rank text
     ctx.font = 'bold 14px monospace';
     ctx.fillStyle = p.rank === 1 ? '#facc15' : p.rank <= 3 ? '#e2e8f0' : '#94a3b8';
-    ctx.fillText(String(p.rank), padding + 22, currentY + 27);
+    ctx.fillText(String(p.rank), padding + 22, textMidY);
 
     // Player Name + optional Top Cut badge
     const playerColStartX = padding + 80;
@@ -232,93 +297,76 @@ export function exportStandingsToImage(
       p.name,
       maxNameWidth
     );
-    ctx.fillText(displayName, playerColStartX, currentY + 27);
+    ctx.fillText(displayName, playerColStartX, textMidY);
 
     if (tcBadge) {
       const nameWidth = ctx.measureText(displayName).width;
       ctx.font = 'bold 11px monospace';
       ctx.fillStyle = p.topCutResult === 'Juara' ? '#facc15' : '#38bdf8';
-      ctx.fillText(tcBadge, playerColStartX + nameWidth + 6, currentY + 26);
+      ctx.fillText(tcBadge, playerColStartX + nameWidth + 6, textMidY - 1);
     }
 
-    // Deck & Color Dots
-    ctx.font = '13px sans-serif';
-    if (p.deckName && p.deckName.trim().length > 0) {
-      const colors = (p.deckColors || []).filter((c) =>
-        OFFICIAL_DECK_COLORS.includes(c as DeckColor)
-      ) as DeckColor[];
+    // Deck & Color Dots (2 deck untuk Liga, 1 deck untuk Reguler)
+    const leagueDecks = Array.isArray(p.decks)
+      ? p.decks.filter((d) => d && d.name && d.name.trim().length > 0)
+      : [];
 
-      const r = 7;
-      const step = r * 1.5; // ~25% overlap (center distance = 10.5px)
-      const dotsWidth = colors.length > 0 ? r * 2 + (colors.length - 1) * step : 0;
-      const gap = colors.length > 0 ? 8 : 0;
-      const maxTextWidth = Math.max(40, maxColWidth - dotsWidth - gap);
-
-      const truncatedName = truncateTextToWidth(
-        (str) => ctx.measureText(str).width,
-        p.deckName.trim(),
-        maxTextWidth
-      );
-
-      ctx.fillStyle = '#38bdf8';
-      ctx.fillText(truncatedName, deckColStartX, currentY + 27);
-
-      if (colors.length > 0) {
-        const textWidth = ctx.measureText(truncatedName).width;
-        let dotCenterX = deckColStartX + textWidth + gap + r;
-        const dotCenterY = currentY + 22; // vertically center in 44px row
-
-        colors.forEach((c) => {
-          const hex = DECK_COLOR_HEX[c] || '#94A3B8';
-
-          // Background ring matching row background
-          ctx.beginPath();
-          ctx.arc(dotCenterX, dotCenterY, r + 1.5, 0, Math.PI * 2);
-          ctx.fillStyle = rowBg;
-          ctx.fill();
-
-          // Circle dot
-          ctx.beginPath();
-          ctx.arc(dotCenterX, dotCenterY, r, 0, Math.PI * 2);
-          ctx.fillStyle = hex;
-          ctx.fill();
-
-          // Contrast borders
-          if (c === 'Hitam') {
-            ctx.lineWidth = 1;
-            ctx.strokeStyle = '#94A3B8';
-            ctx.stroke();
-          } else if (c === 'Putih') {
-            ctx.lineWidth = 1;
-            ctx.strokeStyle = '#CBD5E1';
-            ctx.stroke();
-          }
-
-          dotCenterX += step;
-        });
+    if (leagueDecks.length > 0) {
+      if (leagueDecks[0]) {
+        drawSingleDeckLine(
+          leagueDecks[0].name,
+          leagueDecks[0].colors,
+          currentY + 21,
+          currentY + 16,
+          rowBg,
+          12,
+          6
+        );
       }
+      if (leagueDecks[1]) {
+        drawSingleDeckLine(
+          leagueDecks[1].name,
+          leagueDecks[1].colors,
+          currentY + 43,
+          currentY + 38,
+          rowBg,
+          12,
+          6
+        );
+      }
+    } else if (p.deckName && p.deckName.trim().length > 0) {
+      drawSingleDeckLine(
+        p.deckName,
+        p.deckColors,
+        textMidY,
+        currentY + (hasTwoDeckRows ? 28 : 22),
+        rowBg,
+        13,
+        7
+      );
     } else {
+      ctx.font = '13px sans-serif';
       ctx.fillStyle = '#64748b';
-      ctx.fillText('Belum diisi', deckColStartX, currentY + 27);
+      ctx.fillText('Belum diisi', deckColStartX, textMidY);
     }
 
     // Points
     ctx.font = 'bold 15px monospace';
     ctx.fillStyle = '#f59e0b';
-    ctx.fillText(String(p.points), padding + 625, currentY + 27);
+    ctx.fillText(String(p.points), padding + 625, textMidY);
 
     // W - L
     ctx.font = '13px monospace';
     ctx.fillStyle = '#e2e8f0';
-    ctx.fillText(`${p.wins} - ${p.losses}`, padding + 695, currentY + 27);
+    ctx.fillText(`${p.wins} - ${p.losses}`, padding + 695, textMidY);
 
     // OMW%
     ctx.font = '13px monospace';
     ctx.fillStyle = '#cbd5e1';
-    ctx.fillText(`${p.omw}%`, padding + 785, currentY + 27);
+    ctx.fillText(`${p.omw}%`, padding + 785, textMidY);
 
     // GW%
-    ctx.fillText(`${p.gw}%`, padding + 865, currentY + 27);
+    ctx.fillText(`${p.gw}%`, padding + 865, textMidY);
 
     currentY += rowHeight;
   });

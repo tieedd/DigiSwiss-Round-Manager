@@ -5,6 +5,7 @@ import {
   TournamentFormat,
   PlayerStatus,
   Participation,
+  MatchGameRecord,
 } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
@@ -54,6 +55,12 @@ import {
   isFinalTopCutRound,
   isTopCutMatch
 } from '../../utils/topCutLogic';
+import { LeagueMatchGamesModal } from '../../components/rounds/LeagueMatchGamesModal';
+import { MatchGamesBreakdown } from '../../components/rounds/MatchGamesBreakdown';
+import { LeagueDecksChips } from '../../components/tournaments/LeagueDecksChips';
+import { isLeaguePerGameMatch } from '../../utils/matchGamesLogic';
+import { isLeagueTournament } from '../../utils/seasonLogic';
+import { isLeagueParticipation } from '../../utils/leagueFinalDecksLogic';
 
 export const MyMatchesView: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
@@ -71,6 +78,7 @@ export const MyMatchesView: React.FC = () => {
   const [snapshotRetryKey, setSnapshotRetryKey] = useState(0);
   const [myFinishedParticipation, setMyFinishedParticipation] = useState<Participation | null>(null);
   const [deckModalOpen, setDeckModalOpen] = useState(false);
+  const [leagueScoreMatch, setLeagueScoreMatch] = useState<TournamentMatch | null>(null);
   const [isWaitingNextRound, setIsWaitingNextRound] = useState(false);
   const [waitingNextRoundLabel, setWaitingNextRoundLabel] = useState('Ronde 2');
 
@@ -355,6 +363,45 @@ export const MyMatchesView: React.FC = () => {
     }
   };
 
+  // 3b. Player input skor per game untuk Turnamen Liga
+  const handleReportLeagueGames = async (
+    matchId: string,
+    games: MatchGameRecord[],
+    p1Score: number,
+    p2Score: number
+  ) => {
+    if (!selectedTournament || !currentUser) return;
+    setActionLoadingId(matchId);
+    setActionError(null);
+
+    try {
+      await reportMatchScoreByPlayer(
+        selectedTournament.id,
+        matchId,
+        p1Score,
+        p2Score,
+        currentUser.uid,
+        games
+      );
+    } catch (err: any) {
+      const code = err?.code || '';
+      const msg = err?.message || '';
+      if (
+        code === 'permission-denied' ||
+        msg.includes('permission-denied') ||
+        msg.includes('insufficient permissions')
+      ) {
+        const message = 'Skor tidak dapat dikirim. Pastikan Anda peserta pertandingan ini, atau hubungi organizer.';
+        setActionError(message);
+        throw new Error(message);
+      }
+      setActionError(msg || 'Gagal melaporkan skor pertandingan.');
+      throw err;
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   // 4. Lawan merespons hasil (konfirmasi atau tolak)
   const handleRespondScore = async (match: TournamentMatch, approve: boolean) => {
     if (!selectedTournament || !currentUser) return;
@@ -515,10 +562,21 @@ export const MyMatchesView: React.FC = () => {
             </Card>
           )}
 
-          {/* Banner Turnamen Selesai: Isi Deck atau Menunggu Finalisasi */}
+          {/* Banner Turnamen Selesai: Isi Deck (Reguler) atau 2 Deck Read-Only (Liga) atau Menunggu Finalisasi */}
           {selectedTournament && selectedTournament.status === 'finished' && (
             myFinishedParticipation ? (
-              !myFinishedParticipation.deckName || myFinishedParticipation.deckName.trim() === '' ? (
+              isLeagueTournament(selectedTournament) || isLeagueParticipation(myFinishedParticipation) ? (
+                <div className="p-3 bg-dark-surface border border-dark-border rounded-card flex flex-col gap-1.5 text-caption">
+                  <div className="flex items-center gap-2 text-dark-muted">
+                    <Layers size={15} className="text-accent flex-shrink-0" />
+                    <span>2 Deck Liga Anda:</span>
+                  </div>
+                  <LeagueDecksChips
+                    decks={myFinishedParticipation.decks}
+                    emptyLabel="Deck belum diisi"
+                  />
+                </div>
+              ) : !myFinishedParticipation.deckName || myFinishedParticipation.deckName.trim() === '' ? (
                 <div className="p-3 bg-accent/15 border border-accent/30 rounded-card flex items-center justify-between gap-3 text-caption animate-fade-in">
                   <div className="flex items-center gap-2 min-w-0">
                     <Layers size={16} className="text-accent flex-shrink-0" />
@@ -595,6 +653,9 @@ export const MyMatchesView: React.FC = () => {
                 const roundLabel = getRoundDisplayLabel(match.round, totalSwissRounds, topCutSize);
 
                 const isLoadingAction = actionLoadingId === match.id;
+
+                const isLeagueMatch = isLeaguePerGameMatch(match);
+                const oppDecks = isP1 ? match.p2Decks : match.p1Decks;
 
                 const pointsEarned =
                   match.status === 'confirmed' && !isTopCut
@@ -680,6 +741,29 @@ export const MyMatchesView: React.FC = () => {
                       </div>
                     </div>
 
+                    {/* 2 Deck Lawan untuk Turnamen Liga (saat pending / disputed sebelum selesai) */}
+                    {!isBye &&
+                      isLeagueMatch &&
+                      oppDecks &&
+                      (match.status === 'pending' || match.status === 'disputed') && (
+                        <div className="p-2.5 rounded-btn bg-dark-bg/50 border border-dark-border/80 flex flex-col gap-1.5 min-w-0">
+                          <span className="text-[11px] font-mono text-dark-muted uppercase">
+                            2 Deck {oppName}:
+                          </span>
+                          <div className="flex flex-wrap gap-1.5 min-w-0">
+                            {oppDecks.map((d, dIdx) => (
+                              <span
+                                key={dIdx}
+                                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-btn bg-dark-surface border border-dark-border text-[11px] text-dark-text max-w-full min-w-0"
+                              >
+                                <DeckColorDots colors={d.colors} size="sm" className="shrink-0" />
+                                <span className="break-words [overflow-wrap:anywhere]">{d.name}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                     {/* Kontrol Interaktif Sesuai Status */}
                     {isBye ? (
                       <div className="p-2.5 rounded bg-accent/10 border border-accent/20 text-caption text-accent font-medium text-center">
@@ -691,87 +775,116 @@ export const MyMatchesView: React.FC = () => {
                         <span>Mengirim laporan skor ke server... Mohon tunggu.</span>
                       </div>
                     ) : match.status === 'pending' ? (
-                      // 1. Status PENDING: Tampilkan tombol skor besar untuk input
-                      <div className="flex flex-col gap-2 pt-2 border-t border-dark-border">
-                        <span className="text-caption font-semibold text-accent">
-                          Pilih Hasil Pertandingan Anda:
-                        </span>
-                        {format === 'BO1' ? (
-                          <div className="grid grid-cols-2 gap-2.5">
-                            <button
-                              type="button"
-                              disabled={isLoadingAction}
-                              onClick={() => handleReportScore(match, 1, 0)}
-                              className="min-h-[50px] rounded-btn border border-status-green/40 bg-status-green/10 text-status-green font-bold text-body hover:bg-status-green/20 transition-colors flex items-center justify-center gap-2 shadow-sm"
-                            >
-                              <CheckCircle2 size={18} />
-                              Win (1 - 0)
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isLoadingAction}
-                              onClick={() => handleReportScore(match, 0, 1)}
-                              className="min-h-[50px] rounded-btn border border-status-red/40 bg-status-red/10 text-status-red font-bold text-body hover:bg-status-red/20 transition-colors flex items-center justify-center gap-2 shadow-sm"
-                            >
-                              <XCircle size={18} />
-                              Lose (0 - 1)
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              disabled={isLoadingAction}
-                              onClick={() => handleReportScore(match, 2, 0)}
-                              className="min-h-[48px] rounded-btn border border-status-green/40 bg-status-green/10 text-status-green font-bold text-caption hover:bg-status-green/20 transition-colors flex flex-col items-center justify-center py-1.5"
-                            >
-                              <span>Win 2 - 0</span>
-                              <span className="text-[10px] opacity-80">(3 Poin)</span>
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isLoadingAction}
-                              onClick={() => handleReportScore(match, 2, 1)}
-                              className="min-h-[48px] rounded-btn border border-status-green/40 bg-status-green/10 text-status-green font-bold text-caption hover:bg-status-green/20 transition-colors flex flex-col items-center justify-center py-1.5"
-                            >
-                              <span>Win 2 - 1</span>
-                              <span className="text-[10px] opacity-80">(2 Poin)</span>
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isLoadingAction}
-                              onClick={() => handleReportScore(match, 1, 2)}
-                              className="min-h-[48px] rounded-btn border border-status-yellow/40 bg-status-yellow/10 text-status-yellow font-bold text-caption hover:bg-status-yellow/20 transition-colors flex flex-col items-center justify-center py-1.5"
-                            >
-                              <span>Lose 1 - 2</span>
-                              <span className="text-[10px] opacity-80">(1 Poin)</span>
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isLoadingAction}
-                              onClick={() => handleReportScore(match, 0, 2)}
-                              className="min-h-[48px] rounded-btn border border-status-red/40 bg-status-red/10 text-status-red font-bold text-caption hover:bg-status-red/20 transition-colors flex flex-col items-center justify-center py-1.5"
-                            >
-                              <span>Lose 0 - 2</span>
-                              <span className="text-[10px] opacity-80">(0 Poin)</span>
-                            </button>
-                          </div>
-                        )}
-                        <p className="text-[11px] text-dark-muted text-center mt-0.5">
-                          Hasil yang Anda laporkan akan dikirimkan ke lawan untuk dikonfirmasi.
-                        </p>
-                      </div>
+                      // 1. Status PENDING: Liga per-game vs Reguler
+                      isLeagueMatch ? (
+                        <div className="flex flex-col gap-2 pt-2 border-t border-dark-border">
+                          <Button
+                            variant="primary"
+                            fullWidth
+                            onClick={() => setLeagueScoreMatch(match)}
+                            disabled={isLoadingAction}
+                            icon={<Swords size={16} />}
+                          >
+                            Input Skor &amp; Deck Pertandingan
+                          </Button>
+                          <p className="text-[11px] text-dark-muted text-center">
+                            Pilih deck tiap game dan pemenang Game 1–3. Hasil akan dikirim ke lawan untuk dikonfirmasi.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2 pt-2 border-t border-dark-border">
+                          <span className="text-caption font-semibold text-accent">
+                            Pilih Hasil Pertandingan Anda:
+                          </span>
+                          {format === 'BO1' ? (
+                            <div className="grid grid-cols-2 gap-2.5">
+                              <button
+                                type="button"
+                                disabled={isLoadingAction}
+                                onClick={() => handleReportScore(match, 1, 0)}
+                                className="min-h-[50px] rounded-btn border border-status-green/40 bg-status-green/10 text-status-green font-bold text-body hover:bg-status-green/20 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                              >
+                                <CheckCircle2 size={18} />
+                                Win (1 - 0)
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isLoadingAction}
+                                onClick={() => handleReportScore(match, 0, 1)}
+                                className="min-h-[50px] rounded-btn border border-status-red/40 bg-status-red/10 text-status-red font-bold text-body hover:bg-status-red/20 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                              >
+                                <XCircle size={18} />
+                                Lose (0 - 1)
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                disabled={isLoadingAction}
+                                onClick={() => handleReportScore(match, 2, 0)}
+                                className="min-h-[48px] rounded-btn border border-status-green/40 bg-status-green/10 text-status-green font-bold text-caption hover:bg-status-green/20 transition-colors flex flex-col items-center justify-center py-1.5"
+                              >
+                                <span>Win 2 - 0</span>
+                                <span className="text-[10px] opacity-80">(3 Poin)</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isLoadingAction}
+                                onClick={() => handleReportScore(match, 2, 1)}
+                                className="min-h-[48px] rounded-btn border border-status-green/40 bg-status-green/10 text-status-green font-bold text-caption hover:bg-status-green/20 transition-colors flex flex-col items-center justify-center py-1.5"
+                              >
+                                <span>Win 2 - 1</span>
+                                <span className="text-[10px] opacity-80">(2 Poin)</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isLoadingAction}
+                                onClick={() => handleReportScore(match, 1, 2)}
+                                className="min-h-[48px] rounded-btn border border-status-yellow/40 bg-status-yellow/10 text-status-yellow font-bold text-caption hover:bg-status-yellow/20 transition-colors flex flex-col items-center justify-center py-1.5"
+                              >
+                                <span>Lose 1 - 2</span>
+                                <span className="text-[10px] opacity-80">(1 Poin)</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isLoadingAction}
+                                onClick={() => handleReportScore(match, 0, 2)}
+                                className="min-h-[48px] rounded-btn border border-status-red/40 bg-status-red/10 text-status-red font-bold text-caption hover:bg-status-red/20 transition-colors flex flex-col items-center justify-center py-1.5"
+                              >
+                                <span>Lose 0 - 2</span>
+                                <span className="text-[10px] opacity-80">(0 Poin)</span>
+                              </button>
+                            </div>
+                          )}
+                          <p className="text-[11px] text-dark-muted text-center mt-0.5">
+                            Hasil yang Anda laporkan akan dikirimkan ke lawan untuk dikonfirmasi.
+                          </p>
+                        </div>
+                      )
                     ) : match.status === 'awaiting' ? (
                       // 2. Status AWAITING
                       isReporter ? (
-                        <div className="p-3 rounded bg-status-yellow/10 border border-status-yellow/30 text-caption text-status-yellow flex items-start gap-2">
-                          <Clock size={16} className="flex-shrink-0 mt-0.5" />
-                          <div>
-                            <span className="font-semibold block">Menunggu Konfirmasi Lawan</span>
-                            <span className="text-[11px] text-dark-muted">
-                              Anda melaporkan skor <strong>{myScore} - {oppScore}</strong>. Menunggu <strong>{oppName}</strong> menyetujui hasil ini.
-                            </span>
+                        <div className="flex flex-col gap-2">
+                          <div className="p-3 rounded bg-status-yellow/10 border border-status-yellow/30 text-caption text-status-yellow flex items-start gap-2">
+                            <Clock size={16} className="flex-shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-semibold block">Menunggu Konfirmasi Lawan</span>
+                              <span className="text-[11px] text-dark-muted">
+                                Anda melaporkan skor <strong>{myScore} - {oppScore}</strong>. Menunggu <strong>{oppName}</strong> menyetujui hasil ini.
+                              </span>
+                            </div>
                           </div>
+                          {isLeagueMatch && match.games && match.games.length > 0 && (
+                            <MatchGamesBreakdown
+                              games={match.games}
+                              p1Name={match.p1Name}
+                              p2Name={match.p2Name}
+                              p1Decks={match.p1Decks}
+                              p2Decks={match.p2Decks}
+                              compact
+                            />
+                          )}
                         </div>
                       ) : (
                         <div className="flex flex-col gap-2 pt-2 border-t border-dark-border">
@@ -779,6 +892,16 @@ export const MyMatchesView: React.FC = () => {
                             <strong>{oppName}</strong> melaporkan skor pertandingan:{' '}
                             <strong className="text-accent">{oppScore} - {myScore}</strong> (Skor Anda: {myScore}). Apakah hasil ini sudah sesuai?
                           </div>
+                          {isLeagueMatch && match.games && match.games.length > 0 && (
+                            <MatchGamesBreakdown
+                              games={match.games}
+                              p1Name={match.p1Name}
+                              p2Name={match.p2Name}
+                              p1Decks={match.p1Decks}
+                              p2Decks={match.p2Decks}
+                              compact
+                            />
+                          )}
                           <div className="grid grid-cols-2 gap-2">
                             <Button
                               variant="primary"
@@ -801,22 +924,46 @@ export const MyMatchesView: React.FC = () => {
                       )
                     ) : match.status === 'disputed' ? (
                       // 3. Status DISPUTED
-                      <div className="p-3 rounded bg-status-red/10 border border-status-red/30 text-caption text-status-red flex items-start gap-2">
-                        <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
-                        <div>
-                          <span className="font-semibold block">Pertandingan Bermasalah (Disputed)</span>
-                          <span className="text-[11px] text-dark-muted">
-                            Terdapat sanggahan atas hasil pertandingan ini. Harap panggil organizer turnamen untuk menentukan keputusan akhir di meja pertandingan.
-                          </span>
+                      <div className="flex flex-col gap-2">
+                        <div className="p-3 rounded bg-status-red/10 border border-status-red/30 text-caption text-status-red flex items-start gap-2">
+                          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-semibold block">Pertandingan Bermasalah (Disputed)</span>
+                            <span className="text-[11px] text-dark-muted">
+                              Terdapat sanggahan atas hasil pertandingan ini. Harap panggil organizer turnamen untuk menentukan keputusan akhir di meja pertandingan.
+                            </span>
+                          </div>
                         </div>
+                        {isLeagueMatch && match.games && match.games.length > 0 && (
+                          <MatchGamesBreakdown
+                            games={match.games}
+                            p1Name={match.p1Name}
+                            p2Name={match.p2Name}
+                            p1Decks={match.p1Decks}
+                            p2Decks={match.p2Decks}
+                            compact
+                          />
+                        )}
                       </div>
                     ) : (
                       // 4. Status CONFIRMED
-                      <div className="flex items-center justify-between text-caption text-status-green pt-1 border-t border-dark-border/40">
-                        <span className="flex items-center gap-1.5 font-medium">
-                          <CheckCircle2 size={15} />
-                          Hasil pertandingan resmi terkonfirmasi
-                        </span>
+                      <div className="flex flex-col gap-2 pt-1 border-t border-dark-border/40">
+                        <div className="flex items-center justify-between text-caption text-status-green">
+                          <span className="flex items-center gap-1.5 font-medium">
+                            <CheckCircle2 size={15} />
+                            Hasil pertandingan resmi terkonfirmasi
+                          </span>
+                        </div>
+                        {isLeagueMatch && match.games && match.games.length > 0 && (
+                          <MatchGamesBreakdown
+                            games={match.games}
+                            p1Name={match.p1Name}
+                            p2Name={match.p2Name}
+                            p1Decks={match.p1Decks}
+                            p2Decks={match.p2Decks}
+                            compact
+                          />
+                        )}
                       </div>
                     )}
                   </Card>
@@ -826,6 +973,24 @@ export const MyMatchesView: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* Modal Input Skor & Deck Per Game untuk Turnamen Liga */}
+      <LeagueMatchGamesModal
+        isOpen={Boolean(leagueScoreMatch)}
+        onClose={() => setLeagueScoreMatch(null)}
+        match={leagueScoreMatch}
+        roundLabel={
+          leagueScoreMatch
+            ? getRoundDisplayLabel(
+                leagueScoreMatch.round,
+                selectedTournament?.totalRounds || 3,
+                selectedTournament?.topCut?.size || null
+              )
+            : undefined
+        }
+        mode="player"
+        onSaveGames={handleReportLeagueGames}
+      />
 
       {/* Modal Pendaftaran / Edit Deck Pemain */}
       <DeckRegistrationModal

@@ -40,7 +40,10 @@ import { TournamentAuditLogModal } from '../rounds/TournamentAuditLogModal';
 import { calculateSwissRounds } from '../../utils/swissLogic';
 import { FinalStandingsCard } from '../history/FinalStandingsCard';
 import { generateStandingsText } from '../../utils/deckExportLogic';
-import { getTournamentParticipations } from '../../services/participationService';
+import {
+  getTournamentParticipations,
+  updateParticipationLeagueDecksIfExists
+} from '../../services/participationService';
 import { copyTextNative } from '../../services/nativeBridge';
 import { useToast } from '../../context/ToastContext';
 import {
@@ -1946,7 +1949,14 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
               userProfile?.username ||
               'Organizer',
           }}
-          onSaved={async () => {
+          onSaved={async (saved) => {
+            if (tournament.finalized && leagueDeckModalTarget) {
+              await updateParticipationLeagueDecksIfExists(
+                tournament.id,
+                leagueDeckModalTarget.playerId,
+                saved.decks
+              );
+            }
             await fetchLeagueDecksData(tournament);
             if (onTournamentUpdated) onTournamentUpdated();
           }}

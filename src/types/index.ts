@@ -65,7 +65,6 @@ export interface TournamentPlayer {
   uid: string | null;
   manual: boolean;
   status: PlayerStatus;
-  inviteCode?: string;
   joinedAt: number;
 }
 
@@ -77,8 +76,14 @@ export interface LeagueInvite {
   organizerId: string;
   organizerName: string;
   active: boolean;
+  inviteVersion?: number;
   createdAt: number;
   updatedAt?: number;
+}
+
+export interface LeagueInviteClaim {
+  inviteCode: string;
+  createdAt: number;
 }
 
 export interface LeagueDeckEntry {
@@ -112,6 +117,14 @@ export interface TournamentRound {
 }
 
 export type MatchStatus = 'pending' | 'awaiting' | 'confirmed' | 'disputed';
+export type MatchGameWinner = 'p1' | 'p2';
+export type LeagueDeckIndex = 0 | 1;
+
+export interface MatchGameRecord {
+  winner: MatchGameWinner;
+  p1Deck: LeagueDeckIndex;
+  p2Deck: LeagueDeckIndex;
+}
 
 export interface TournamentMatch {
   id: string;
@@ -124,6 +137,9 @@ export interface TournamentMatch {
   p2Name: string;
   p1Score: number;
   p2Score: number;
+  p1Decks?: [LeagueDeckEntry, LeagueDeckEntry];
+  p2Decks?: [LeagueDeckEntry, LeagueDeckEntry];
+  games?: MatchGameRecord[];
   status: MatchStatus;
   reportedBy?: string;
   archived?: boolean;
@@ -164,6 +180,7 @@ export interface Participation {
   ogw: number; // Opponent Game Win %
   deckName?: string;
   deckColors?: DeckColor[];
+  decks?: [LeagueDeckEntry, LeagueDeckEntry];
   isManual?: boolean;
   isDropped?: boolean;
   createdAt?: number;

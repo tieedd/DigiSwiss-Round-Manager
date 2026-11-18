@@ -6,7 +6,10 @@ import { Button } from '../../components/common/Button';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { DeckColorDots } from '../../components/common/DeckColorDots';
 import { LeagueSeasonBadge } from '../../components/tournaments/LeagueSeasonBadge';
+import { LeagueDecksChips } from '../../components/tournaments/LeagueDecksChips';
 import { FinalStandingsCard } from './FinalStandingsCard';
+import { MatchGamesBreakdown } from '../../components/rounds/MatchGamesBreakdown';
+import { isLeagueParticipation } from '../../utils/leagueFinalDecksLogic';
 import { useVisibleViewportHeight } from '../../utils/useVisibleViewportHeight';
 import {
   X,
@@ -148,7 +151,18 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
           </div>
 
           {/* Deck & Warna yang Digunakan */}
-          {participation.deckName && (
+          {isLeagueParticipation(participation) ? (
+            <div className="flex flex-col gap-1.5 pt-1 border-t border-dark-border/60 text-caption">
+              <div className="flex items-center gap-1.5 text-dark-muted">
+                <Layers size={14} className="text-accent flex-shrink-0" />
+                <span>2 Deck Liga:</span>
+              </div>
+              <LeagueDecksChips
+                decks={participation.decks}
+                emptyLabel="Deck belum diisi"
+              />
+            </div>
+          ) : participation.deckName ? (
             <div className="flex items-center gap-2 pt-1 border-t border-dark-border/60 text-caption">
               <Layers size={14} className="text-accent flex-shrink-0" />
               <span className="text-dark-text font-medium truncate" title={participation.deckName}>
@@ -158,7 +172,7 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
                 <DeckColorDots colors={participation.deckColors} size="sm" />
               </div>
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Segmented Tab: Klasemen Akhir vs Pertandingan Saya */}
@@ -226,39 +240,52 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
                   return (
                     <div
                       key={m.id}
-                      className={`p-3 rounded-card border transition-colors flex items-center justify-between gap-3 ${
+                      className={`p-3 rounded-card border transition-colors flex flex-col gap-2 ${
                         isWin
                           ? 'bg-status-green/5 border-status-green/30'
                           : 'bg-dark-bg/40 border-dark-border'
                       }`}
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded bg-dark-surface border border-dark-border flex items-center justify-center font-mono text-[11px] text-accent font-semibold flex-shrink-0">
-                          R{m.round}
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded bg-dark-surface border border-dark-border flex items-center justify-center font-mono text-[11px] text-accent font-semibold flex-shrink-0">
+                            R{m.round}
+                          </div>
+
+                          <div className="min-w-0">
+                            <span className="text-caption font-semibold text-dark-text block truncate">
+                              vs {opponentName}
+                            </span>
+                            <span className="text-[11px] text-dark-muted font-mono">
+                              {isBye ? 'Meja Otomatis' : `Meja #${m.table}`}
+                            </span>
+                          </div>
                         </div>
 
-                        <div className="min-w-0">
-                          <span className="text-caption font-semibold text-dark-text block truncate">
-                            vs {opponentName}
-                          </span>
-                          <span className="text-[11px] text-dark-muted font-mono">
-                            {isBye ? 'Meja Otomatis' : `Meja #${m.table}`}
+                        {/* Skor & Status */}
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span
+                            className={`font-mono font-bold text-caption px-2 py-0.5 rounded ${
+                              isWin
+                                ? 'bg-status-green/15 text-status-green border border-status-green/30'
+                                : 'bg-status-red/15 text-status-red border border-status-red/30'
+                            }`}
+                          >
+                            {isBye ? '1 - 0' : `${myScore} - ${oppScore}`}
                           </span>
                         </div>
                       </div>
 
-                      {/* Skor & Status */}
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <span
-                          className={`font-mono font-bold text-caption px-2 py-0.5 rounded ${
-                            isWin
-                              ? 'bg-status-green/15 text-status-green border border-status-green/30'
-                              : 'bg-status-red/15 text-status-red border border-status-red/30'
-                          }`}
-                        >
-                          {isBye ? '1 - 0' : `${myScore} - ${oppScore}`}
-                        </span>
-                      </div>
+                      {!isBye && m.games && m.games.length > 0 && (
+                        <MatchGamesBreakdown
+                          games={m.games}
+                          p1Name={m.p1Name}
+                          p2Name={m.p2Name}
+                          p1Decks={m.p1Decks}
+                          p2Decks={m.p2Decks}
+                          compact
+                        />
+                      )}
                     </div>
                   );
                 })

@@ -21,7 +21,9 @@ import {
   MatchStatus,
   AuditLog,
   TopCutSize,
-  TournamentTopCut
+  TournamentTopCut,
+  MatchGameRecord,
+  LeagueDeckEntry
 } from '../types';
 import { getClockOffset, recordAuditLog } from './authService';
 import { calculateRemainingTime } from '../utils/timerLogic';
@@ -42,7 +44,14 @@ import {
   isSwissMatch
 } from '../utils/topCutLogic';
 import { getTournamentPlayers } from './tournamentService';
-import { isTopCutMandatoryForTournament } from '../utils/seasonLogic';
+import { getAllTournamentLeagueDecks } from './leagueDeckService';
+import { isLeagueTournament, isTopCutMandatoryForTournament } from '../utils/seasonLogic';
+import {
+  attachLeagueDecksToPairingDrafts,
+  buildMatchAuditLogValues,
+  isLeaguePerGameMatch,
+  validateMatchGames
+} from '../utils/matchGamesLogic';
 
 /**
  * Mengambil daftar seluruh ronde pada turnamen
@@ -133,6 +142,11 @@ export async function createRoundPairing(
   totalRounds: number
 ): Promise<{ round: TournamentRound; matches: TournamentMatch[]; warning?: string }> {
   // 1. Ambil data turnamen & seluruh peserta
+  const tournamentDocRef = doc(db, 'tournaments', tournamentId);
+  const tourneySnap = await getDoc(tournamentDocRef);
+  const tourneyData = tourneySnap.exists() ? (tourneySnap.data() as Tournament) : null;
+  const isLeague = isLeagueTournament(tourneyData);
+
   const allPlayers = await getTournamentPlayers(tournamentId);
   const activePlayers = allPlayers.filter((p) => p.status === 'accepted');
 
@@ -200,6 +214,19 @@ export async function createRoundPairing(
     format
   );
 
+  // Untuk Turnamen Liga, salin snapshot 2 deck kedua pemain ke setiap pertandingan non-BYE
+  let enrichedDrafts: Array<
+    (typeof pairingResult.matches)[number] & {
+      p1Decks?: [LeagueDeckEntry, LeagueDeckEntry];
+      p2Decks?: [LeagueDeckEntry, LeagueDeckEntry];
+    }
+  > = pairingResult.matches;
+
+  if (isLeague) {
+    const leagueDecksMap = await getAllTournamentLeagueDecks(tournamentId);
+    enrichedDrafts = attachLeagueDecksToPairingDrafts(pairingResult.matches, leagueDecksMap);
+  }
+
   // 5. Simpan dokumen ronde dan pertandingan dengan SATU writeBatch
   const batch = writeBatch(db);
   const now = Date.now();
@@ -222,7 +249,7 @@ export async function createRoundPairing(
 
   const createdMatches: TournamentMatch[] = [];
 
-  for (const gm of pairingResult.matches) {
+  for (const gm of enrichedDrafts) {
     const matchDocRef = doc(collection(db, 'tournaments', tournamentId, 'matches'));
     const matchData: TournamentMatch = {
       id: matchDocRef.id,
@@ -235,6 +262,9 @@ export async function createRoundPairing(
       p2Name: gm.p2Name,
       p1Score: gm.p1Score,
       p2Score: gm.p2Score,
+      ...(gm.p2Id !== null && gm.p1Decks && gm.p2Decks
+        ? { p1Decks: gm.p1Decks, p2Decks: gm.p2Decks }
+        : {}),
       status: gm.status,
       updatedAt: now,
     };
@@ -243,7 +273,6 @@ export async function createRoundPairing(
   }
 
   // Update currentRound di turnamen
-  const tournamentDocRef = doc(db, 'tournaments', tournamentId);
   batch.update(tournamentDocRef, {
     currentRound: targetRoundNumber,
   });
@@ -309,15 +338,20 @@ export async function swapPairingPlayers(
   const matchARef = doc(db, 'tournaments', tournamentId, 'matches', matchA.id);
   const matchBRef = doc(db, 'tournaments', tournamentId, 'matches', matchB.id);
 
+  const playerADecks = playerAKey === 'p1' ? matchA.p1Decks : matchA.p2Decks;
+  const playerBDecks = playerBKey === 'p1' ? matchB.p1Decks : matchB.p2Decks;
+
   const updateA: Partial<TournamentMatch> = {
     [playerAKey === 'p1' ? 'p1Id' : 'p2Id']: playerBId,
     [playerAKey === 'p1' ? 'p1Name' : 'p2Name']: playerBName,
+    ...(playerBDecks ? { [playerAKey === 'p1' ? 'p1Decks' : 'p2Decks']: playerBDecks } : {}),
     updatedAt: now,
   };
 
   const updateB: Partial<TournamentMatch> = {
     [playerBKey === 'p1' ? 'p1Id' : 'p2Id']: playerAId,
     [playerBKey === 'p1' ? 'p1Name' : 'p2Name']: playerAName,
+    ...(playerADecks ? { [playerBKey === 'p1' ? 'p1Decks' : 'p2Decks']: playerADecks } : {}),
     updatedAt: now,
   };
 
@@ -349,16 +383,47 @@ export async function updateMatchScore(
 }
 
 /**
- * Player menginput hasil pertandingannya (status menjadi awaiting, reportedBy diisi uid pelapor)
+ * Player menginput hasil pertandingannya (status menjadi awaiting, reportedBy diisi uid pelapor).
+ * Untuk Turnamen Liga, wajib menyertakan `games` dan skor total diturunkan darinya.
  */
 export async function reportMatchScoreByPlayer(
   tournamentId: string,
   matchId: string,
   p1Score: number,
   p2Score: number,
-  reporterUid: string
+  reporterUid: string,
+  games?: MatchGameRecord[]
 ): Promise<void> {
   const matchRef = doc(db, 'tournaments', tournamentId, 'matches', matchId);
+  const matchSnap = await getDoc(matchRef);
+  if (!matchSnap.exists()) {
+    throw new Error('Data pertandingan tidak ditemukan.');
+  }
+
+  const matchData = matchSnap.data() as TournamentMatch;
+  const isLeagueMatch = isLeaguePerGameMatch(matchData);
+
+  if (isLeagueMatch || games !== undefined) {
+    const validation = validateMatchGames(games, matchData.p1Decks, matchData.p2Decks);
+    if (!validation.valid || !validation.sanitized) {
+      throw new Error(validation.error || 'Data hasil per game tidak valid.');
+    }
+
+    await updateDoc(matchRef, {
+      p1Score: validation.p1Score!,
+      p2Score: validation.p2Score!,
+      games: validation.sanitized,
+      status: 'awaiting',
+      reportedBy: reporterUid,
+      updatedAt: Date.now(),
+    });
+    return;
+  }
+
+  if (p1Score === p2Score || p1Score < 0 || p2Score < 0) {
+    throw new Error('Kombinasi skor tidak valid. Pertandingan tidak boleh seri.');
+  }
+
   await updateDoc(matchRef, {
     p1Score,
     p2Score,
@@ -386,21 +451,60 @@ export async function respondToReportedScore(
 }
 
 /**
- * Organizer menginput atau menimpa hasil pertandingan (otomatis confirmed)
- */
-/**
- * Organizer menginput atau menimpa hasil pertandingan (otomatis confirmed & catat audit log)
+ * Organizer menginput atau menimpa hasil pertandingan (otomatis confirmed & catat audit log).
+ * Untuk Turnamen Liga non-BYE, wajib menyertakan `games` dan skor total diturunkan darinya.
  */
 export async function organizerSetMatchResult(
   tournamentId: string,
   match: TournamentMatch,
   p1Score: number,
   p2Score: number,
-  organizer: { uid: string; name: string }
+  organizer: { uid: string; name: string },
+  games?: MatchGameRecord[]
 ): Promise<void> {
   const matchRef = doc(db, 'tournaments', tournamentId, 'matches', match.id);
-  const oldScoreStr = `${match.p1Score} - ${match.p2Score} (${match.status})`;
-  const newScoreStr = `${p1Score} - ${p2Score} (confirmed)`;
+  const isLeagueMatch = isLeaguePerGameMatch(match);
+
+  if (isLeagueMatch || games !== undefined) {
+    const validation = validateMatchGames(games, match.p1Decks, match.p2Decks);
+    if (!validation.valid || !validation.sanitized) {
+      throw new Error(validation.error || 'Data hasil per game tidak valid.');
+    }
+
+    const derivedP1 = validation.p1Score!;
+    const derivedP2 = validation.p2Score!;
+    const { oldValue, newValue } = buildMatchAuditLogValues(
+      match,
+      derivedP1,
+      derivedP2,
+      validation.sanitized
+    );
+
+    await updateDoc(matchRef, {
+      p1Score: derivedP1,
+      p2Score: derivedP2,
+      games: validation.sanitized,
+      status: 'confirmed',
+      updatedAt: Date.now(),
+    });
+
+    await recordAuditLog(
+      organizer.uid,
+      organizer.name,
+      'KOREKSI_SKOR_PERTANDINGAN',
+      `Meja #${match.table} (Ronde ${match.round}) - ${match.p1Name} vs ${match.p2Name}`,
+      oldValue,
+      newValue,
+      tournamentId
+    );
+    return;
+  }
+
+  if (match.p2Id !== null && (p1Score === p2Score || p1Score < 0 || p2Score < 0)) {
+    throw new Error('Kombinasi skor tidak valid. Pertandingan tidak boleh seri.');
+  }
+
+  const { oldValue, newValue } = buildMatchAuditLogValues(match, p1Score, p2Score);
 
   await updateDoc(matchRef, {
     p1Score,
@@ -415,8 +519,8 @@ export async function organizerSetMatchResult(
     organizer.name,
     'KOREKSI_SKOR_PERTANDINGAN',
     `Meja #${match.table} (Ronde ${match.round}) - ${match.p1Name} vs ${match.p2Name}`,
-    oldScoreStr,
-    newScoreStr,
+    oldValue,
+    newValue,
     tournamentId
   );
 }
@@ -575,6 +679,18 @@ export async function startTopCutPhase(
   const seeds = buildTopCutSeeds(players, filterSwissMatches(allActiveMatches), format, topCutSize);
   const initialDrafts = createTopCutInitialMatches(seeds, topCutSize);
 
+  let enrichedInitialDrafts: Array<
+    (typeof initialDrafts)[number] & {
+      p1Decks?: [LeagueDeckEntry, LeagueDeckEntry];
+      p2Decks?: [LeagueDeckEntry, LeagueDeckEntry];
+    }
+  > = initialDrafts;
+
+  if (isLeagueTournament(tourneyData)) {
+    const leagueDecksMap = await getAllTournamentLeagueDecks(tournamentId);
+    enrichedInitialDrafts = attachLeagueDecksToPairingDrafts(initialDrafts, leagueDecksMap);
+  }
+
   const now = Date.now();
   const topCut: TournamentTopCut = {
     size: topCutSize,
@@ -606,7 +722,7 @@ export async function startTopCutPhase(
 
   // Simpan pertandingan Top Cut awal
   const createdMatches: TournamentMatch[] = [];
-  for (const draft of initialDrafts) {
+  for (const draft of enrichedInitialDrafts) {
     const matchDocRef = doc(collection(db, 'tournaments', tournamentId, 'matches'));
     const matchData: TournamentMatch = {
       id: matchDocRef.id,
@@ -619,6 +735,9 @@ export async function startTopCutPhase(
       p2Name: draft.p2Name,
       p1Score: 0,
       p2Score: 0,
+      ...(draft.p2Id !== null && draft.p1Decks && draft.p2Decks
+        ? { p1Decks: draft.p1Decks, p2Decks: draft.p2Decks }
+        : {}),
       status: 'pending',
       updatedAt: now,
     };
@@ -696,6 +815,23 @@ export async function createNextTopCutRound(
   }
 
   const nextDrafts = buildNextTopCutRoundMatches(prevMatches);
+
+  const tournamentRef = doc(db, 'tournaments', tournamentId);
+  const tourneySnap = await getDoc(tournamentRef);
+  const tourneyData = tourneySnap.exists() ? (tourneySnap.data() as Tournament) : null;
+
+  let enrichedNextDrafts: Array<
+    (typeof nextDrafts)[number] & {
+      p1Decks?: [LeagueDeckEntry, LeagueDeckEntry];
+      p2Decks?: [LeagueDeckEntry, LeagueDeckEntry];
+    }
+  > = nextDrafts;
+
+  if (isLeagueTournament(tourneyData)) {
+    const leagueDecksMap = await getAllTournamentLeagueDecks(tournamentId);
+    enrichedNextDrafts = attachLeagueDecksToPairingDrafts(nextDrafts, leagueDecksMap);
+  }
+
   const now = Date.now();
   const roundDurationMs = format === 'BO1' ? 25 * 60 * 1000 : 45 * 60 * 1000;
 
@@ -721,7 +857,7 @@ export async function createNextTopCutRound(
   batch.set(nextRoundRef, roundData);
 
   const createdMatches: TournamentMatch[] = [];
-  for (const draft of nextDrafts) {
+  for (const draft of enrichedNextDrafts) {
     const matchDocRef = doc(collection(db, 'tournaments', tournamentId, 'matches'));
     const matchData: TournamentMatch = {
       id: matchDocRef.id,
@@ -734,6 +870,9 @@ export async function createNextTopCutRound(
       p2Name: draft.p2Name,
       p1Score: 0,
       p2Score: 0,
+      ...(draft.p2Id !== null && draft.p1Decks && draft.p2Decks
+        ? { p1Decks: draft.p1Decks, p2Decks: draft.p2Decks }
+        : {}),
       status: 'pending',
       updatedAt: now,
     };
@@ -741,7 +880,6 @@ export async function createNextTopCutRound(
     createdMatches.push(matchData);
   }
 
-  const tournamentRef = doc(db, 'tournaments', tournamentId);
   batch.update(tournamentRef, {
     currentRound: targetRoundNumber,
     status: 'running',

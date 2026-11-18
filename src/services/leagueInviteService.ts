@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -14,6 +15,10 @@ import type { LeagueInvite, Tournament, TournamentPlayer } from '../types';
 import { recordAuditLog } from './authService';
 import { formatSeasonLabel } from '../utils/seasonLogic';
 import {
+  LEAGUE_INVITE_CLAIMS_VERSION,
+  buildLeagueInviteClaimPayload,
+  buildLeaguePlayerPayload,
+  executeTwoStepLeagueRegistration,
   generateLeagueInviteCode,
   isValidLeagueInviteCodeFormat,
   normalizeLeagueInviteInput,
@@ -55,6 +60,7 @@ export async function createLeagueInviteForTournament(
     organizerId: tournament.organizerId,
     organizerName: tournament.organizerName,
     active: true,
+    inviteVersion: LEAGUE_INVITE_CLAIMS_VERSION,
     createdAt: now,
   };
 
@@ -152,6 +158,7 @@ export async function regenerateLeagueInviteCode(
     organizerId: tournament.organizerId,
     organizerName: tournament.organizerName,
     active: true,
+    inviteVersion: LEAGUE_INVITE_CLAIMS_VERSION,
     createdAt: now,
   };
 
@@ -334,8 +341,10 @@ export async function lookupLeagueInviteForPlayer(
 }
 
 /**
- * Mendaftarkan pemain ke Turnamen Liga dengan kode undangan yang valid.
- * Pemain langsung berstatus 'accepted' (sesuai aturan Firestore).
+ * Mendaftarkan pemain ke Turnamen Liga dengan kode undangan yang valid melalui 2 langkah:
+ * 1. Buat dokumen klaim privat tournaments/{tid}/inviteClaims/{uid} berisi { inviteCode, createdAt }.
+ * 2. Buat dokumen peserta tournaments/{tid}/players/{uid} TANPA field inviteCode.
+ * Jika langkah 2 gagal, hapus kembali dokumen klaim yang baru dibuat.
  */
 export async function registerPlayerWithLeagueInvite(
   tournamentId: string,
@@ -357,16 +366,16 @@ export async function registerPlayerWithLeagueInvite(
     throw new Error('Anda sudah terdaftar di turnamen liga ini.');
   }
 
-  const playerData: TournamentPlayer = {
-    id: player.uid,
-    name: player.name,
-    uid: player.uid,
-    manual: false,
-    status: 'accepted',
-    inviteCode: cleanCode,
-    joinedAt: Date.now(),
-  };
+  const claimRef = doc(db, 'tournaments', tournamentId, 'inviteClaims', player.uid);
+  const now = Date.now();
+  const claimData = buildLeagueInviteClaimPayload(cleanCode, now);
+  const playerData = buildLeaguePlayerPayload(player, now);
 
-  await setDoc(playerRef, playerData);
+  await executeTwoStepLeagueRegistration({
+    createClaim: () => setDoc(claimRef, claimData),
+    createPlayer: () => setDoc(playerRef, playerData),
+    rollbackClaim: () => deleteDoc(claimRef),
+  });
+
   return playerData;
 }

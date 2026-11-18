@@ -16,8 +16,8 @@ import { TournamentDetailModal } from './tournaments/TournamentDetailModal';
 import { DeckRegistrationModal } from './tournaments/DeckRegistrationModal';
 import { DeckColorDots } from '../components/common/DeckColorDots';
 import { LeagueSeasonBadge } from '../components/tournaments/LeagueSeasonBadge';
+import { LeagueDecksChips } from '../components/tournaments/LeagueDecksChips';
 import { TournamentTypeFilterBar } from '../components/tournaments/TournamentTypeFilterBar';
-import { countUnfilledDecks } from '../utils/finalStandingsLogic';
 import { filterParticipationsByExistingTournaments } from '../utils/cascadeDeleteLogic';
 import { checkExistingTournaments } from '../services/tournamentCleanupService';
 import {
@@ -25,6 +25,10 @@ import {
   isLeagueTournament,
   TournamentTypeFilter
 } from '../utils/seasonLogic';
+import {
+  formatParticipationDecksInlineNames,
+  isLeagueParticipation
+} from '../utils/leagueFinalDecksLogic';
 import {
   History,
   Search,
@@ -116,21 +120,29 @@ export const HistoryView: React.FC = () => {
     fetchData();
   }, [currentUser?.uid, role]);
 
-  // Daftar turnamen di mana player belum mengisi deck
+  // Daftar turnamen reguler di mana player belum mengisi deck (Liga tidak masuk sini)
   const unfilledDecksList = useMemo(() => {
     if (role !== 'player' || !currentUser) return [];
     return participations.filter(
-      (p) => p.uid === currentUser.uid && (!p.deckName || p.deckName.trim() === '')
+      (p) =>
+        p.uid === currentUser.uid &&
+        !isLeagueParticipation(p) &&
+        (!p.deckName || p.deckName.trim() === '')
     );
   }, [participations, currentUser?.uid, role]);
 
   // Filter & Paginasi untuk Player
   const filteredParticipations = useMemo(() => {
+    const qLower = searchQuery.toLowerCase();
     return participations.filter((p) => {
+      const matchLeagueDeck =
+        Array.isArray(p.decks) &&
+        p.decks.some((d) => d?.name && d.name.toLowerCase().includes(qLower));
       const matchSearch =
         searchQuery === '' ||
-        p.tournamentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (p.deckName && p.deckName.toLowerCase().includes(searchQuery.toLowerCase()));
+        p.tournamentName.toLowerCase().includes(qLower) ||
+        (p.deckName && p.deckName.toLowerCase().includes(qLower)) ||
+        matchLeagueDeck;
 
       const matchDate = dateFilter === '' || p.date.includes(dateFilter);
 
@@ -191,11 +203,14 @@ export const HistoryView: React.FC = () => {
         const snap = await getDocs(q);
         if (!snap.empty) {
           const first = snap.docs[0].data() as Participation;
+          const championDeckLabel = isLeagueParticipation(first)
+            ? formatParticipationDecksInlineNames(first)
+            : first.deckName;
           setChampionsMap((prev) => ({
             ...prev,
             [t.id]: {
               name: first.name,
-              deckName: first.deckName
+              deckName: championDeckLabel
             }
           }));
         }
@@ -452,7 +467,9 @@ export const HistoryView: React.FC = () => {
                   <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-dark-border/60 text-caption">
                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
                       <Layers size={13} className="text-accent flex-shrink-0" />
-                      {p.deckName ? (
+                      {isLeagueParticipation(p) ? (
+                        <LeagueDecksChips decks={p.decks} emptyLabel="Deck belum diisi" />
+                      ) : p.deckName ? (
                         <>
                           <span className="text-dark-text font-medium truncate" title={p.deckName}>
                             {p.deckName}

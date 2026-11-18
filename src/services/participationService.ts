@@ -16,7 +16,9 @@ import {
   TournamentMatch,
   Participation,
   DeckColor,
-  TournamentSeason
+  TournamentSeason,
+  LeagueDeckEntry,
+  LeaguePlayerDecks
 } from '../types';
 import { isLeagueTournament } from '../utils/seasonLogic';
 import { calculateTournamentStandings } from '../utils/standingsLogic';
@@ -25,6 +27,12 @@ import {
   filterSwissMatches
 } from '../utils/topCutLogic';
 import { recordAuditLog } from './authService';
+import { getAllTournamentLeagueDecks } from './leagueDeckService';
+import {
+  buildLeagueFinalDecksAssignment,
+  detectLeagueParticipationsNeedingSync,
+  mergePlayerDeckHistory
+} from '../utils/leagueFinalDecksLogic';
 import { filterParticipationsByExistingTournaments } from '../utils/cascadeDeleteLogic';
 import { invalidateStandingsCache } from '../utils/finalStandingsLogic';
 import { chunkBatchItems } from '../utils/tournamentEditLogic';
@@ -43,7 +51,12 @@ export async function finalizeTournamentResults(
   matches: TournamentMatch[],
   actorId: string,
   actorName: string
-): Promise<{ success: boolean; count: number; participations: Participation[] }> {
+): Promise<{
+  success: boolean;
+  count: number;
+  participations: Participation[];
+  missingDeckPlayers: string[];
+}> {
   // Hitung klasemen Swiss murni (mengabaikan pertandingan Top Cut)
   const swissStandings = calculateTournamentStandings(
     players,
@@ -64,7 +77,20 @@ export async function finalizeTournamentResults(
         topCutResult: undefined
       }));
 
-  // Ambil partisipasi yang mungkin sudah ada (idempoten: jangan buat ulang / jangan menimpa deck yang sudah terisi)
+  const isLeague = isLeagueTournament(tournament);
+
+  // Untuk Turnamen Liga, baca seluruh 2 deck dari subkoleksi decks sebagai sumber kebenaran
+  let assignedLeagueDecksMap = new Map<string, [LeagueDeckEntry, LeagueDeckEntry]>();
+  let missingDeckPlayers: string[] = [];
+  if (isLeague) {
+    const leagueDecksMap: Map<string, LeaguePlayerDecks> =
+      await getAllTournamentLeagueDecks(tournament.id);
+    const assignment = buildLeagueFinalDecksAssignment(finalStandings, leagueDecksMap);
+    assignedLeagueDecksMap = assignment.assignedDecksMap;
+    missingDeckPlayers = assignment.missingPlayers.map((m) => m.playerName);
+  }
+
+  // Ambil partisipasi yang mungkin sudah ada (untuk turnamen reguler agar deckName lama tetap terjaga)
   let existingMap = new Map<string, Participation>();
   try {
     const existing = await getTournamentParticipations(tournament.id);
@@ -75,17 +101,17 @@ export async function finalizeTournamentResults(
     console.warn('Gagal mengecek partisipasi lama, melanjutkan pembuatan batch baru:', err);
   }
 
-  const batch = writeBatch(db);
   const now = Date.now();
   const createdParticipations: Participation[] = [];
+  const partEntries: Array<{ ref: ReturnType<typeof doc>; data: Participation }> = [];
 
   for (const s of finalStandings) {
     const originalPlayer = players.find((p) => p.id === s.playerId);
     const participationId = `${tournament.id}_${s.playerId}`;
     const partDocRef = doc(db, 'participations', participationId);
     const existing = existingMap.get(s.playerId);
+    const assignedLeagueDecks = isLeague ? assignedLeagueDecksMap.get(s.playerId) : undefined;
 
-    const isLeague = isLeagueTournament(tournament);
     const partData: Participation = {
       id: participationId,
       tournamentId: tournament.id,
@@ -113,37 +139,60 @@ export async function finalizeTournamentResults(
       omw: s.omw,
       gw: s.gw,
       ogw: s.ogw,
-      // Pertahankan deck dan warna yang sudah diisi bila sebelumnya sudah ada
-      deckName: existing?.deckName || '',
-      deckColors: existing?.deckColors || [],
+      // Liga: salin 2 deck ke field `decks` dan biarkan deckName/deckColors kosong; Reguler: pertahankan yang sudah ada
+      deckName: isLeague ? '' : existing?.deckName || '',
+      deckColors: isLeague ? [] : existing?.deckColors || [],
+      ...(isLeague && assignedLeagueDecks ? { decks: assignedLeagueDecks } : {}),
       isManual: originalPlayer?.manual ?? existing?.isManual ?? false,
       createdAt: existing?.createdAt || now,
       updatedAt: now
     };
 
-    batch.set(partDocRef, partData);
+    partEntries.push({ ref: partDocRef, data: partData });
     createdParticipations.push(partData);
   }
 
-  // Tandai turnamen sebagai finalized
   const tourneyDocRef = doc(db, 'tournaments', tournament.id);
-  batch.update(tourneyDocRef, {
-    finalized: true,
-    finalizedAt: now
-  });
+  const chunks = chunkBatchItems(partEntries, 400);
 
-  // Commit batch secara atomik
-  await batch.commit();
+  if (chunks.length === 0) {
+    const batch = writeBatch(db);
+    batch.update(tourneyDocRef, {
+      finalized: true,
+      finalizedAt: now
+    });
+    await batch.commit();
+  } else {
+    for (let idx = 0; idx < chunks.length; idx++) {
+      const batch = writeBatch(db);
+      chunks[idx].forEach((entry) => {
+        batch.set(entry.ref, entry.data);
+      });
+      if (idx === chunks.length - 1) {
+        batch.update(tourneyDocRef, {
+          finalized: true,
+          finalizedAt: now
+        });
+      }
+      await batch.commit();
+    }
+  }
+
+  invalidateStandingsCache(tournament.id);
 
   // Catat Audit Log (non-blocking)
   try {
+    const missingNote =
+      isLeague && missingDeckPlayers.length > 0
+        ? ` (${missingDeckPlayers.length} peserta tanpa 2 deck: ${missingDeckPlayers.join(', ')})`
+        : '';
     await recordAuditLog(
       actorId,
       actorName,
       'FINALIZE_TOURNAMENT',
       `Turnamen ${tournament.name} (${createdParticipations.length} peserta)`,
       null,
-      `Finalized dengan ${createdParticipations.length} dokumen partisipasi`,
+      `Finalized dengan ${createdParticipations.length} dokumen partisipasi${missingNote}`,
       tournament.id
     );
   } catch (auditErr) {
@@ -153,7 +202,8 @@ export async function finalizeTournamentResults(
   return {
     success: true,
     count: createdParticipations.length,
-    participations: createdParticipations
+    participations: createdParticipations,
+    missingDeckPlayers
   };
 }
 
@@ -194,23 +244,7 @@ export async function getPlayerDeckHistory(uid: string): Promise<PlayerDeckHisto
   const existingSet = await checkExistingTournaments(tourneyIds);
   const validList = filterParticipationsByExistingTournaments(rawList, existingSet);
 
-  const historyMap = new Map<string, PlayerDeckHistory>();
-
-  validList.forEach((data) => {
-    if (data.deckName && data.deckName.trim().length > 0 && Array.isArray(data.deckColors) && data.deckColors.length > 0) {
-      const normalizedKey = data.deckName.trim().toLowerCase();
-      if (!historyMap.has(normalizedKey)) {
-        historyMap.set(normalizedKey, {
-          deckName: data.deckName.trim(),
-          deckColors: data.deckColors as DeckColor[],
-          tournamentName: data.tournamentName,
-          date: data.date
-        });
-      }
-    }
-  });
-
-  return Array.from(historyMap.values());
+  return mergePlayerDeckHistory(validList);
 }
 
 /**
@@ -305,5 +339,93 @@ export async function syncParticipationsTournamentInfo(
   }
 
   return updatedCount;
+}
+
+/**
+ * Menyinkronkan `decks` pada dokumen participations Turnamen Liga yang sudah
+ * terlanjur finalized dari koleksi `tournaments/{tid}/decks` lewat writeBatch (per 400).
+ */
+export async function syncLeagueParticipationsDecksFromRegistration(
+  tournament: Tournament,
+  participations: Participation[],
+  actor: { uid: string; name: string }
+): Promise<{ syncedCount: number; missingPlayers: string[] }> {
+  if (!tournament?.id || !isLeagueTournament(tournament)) {
+    return { syncedCount: 0, missingPlayers: [] };
+  }
+
+  const leagueDecksMap = await getAllTournamentLeagueDecks(tournament.id);
+  const { needingSync, missingDeckDocs, unfilledCount } =
+    detectLeagueParticipationsNeedingSync(participations, leagueDecksMap, {
+      treatAllAsLeague: true
+    });
+
+  const now = Date.now();
+  if (needingSync.length > 0) {
+    const chunks = chunkBatchItems(needingSync, 400);
+    for (const chunk of chunks) {
+      const batch = writeBatch(db);
+      chunk.forEach((item) => {
+        const partRef = doc(db, 'participations', item.participation.id);
+        batch.update(partRef, {
+          decks: item.decks,
+          deckName: '',
+          deckColors: [],
+          updatedAt: now
+        });
+      });
+      await batch.commit();
+    }
+    invalidateStandingsCache(tournament.id);
+  }
+
+  const missingNames = missingDeckDocs.map((p) => p.name);
+  try {
+    await recordAuditLog(
+      actor.uid,
+      actor.name,
+      'DECK_SYNCED_FINAL',
+      `Turnamen Liga ${tournament.name} (${tournament.id})`,
+      `${unfilledCount} partisipasi belum memiliki 2 deck`,
+      `${needingSync.length} partisipasi disinkronkan dari koleksi decks${
+        missingNames.length > 0
+          ? ` (${missingNames.length} tanpa data deck: ${missingNames.join(', ')})`
+          : ''
+      }`,
+      tournament.id
+    );
+  } catch (auditErr) {
+    console.warn('Gagal mencatat audit log DECK_SYNCED_FINAL (non-blocking):', auditErr);
+  }
+
+  return {
+    syncedCount: needingSync.length,
+    missingPlayers: missingNames
+  };
+}
+
+/**
+ * Memperbarui field `decks` pada dokumen `participations/{tid}_{pid}` bila sudah ada
+ * (dipakai ketika organizer/admin mengoreksi 2 deck peserta di turnamen liga yang sudah difinalisasi).
+ */
+export async function updateParticipationLeagueDecksIfExists(
+  tournamentId: string,
+  playerId: string,
+  decks: [LeagueDeckEntry, LeagueDeckEntry]
+): Promise<boolean> {
+  if (!tournamentId || !playerId) return false;
+  const participationId = `${tournamentId}_${playerId}`;
+  const partRef = doc(db, 'participations', participationId);
+  const snap = await getDoc(partRef);
+  if (!snap.exists()) return false;
+
+  await updateDoc(partRef, {
+    decks,
+    deckName: '',
+    deckColors: [],
+    updatedAt: Date.now()
+  });
+  invalidateStandingsCache(tournamentId);
+  return true;
 }
 

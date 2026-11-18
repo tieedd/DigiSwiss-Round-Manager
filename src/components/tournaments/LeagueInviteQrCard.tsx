@@ -12,7 +12,10 @@ import {
   regenerateLeagueInviteCode,
   toggleLeagueInviteActive,
 } from '../../services/leagueInviteService';
-import { formatLeagueInviteQrPayload } from '../../utils/leagueInviteLogic';
+import {
+  formatLeagueInviteQrPayload,
+  shouldShowLegacyInviteRegenerateWarning,
+} from '../../utils/leagueInviteLogic';
 import {
   QrCode,
   Copy,
@@ -21,6 +24,7 @@ import {
   ShieldOff,
   ShieldCheck,
   AlertCircle,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface LeagueInviteQrCardProps {
@@ -179,6 +183,17 @@ export const LeagueInviteQrCard: React.FC<LeagueInviteQrCardProps> = ({
         <div className="p-2.5 rounded-btn bg-dark-surface-high border border-dark-border text-[11px] text-dark-muted">
           Pendaftaran otomatis tertutup karena turnamen{' '}
           {tournament.status === 'running' ? 'sedang berjalan' : 'sudah selesai'}.
+        </div>
+      )}
+
+      {shouldShowLegacyInviteRegenerateWarning(currentInvite) && (
+        <div className="p-2.5 rounded-btn bg-status-yellow/10 border border-status-yellow/30 text-[11px] text-status-yellow flex items-start gap-2">
+          <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+          <span>
+            Liga ini dibuat sebelum pembaruan keamanan kode undangan. Tekan{' '}
+            <strong>&ldquo;Buat Ulang Kode&rdquo;</strong> agar kode lama yang pernah
+            tersimpan di data peserta tidak lagi berlaku.
+          </span>
         </div>
       )}
 

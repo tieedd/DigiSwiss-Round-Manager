@@ -1,7 +1,7 @@
 import type { Participation } from '../types/index.ts';
 
 export interface DeletionOperation {
-  type: 'match' | 'round' | 'player' | 'deck' | 'participation' | 'leagueInvite' | 'tournament';
+  type: 'match' | 'round' | 'player' | 'deck' | 'inviteClaim' | 'participation' | 'leagueInvite' | 'tournament';
   id: string;
   path: string;
 }
@@ -11,6 +11,7 @@ export interface TournamentSubcollectionItems {
   rounds?: Array<{ id: string }>;
   players?: Array<{ id: string }>;
   decks?: Array<{ id: string }>;
+  inviteClaims?: Array<{ id: string }>;
   participations?: Array<{ id: string }>;
   leagueInvites?: Array<{ id: string }>;
 }
@@ -21,9 +22,10 @@ export interface TournamentSubcollectionItems {
  * (2) rounds
  * (3) players
  * (4) decks (subkoleksi deck liga)
- * (5) participations (tournamentId == tid)
- * (6) leagueInvites (tournamentId == tid)
- * (7) TERAKHIR: dokumen turnamen itu sendiri
+ * (5) inviteClaims (subkoleksi klaim undangan liga)
+ * (6) participations (tournamentId == tid)
+ * (7) leagueInvites (tournamentId == tid)
+ * (8) TERAKHIR: dokumen turnamen itu sendiri
  */
 export function planTournamentDeletion(
   tournamentId: string,
@@ -75,7 +77,18 @@ export function planTournamentDeletion(
     }
   }
 
-  // 5. Participations
+  // 5. Invite Claims
+  if (items.inviteClaims && items.inviteClaims.length > 0) {
+    for (const claim of items.inviteClaims) {
+      operations.push({
+        type: 'inviteClaim',
+        id: claim.id,
+        path: `tournaments/${tournamentId}/inviteClaims/${claim.id}`
+      });
+    }
+  }
+
+  // 6. Participations
   if (items.participations && items.participations.length > 0) {
     for (const part of items.participations) {
       operations.push({
@@ -178,4 +191,57 @@ export function findOrphanLeagueInvites<
   return invites.filter(
     (inv) => !inv.tournamentId || !validSet.has(inv.tournamentId)
   );
+}
+
+/**
+ * Mencari dokumen inviteClaims yatim:
+ * - Turnamen induknya sudah tidak ada di sistem, ATAU
+ * - (Bila existingPlayerKeys diberikan) dokumen pemainnya di turnamen tersebut sudah tidak ada
+ *   dan melewati masa tenggang (gracePeriodMs) agar tidak mengganggu proses daftar yang sedang berjalan.
+ */
+export function findOrphanInviteClaims<
+  T extends {
+    id?: string;
+    uid?: string;
+    tournamentId?: string | null;
+    createdAt?: number;
+  }
+>(
+  claims: T[],
+  existingTournamentIds: Set<string> | string[],
+  existingPlayerKeys?: Set<string> | string[],
+  nowMs: number = Date.now(),
+  gracePeriodMs: number = 60_000
+): T[] {
+  if (!claims || claims.length === 0) return [];
+  const validTournaments =
+    existingTournamentIds instanceof Set
+      ? existingTournamentIds
+      : new Set(existingTournamentIds || []);
+
+  const validPlayers =
+    existingPlayerKeys === undefined
+      ? null
+      : existingPlayerKeys instanceof Set
+      ? existingPlayerKeys
+      : new Set(existingPlayerKeys || []);
+
+  return claims.filter((claim) => {
+    const tid = claim.tournamentId || '';
+    if (!tid || !validTournaments.has(tid)) {
+      return true;
+    }
+
+    if (validPlayers !== null) {
+      const pid = claim.uid || claim.id || '';
+      const playerKey = `${tid}/${pid}`;
+      if (!pid || !validPlayers.has(playerKey)) {
+        const ageMs =
+          typeof claim.createdAt === 'number' ? nowMs - claim.createdAt : Number.POSITIVE_INFINITY;
+        return ageMs > gracePeriodMs;
+      }
+    }
+
+    return false;
+  });
 }

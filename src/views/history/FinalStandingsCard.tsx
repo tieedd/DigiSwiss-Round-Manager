@@ -4,6 +4,7 @@ import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { DeckColorDots } from '../../components/common/DeckColorDots';
 import { LeagueSeasonBadge } from '../../components/tournaments/LeagueSeasonBadge';
+import { LeagueDecksChips } from '../../components/tournaments/LeagueDecksChips';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import {
@@ -323,7 +324,14 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
 
                     {/* Info Deck & Warna */}
                     <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
-                      {row.deckName ? (
+                      {row.isLeague ||
+                      tournamentType === 'league' ||
+                      resolvedType === 'league' ? (
+                        <LeagueDecksChips
+                          decks={row.decks}
+                          emptyLabel="Deck belum diisi"
+                        />
+                      ) : row.deckName ? (
                         <>
                           <span
                             className="text-[11px] text-dark-text font-medium truncate max-w-[140px]"

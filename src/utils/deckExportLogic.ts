@@ -34,6 +34,7 @@ export interface Participation {
   ogw: number;
   deckName?: string;
   deckColors?: DeckColor[];
+  decks?: Array<{ name: string; colors: DeckColor[] }>;
   isManual?: boolean;
 }
 
@@ -137,6 +138,13 @@ export function getUsedDeckColors(
     if (p.deckColors && Array.isArray(p.deckColors)) {
       p.deckColors.forEach((c) => used.add(c));
     }
+    if (p.decks && Array.isArray(p.decks)) {
+      p.decks.forEach((d) => {
+        if (d && Array.isArray(d.colors)) {
+          d.colors.forEach((c) => used.add(c));
+        }
+      });
+    }
   });
   return OFFICIAL_DECK_COLORS.filter((c) => used.has(c));
 }
@@ -220,14 +228,17 @@ export function generateStandingsCsv(
     options?.seasonLabel || formatSeasonLabel(participations[0]?.season);
   const resolvedLeague =
     options?.isLeague ??
-    (participations[0]?.tournamentType === 'league' || Boolean(resolvedSeason));
+    (participations[0]?.tournamentType === 'league' ||
+      Boolean(resolvedSeason) ||
+      participations.some((p) => Array.isArray(p.decks) && p.decks.length > 0));
 
   const headers = [
     'Peringkat',
     'Nama Pemain',
     'Tipe Peserta',
-    'Nama Deck',
-    'Warna Deck',
+    ...(resolvedLeague
+      ? ['Deck 1', 'Warna Deck 1', 'Deck 2', 'Warna Deck 2']
+      : ['Nama Deck', 'Warna Deck']),
     'Total Poin',
     'Match W',
     'Match L',
@@ -255,12 +266,32 @@ export function generateStandingsCsv(
     : [];
 
   const rows = participations.map((p) => {
+    const deckCols = resolvedLeague
+      ? (() => {
+          const d1 =
+            p.decks?.[0] && p.decks[0].name?.trim()
+              ? p.decks[0]
+              : p.deckName?.trim()
+              ? { name: p.deckName.trim(), colors: p.deckColors || [] }
+              : undefined;
+          const d2 = p.decks?.[1] && p.decks[1].name?.trim() ? p.decks[1] : undefined;
+          return [
+            escapeCsv(d1?.name?.trim() || '-'),
+            escapeCsv(d1?.colors && d1.colors.length > 0 ? d1.colors.join('/') : '-'),
+            escapeCsv(d2?.name?.trim() || '-'),
+            escapeCsv(d2?.colors && d2.colors.length > 0 ? d2.colors.join('/') : '-')
+          ];
+        })()
+      : [
+          escapeCsv(p.deckName || '-'),
+          escapeCsv(p.deckColors && p.deckColors.length > 0 ? p.deckColors.join('/') : '-')
+        ];
+
     const cols = [
       escapeCsv(p.rank),
       escapeCsv(p.name),
       escapeCsv(p.isManual ? 'Manual' : 'Akun Terdaftar'),
-      escapeCsv(p.deckName || '-'),
-      escapeCsv(p.deckColors && p.deckColors.length > 0 ? p.deckColors.join('/') : '-'),
+      ...deckCols,
       escapeCsv(p.points),
       escapeCsv(p.wins),
       escapeCsv(p.losses),
@@ -361,10 +392,21 @@ export function generateStandingsText(
   for (const p of parts) {
     const medal = p.rank === 1 ? '🥇' : p.rank === 2 ? '🥈' : p.rank === 3 ? '🥉' : `#${p.rank}`;
     const topCutTag = p.topCutResult ? ` [${p.topCutResult}]` : '';
-    const emojiStr = formatDeckColorsEmoji(p.deckColors);
-    const deckInfo = p.deckName
-      ? `${p.deckName}${emojiStr ? ` ${emojiStr}` : ''}`
-      : 'Deck belum diisi';
+    const validDecks = Array.isArray(p.decks)
+      ? p.decks.filter((d) => d && d.name && d.name.trim().length > 0)
+      : [];
+    let deckInfo = 'Deck belum diisi';
+    if (validDecks.length > 0) {
+      deckInfo = validDecks
+        .map((d) => {
+          const emojiStr = formatDeckColorsEmoji(d.colors);
+          return `${d.name.trim()}${emojiStr ? ` ${emojiStr}` : ''}`;
+        })
+        .join(' & ');
+    } else if (p.deckName && p.deckName.trim().length > 0) {
+      const emojiStr = formatDeckColorsEmoji(p.deckColors);
+      deckInfo = `${p.deckName.trim()}${emojiStr ? ` ${emojiStr}` : ''}`;
+    }
     lines.push(
       `${medal} ${p.name.padEnd(20)}${topCutTag} | Poin: ${String(p.points).padStart(2)} | W-L: ${p.wins}-${p.losses} | Deck: ${deckInfo}`
     );

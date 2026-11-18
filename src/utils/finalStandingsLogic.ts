@@ -1,4 +1,4 @@
-import type { Participation, DeckColor } from '../types/index.ts';
+import type { Participation, DeckColor, LeagueDeckEntry } from '../types/index.ts';
 import { OFFICIAL_DECK_COLORS } from './deckExportLogic.ts';
 
 export interface FinalStandingsRowItem {
@@ -16,6 +16,8 @@ export interface FinalStandingsRowItem {
   ogw: number;
   deckName?: string;
   deckColors?: DeckColor[];
+  decks?: [LeagueDeckEntry, LeagueDeckEntry];
+  isLeague?: boolean;
   isMe: boolean;
   isTop3: boolean;
   isDropped?: boolean;
@@ -54,6 +56,11 @@ export function buildFinalStandingsRows(
       ogw: p.ogw || 0,
       deckName: p.deckName ? p.deckName.trim() : '',
       deckColors: Array.isArray(p.deckColors) ? (p.deckColors as DeckColor[]) : [],
+      ...(Array.isArray(p.decks) && p.decks.length === 2 ? { decks: p.decks } : {}),
+      isLeague:
+        p.tournamentType === 'league' ||
+        Boolean(p.season) ||
+        (Array.isArray(p.decks) && p.decks.length === 2),
       isMe,
       isTop3,
       isDropped
@@ -62,11 +69,16 @@ export function buildFinalStandingsRows(
 }
 
 /**
- * Menghitung jumlah partisipasi milik user yang belum mengisi nama deck
+ * Menghitung jumlah partisipasi turnamen reguler milik user yang belum mengisi nama deck
  */
 export function countUnfilledDecks(participations: Participation[], myUid?: string): number {
   if (!participations || !Array.isArray(participations)) return 0;
   return participations.filter((p) => {
+    const isLeague =
+      p.tournamentType === 'league' ||
+      Boolean(p.season) ||
+      (Array.isArray(p.decks) && p.decks.length > 0);
+    if (isLeague) return false;
     const isMyDoc = myUid ? p.uid === myUid : true;
     const isDeckEmpty = !p.deckName || p.deckName.trim() === '';
     return isMyDoc && isDeckEmpty;
@@ -91,17 +103,34 @@ export function buildDeckHistoryOptions(participations: Participation[]): Unique
   const map = new Map<string, UniqueDeckOption>();
 
   for (const p of sorted) {
-    const name = p.deckName ? p.deckName.trim() : '';
-    const colors = Array.isArray(p.deckColors) ? (p.deckColors as DeckColor[]) : [];
+    const entries: Array<{ name: string; colors: DeckColor[] }> = [];
+    if (Array.isArray(p.decks) && p.decks.length > 0) {
+      p.decks.forEach((d) => {
+        if (d && typeof d.name === 'string') {
+          entries.push({
+            name: d.name.trim(),
+            colors: Array.isArray(d.colors) ? (d.colors as DeckColor[]) : []
+          });
+        }
+      });
+    } else {
+      const name = p.deckName ? p.deckName.trim() : '';
+      const colors = Array.isArray(p.deckColors) ? (p.deckColors as DeckColor[]) : [];
+      if (name) {
+        entries.push({ name, colors });
+      }
+    }
 
-    if (name.length > 0 && colors.length > 0) {
-      const key = name.toLowerCase();
-      if (!map.has(key)) {
-        map.set(key, {
-          deckName: name,
-          deckColors: colors,
-          lastUsedAt: p.createdAt || 0
-        });
+    for (const entry of entries) {
+      if (entry.name.length > 0 && entry.colors.length > 0) {
+        const key = entry.name.toLowerCase();
+        if (!map.has(key)) {
+          map.set(key, {
+            deckName: entry.name,
+            deckColors: entry.colors,
+            lastUsedAt: p.createdAt || 0
+          });
+        }
       }
     }
   }

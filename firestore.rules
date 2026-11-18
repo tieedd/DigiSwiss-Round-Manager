@@ -33,6 +33,41 @@ service cloud.firestore {
       return data.username == 'admindss';
     }
 
+    function isValidMatchGameEntry(g) {
+      return g is map &&
+        g.keys().hasOnly(['winner', 'p1Deck', 'p2Deck']) &&
+        g.winner in ['p1', 'p2'] &&
+        g.p1Deck in [0, 1] &&
+        g.p2Deck in [0, 1];
+    }
+
+    function isValidLeagueMatchGames(games, p1Score, p2Score) {
+      return games is list &&
+        (
+          (
+            games.size() == 2 &&
+            isValidMatchGameEntry(games[0]) &&
+            isValidMatchGameEntry(games[1]) &&
+            games[0].winner == games[1].winner &&
+            (
+              (games[0].winner == 'p1' && p1Score == 2 && p2Score == 0) ||
+              (games[0].winner == 'p2' && p1Score == 0 && p2Score == 2)
+            )
+          ) ||
+          (
+            games.size() == 3 &&
+            isValidMatchGameEntry(games[0]) &&
+            isValidMatchGameEntry(games[1]) &&
+            isValidMatchGameEntry(games[2]) &&
+            games[0].winner != games[1].winner &&
+            (
+              (games[2].winner == 'p1' && p1Score == 2 && p2Score == 1) ||
+              (games[2].winner == 'p2' && p1Score == 1 && p2Score == 2)
+            )
+          )
+        );
+    }
+
     // 1. Koleksi Pengguna: users/{uid}
     match /users/{uid} {
       allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
@@ -161,11 +196,8 @@ service cloud.firestore {
             request.resource.data.uid == request.auth.uid &&
             request.resource.data.manual == false &&
             request.resource.data.status == 'accepted' &&
-            ('inviteCode' in request.resource.data) &&
-            request.resource.data.inviteCode is string &&
-            exists(/databases/$(database)/documents/leagueInvites/$(request.resource.data.inviteCode)) &&
-            get(/databases/$(database)/documents/leagueInvites/$(request.resource.data.inviteCode)).data.active == true &&
-            get(/databases/$(database)/documents/leagueInvites/$(request.resource.data.inviteCode)).data.tournamentId == tid
+            !('inviteCode' in request.resource.data) &&
+            exists(/databases/$(database)/documents/tournaments/$(tid)/inviteClaims/$(pid))
           ) ||
           (
             (get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid || isAdmin()) &&
@@ -193,6 +225,33 @@ service cloud.firestore {
           ) ||
           get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid ||
           isAdmin()
+        );
+      }
+
+      // Sub-koleksi Klaim Undangan Liga: tournaments/{tid}/inviteClaims/{uid}
+      match /inviteClaims/{pid} {
+        allow read: if isCurrentUserActive() && (
+          isAdmin() ||
+          pid == request.auth.uid ||
+          get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid
+        );
+
+        allow create: if isCurrentUserActive() &&
+          pid == request.auth.uid &&
+          get(/databases/$(database)/documents/tournaments/$(tid)).data.get('type', 'regular') == 'league' &&
+          get(/databases/$(database)/documents/tournaments/$(tid)).data.status == 'registration' &&
+          ('inviteCode' in request.resource.data) &&
+          request.resource.data.inviteCode is string &&
+          exists(/databases/$(database)/documents/leagueInvites/$(request.resource.data.inviteCode)) &&
+          get(/databases/$(database)/documents/leagueInvites/$(request.resource.data.inviteCode)).data.active == true &&
+          get(/databases/$(database)/documents/leagueInvites/$(request.resource.data.inviteCode)).data.tournamentId == tid;
+
+        allow update: if false;
+
+        allow delete: if isCurrentUserActive() && (
+          isAdmin() ||
+          pid == request.auth.uid ||
+          get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid
         );
       }
 
@@ -296,9 +355,10 @@ service cloud.firestore {
           get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid;
 
         // Pembaruan:
-        // A. Organizer pemilik turnamen boleh mengubah dan menimpa apa pun
-        // B. Player peserta pertandingan hanya boleh mengubah skor & status sesuai transisi valid:
-        //    1) pending -> awaiting (oleh pelapor yang mengisi skor)
+        // A. Organizer pemilik turnamen boleh mengubah dan menimpa apa pun pada ronde aktif
+        // B. Player peserta pertandingan hanya boleh mengubah skor, games, & status sesuai transisi valid:
+        //    1) pending -> awaiting (oleh pelapor yang mengisi skor; untuk liga wajib games valid)
+        //    2) awaiting -> confirmed/disputed (oleh lawan; p1Decks, p2Decks, dan games tidak boleh diubah)
         allow update: if isCurrentUserActive() && (
           // Kasus Organizer Pemilik:
           // Hanya boleh mengubah pertandingan ronde aktif (currentRound) saat turnamen 'running',
@@ -309,7 +369,11 @@ service cloud.firestore {
             (
               (
                 get(/databases/$(database)/documents/tournaments/$(tid)).data.status == 'running' &&
-                resource.data.round == get(/databases/$(database)/documents/tournaments/$(tid)).data.currentRound
+                resource.data.round == get(/databases/$(database)/documents/tournaments/$(tid)).data.currentRound &&
+                (
+                  !request.resource.data.diff(resource.data).affectedKeys().hasAny(['games']) ||
+                  isValidLeagueMatchGames(request.resource.data.games, request.resource.data.p1Score, request.resource.data.p2Score)
+                )
               )
               ||
               request.resource.data.diff(resource.data).affectedKeys().hasOnly(['archived'])
@@ -331,12 +395,25 @@ service cloud.firestore {
             request.resource.data.p1Name == resource.data.p1Name &&
             request.resource.data.p2Name == resource.data.p2Name &&
             request.resource.data.get('archived', false) == resource.data.get('archived', false) &&
+            request.resource.data.get('p1Decks', null) == resource.data.get('p1Decks', null) &&
+            request.resource.data.get('p2Decks', null) == resource.data.get('p2Decks', null) &&
             (
               // Transisi 1: pending -> awaiting (Pelapor input skor pertama kali)
               (
                 resource.data.status == 'pending' &&
                 request.resource.data.status == 'awaiting' &&
-                request.resource.data.reportedBy == request.auth.uid
+                request.resource.data.reportedBy == request.auth.uid &&
+                request.resource.data.diff(resource.data).affectedKeys().hasOnly(['p1Score', 'p2Score', 'games', 'status', 'reportedBy', 'updatedAt']) &&
+                (
+                  (
+                    resource.data.get('p1Decks', null) == null &&
+                    !('games' in request.resource.data)
+                  ) ||
+                  (
+                    ('games' in request.resource.data) &&
+                    isValidLeagueMatchGames(request.resource.data.games, request.resource.data.p1Score, request.resource.data.p2Score)
+                  )
+                )
               )
               ||
               // Transisi 2: awaiting -> confirmed ATAU disputed (Dikonfirmasi / Ditolak oleh Lawan)
@@ -346,7 +423,9 @@ service cloud.firestore {
                 request.resource.data.status in ['confirmed', 'disputed'] &&
                 request.resource.data.p1Score == resource.data.p1Score &&
                 request.resource.data.p2Score == resource.data.p2Score &&
-                request.resource.data.reportedBy == resource.data.reportedBy
+                request.resource.data.reportedBy == resource.data.reportedBy &&
+                request.resource.data.get('games', null) == resource.data.get('games', null) &&
+                request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
               )
             )
           )
@@ -358,6 +437,11 @@ service cloud.firestore {
           isAdmin()
         );
       }
+    }
+
+    // Izinkan Admin memindai collectionGroup inviteClaims untuk Pembersihan Data yatim
+    match /{path=**}/inviteClaims/{pid} {
+      allow read: if isAdmin();
     }
 
     // 4b. Koleksi Undangan Turnamen Liga: leagueInvites/{code}

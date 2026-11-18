@@ -5,7 +5,8 @@ import {
   chunkOperations,
   filterParticipationsByExistingTournaments,
   findOrphanParticipations,
-  findOrphanLeagueInvites
+  findOrphanLeagueInvites,
+  findOrphanInviteClaims
 } from '../utils/cascadeDeleteLogic.ts';
 
 test('CASCADE 1: planTournamentDeletion menyusun urutan (matches -> rounds -> players -> participations -> tournament)', () => {
@@ -148,19 +149,21 @@ test('CASCADE 5: findOrphanParticipations mendeteksi dokumen partisipasi dari tu
   );
 });
 
-test('CASCADE 6: planTournamentDeletion menyertakan decks dan leagueInvites sebelum menghapus turnamen', () => {
+test('CASCADE 6: planTournamentDeletion menyertakan decks, inviteClaims, dan leagueInvites sebelum menghapus turnamen', () => {
   const plan = planTournamentDeletion('league_1', {
     players: [{ id: 'p1' }],
     decks: [{ id: 'p1' }],
+    inviteClaims: [{ id: 'p1' }],
     leagueInvites: [{ id: 'K7P9M2WX' }]
   });
 
-  assert.equal(plan.length, 4);
+  assert.equal(plan.length, 5);
   assert.deepEqual(
     plan.map((op) => `${op.type}:${op.path}`),
     [
       'player:tournaments/league_1/players/p1',
       'deck:tournaments/league_1/decks/p1',
+      'inviteClaim:tournaments/league_1/inviteClaims/p1',
       'leagueInvite:leagueInvites/K7P9M2WX',
       'tournament:tournaments/league_1'
     ]
@@ -177,5 +180,28 @@ test('CASCADE 7: findOrphanLeagueInvites mendeteksi kode undangan yatim tanpa tu
   assert.deepEqual(
     orphans.map((i) => i.id),
     ['BBBB3333', 'CCCC4444']
+  );
+});
+
+test('CASCADE 8: findOrphanInviteClaims mendeteksi klaim dari turnamen terhapus maupun klaim tanpa dokumen pemain', () => {
+  const now = 1_700_000_200_000;
+  const claims = [
+    { uid: 'u1', tournamentId: 't_active', createdAt: now - 120_000 }, // valid: turnamen & pemain ada
+    { uid: 'u2', tournamentId: 't_deleted', createdAt: now - 10_000 }, // orphan: turnamen sudah tidak ada
+    { uid: 'u3', tournamentId: 't_active', createdAt: now - 120_000 }, // orphan: pemain tidak ada & > 60s
+    { uid: 'u4', tournamentId: 't_active', createdAt: now - 5_000 } // dalam masa tenggang pendaftaran (< 60s)
+  ];
+
+  const orphans = findOrphanInviteClaims(
+    claims,
+    new Set(['t_active']),
+    new Set(['t_active/u1']),
+    now,
+    60_000
+  );
+
+  assert.deepEqual(
+    orphans.map((c) => c.uid),
+    ['u2', 'u3']
   );
 });

@@ -20,7 +20,8 @@ import {
   scanOrphanParticipations,
   cleanOrphanParticipations,
   OrphanDocInfo,
-  OrphanLeagueInviteInfo
+  OrphanLeagueInviteInfo,
+  OrphanInviteClaimInfo
 } from '../services/tournamentCleanupService';
 
 interface SettingsViewProps {
@@ -38,23 +39,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigateConnection
   const [scanResult, setScanResult] = useState<{
     orphanDocs: OrphanDocInfo[];
     orphanInvites: OrphanLeagueInviteInfo[];
+    orphanClaims: OrphanInviteClaimInfo[];
     totalScanned: number;
     totalInvitesScanned: number;
+    totalClaimsScanned: number;
   } | null>(null);
   const [reauthOpen, setReauthOpen] = useState(false);
 
   const totalOrphansCount =
-    (scanResult?.orphanDocs.length || 0) + (scanResult?.orphanInvites.length || 0);
+    (scanResult?.orphanDocs.length || 0) +
+    (scanResult?.orphanInvites.length || 0) +
+    (scanResult?.orphanClaims.length || 0);
 
   const handleScanOrphans = async () => {
     setScanning(true);
     try {
       const res = await scanOrphanParticipations();
       setScanResult(res);
-      const totalOrphans = res.orphanDocs.length + res.orphanInvites.length;
+      const totalOrphans =
+        res.orphanDocs.length + res.orphanInvites.length + res.orphanClaims.length;
       if (totalOrphans === 0) {
         showToastSuccess(
-          `Pemeriksaan selesai (${res.totalScanned} partisipasi, ${res.totalInvitesScanned} undangan liga). Tidak ada data yatim.`
+          `Pemeriksaan selesai (${res.totalScanned} partisipasi, ${res.totalInvitesScanned} undangan liga, ${res.totalClaimsScanned} klaim undangan). Tidak ada data yatim.`
         );
       }
     } catch (err: any) {
@@ -71,16 +77,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigateConnection
     try {
       const ids = scanResult.orphanDocs.map((d) => d.id);
       const inviteCodes = scanResult.orphanInvites.map((inv) => inv.code);
+      const claimPaths = scanResult.orphanClaims.map((c) => c.path);
       const deletedCount = await cleanOrphanParticipations(
         ids,
         {
           uid: currentUser.uid,
           name: userProfile.displayName || userProfile.username || 'Admin'
         },
-        inviteCodes
+        inviteCodes,
+        claimPaths
       );
       showToastSuccess(
-        `Berhasil menghapus ${deletedCount} data yatim (partisipasi & undangan liga) dari turnamen yang sudah dihapus.`
+        `Berhasil menghapus ${deletedCount} data yatim (partisipasi, undangan liga, & klaim undangan) dari turnamen yang sudah dihapus.`
       );
       setScanResult(null);
     } catch (err: any) {
@@ -144,7 +152,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigateConnection
           </div>
 
           <p className="text-caption text-dark-muted leading-relaxed">
-            Membersihkan sisa data partisipasi dan kode undangan liga dari turnamen yang sudah dihapus, agar Statistik dan Riwayat pemain tetap akurat.
+            Membersihkan sisa data partisipasi, kode undangan liga, dan klaim undangan dari turnamen yang sudah dihapus, agar Statistik dan Riwayat pemain tetap akurat.
           </p>
 
           {/* Hasil Pemindaian */}
@@ -164,11 +172,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigateConnection
               <div className="flex flex-col gap-0.5">
                 <strong className="font-semibold">
                   {totalOrphansCount > 0
-                    ? `${scanResult.orphanDocs.length} partisipasi & ${scanResult.orphanInvites.length} undangan liga yatim ditemukan`
+                    ? `${scanResult.orphanDocs.length} partisipasi, ${scanResult.orphanInvites.length} undangan liga & ${scanResult.orphanClaims.length} klaim undangan yatim ditemukan`
                     : 'Tidak ada data yatim ditemukan'}
                 </strong>
                 <span className="text-[11px] opacity-90">
-                  Dari {scanResult.totalScanned} partisipasi dan {scanResult.totalInvitesScanned} undangan liga yang dipindai.
+                  Dari {scanResult.totalScanned} partisipasi, {scanResult.totalInvitesScanned} undangan liga, dan {scanResult.totalClaimsScanned} klaim undangan yang dipindai.
                 </span>
               </div>
             </div>
@@ -254,7 +262,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigateConnection
         onClose={() => setReauthOpen(false)}
         onSuccess={handleExecuteCleanOrphans}
         actionTitle="Konfirmasi Pembersihan Data Yatim"
-        actionDescription={`Masukkan password admin Anda untuk menghapus ${scanResult?.orphanDocs.length || 0} data partisipasi dari turnamen yang sudah tidak ada.`}
+        actionDescription={`Masukkan password admin Anda untuk menghapus ${totalOrphansCount} data yatim (partisipasi, undangan liga, dan klaim undangan) yang sudah tidak memiliki turnamen aktif.`}
       />
     </div>
   );

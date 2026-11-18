@@ -1,13 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   LEAGUE_INVITE_ALPHABET,
   LEAGUE_INVITE_CODE_LENGTH,
+  LEAGUE_INVITE_CLAIMS_VERSION,
   generateLeagueInviteCode,
   isValidLeagueInviteCodeFormat,
   normalizeLeagueInviteInput,
   formatLeagueInviteQrPayload,
   validateLeagueInviteForRegistration,
+  buildLeagueInviteClaimPayload,
+  buildLeaguePlayerPayload,
+  executeTwoStepLeagueRegistration,
+  shouldShowLegacyInviteRegenerateWarning,
 } from '../utils/leagueInviteLogic.ts';
 
 test('INVITE 1: generateLeagueInviteCode menghasilkan kode 8 karakter tanpa karakter ambigu (0, O, 1, I, L)', () => {
@@ -142,4 +148,115 @@ test('INVITE 6: validateLeagueInviteForRegistration memeriksa duplikat/ditolak d
   });
   assert.equal(validRes.valid, true);
   assert.equal(validRes.code, 'K7P9M2WX');
+});
+
+test('INVITE 7: payload inviteClaims dan players (tanpa inviteCode) terbentuk benar', () => {
+  const claimPayload = buildLeagueInviteClaimPayload('k7p9m2wx', 1700000000000);
+  assert.deepEqual(claimPayload, {
+    inviteCode: 'K7P9M2WX',
+    createdAt: 1700000000000,
+  });
+
+  const playerPayload = buildLeaguePlayerPayload(
+    { uid: 'uid_abc', name: 'Taichi' },
+    1700000000000
+  );
+  assert.equal('inviteCode' in playerPayload, false);
+  assert.deepEqual(playerPayload, {
+    id: 'uid_abc',
+    name: 'Taichi',
+    uid: 'uid_abc',
+    manual: false,
+    status: 'accepted',
+    joinedAt: 1700000000000,
+  });
+});
+
+test('INVITE 8: executeTwoStepLeagueRegistration membuat klaim lalu pemain, dan rollback klaim jika langkah 2 gagal', async () => {
+  // Skenario sukses: urutan langkah 1 -> langkah 2, tanpa rollback
+  const order = [];
+  const res = await executeTwoStepLeagueRegistration({
+    createClaim: async () => {
+      order.push('createClaim');
+    },
+    createPlayer: async () => {
+      order.push('createPlayer');
+    },
+    rollbackClaim: async () => {
+      order.push('rollbackClaim');
+    },
+  });
+  assert.deepEqual(res, { claimCreated: true, playerCreated: true });
+  assert.deepEqual(order, ['createClaim', 'createPlayer']);
+
+  // Skenario gagal di langkah 2: klaim yang baru dibuat wajib dihapus kembali (rollback)
+  const failOrder = [];
+  await assert.rejects(
+    () =>
+      executeTwoStepLeagueRegistration({
+        createClaim: async () => {
+          failOrder.push('createClaim');
+        },
+        createPlayer: async () => {
+          failOrder.push('createPlayer');
+          throw new Error('permission-denied');
+        },
+        rollbackClaim: async () => {
+          failOrder.push('rollbackClaim');
+        },
+      }),
+    /permission-denied/
+  );
+  assert.deepEqual(failOrder, ['createClaim', 'createPlayer', 'rollbackClaim']);
+
+  // Skenario gagal di langkah 1: langkah 2 dan rollback tidak dipanggil
+  const step1FailOrder = [];
+  await assert.rejects(
+    () =>
+      executeTwoStepLeagueRegistration({
+        createClaim: async () => {
+          step1FailOrder.push('createClaim');
+          throw new Error('invalid-invite');
+        },
+        createPlayer: async () => {
+          step1FailOrder.push('createPlayer');
+        },
+        rollbackClaim: async () => {
+          step1FailOrder.push('rollbackClaim');
+        },
+      }),
+    /invalid-invite/
+  );
+  assert.deepEqual(step1FailOrder, ['createClaim']);
+});
+
+test('INVITE 9: shouldShowLegacyInviteRegenerateWarning aktif untuk undangan lama dan hilang setelah Buat Ulang Kode (v2)', () => {
+  assert.equal(shouldShowLegacyInviteRegenerateWarning(null), false);
+  assert.equal(
+    shouldShowLegacyInviteRegenerateWarning({ code: 'OLD12345', active: false }),
+    false
+  );
+  assert.equal(
+    shouldShowLegacyInviteRegenerateWarning({ code: 'OLD12345', active: true }),
+    true
+  );
+  assert.equal(
+    shouldShowLegacyInviteRegenerateWarning({
+      code: 'NEW23456',
+      active: true,
+      inviteVersion: LEAGUE_INVITE_CLAIMS_VERSION,
+    }),
+    false
+  );
+});
+
+test('INVITE 10: firestore.rules menegakkan inviteClaims dan melarang inviteCode di dokumen players', () => {
+  const rulesText = fs.readFileSync(
+    new URL('../../firestore.rules', import.meta.url),
+    'utf8'
+  );
+  assert.match(rulesText, /match \/inviteClaims\/\{pid\}/);
+  assert.match(rulesText, /!\('inviteCode' in request\.resource\.data\)/);
+  assert.match(rulesText, /exists\(\/databases\/\$\(database\)\/documents\/tournaments\/\$\(tid\)\/inviteClaims\/\$\(pid\)\)/);
+  assert.match(rulesText, /allow update: if false;/);
 });

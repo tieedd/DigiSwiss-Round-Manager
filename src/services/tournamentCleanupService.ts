@@ -1,6 +1,8 @@
 import {
   collection,
+  collectionGroup,
   doc,
+  getDoc,
   getDocs,
   query,
   where,
@@ -15,6 +17,7 @@ import { db } from '../firebaseConfig';
 import {
   planTournamentDeletion,
   chunkOperations,
+  findOrphanInviteClaims,
   DeletionOperation
 } from '../utils/cascadeDeleteLogic';
 import { clearAllStandingsCache } from '../utils/finalStandingsLogic';
@@ -26,6 +29,7 @@ export interface DeleteTournamentResult {
   roundsCount: number;
   playersCount: number;
   decksCount: number;
+  inviteClaimsCount: number;
   participationsCount: number;
   leagueInvitesCount: number;
 }
@@ -43,6 +47,12 @@ export interface OrphanLeagueInviteInfo {
   tournamentId: string;
   tournamentName: string;
   seasonLabel?: string;
+}
+
+export interface OrphanInviteClaimInfo {
+  uid: string;
+  tournamentId: string;
+  path: string;
 }
 
 // In-memory cache sesi status keberadaan dokumen turnamen
@@ -121,9 +131,10 @@ export async function checkExistingTournaments(
  * (2) rounds
  * (3) players
  * (4) decks (subkoleksi deck liga)
- * (5) participations (tournamentId == tid)
- * (6) leagueInvites (tournamentId == tid)
- * (7) TERAKHIR dokumen tournaments/{tid}
+ * (5) inviteClaims (subkoleksi klaim undangan liga)
+ * (6) participations (tournamentId == tid)
+ * (7) leagueInvites (tournamentId == tid)
+ * (8) TERAKHIR dokumen tournaments/{tid}
  */
 export async function executeCascadeTournamentDeletion(
   tournamentId: string,
@@ -136,6 +147,7 @@ export async function executeCascadeTournamentDeletion(
   const roundsCol = collection(db, 'tournaments', tournamentId, 'rounds');
   const playersCol = collection(db, 'tournaments', tournamentId, 'players');
   const decksCol = collection(db, 'tournaments', tournamentId, 'decks');
+  const inviteClaimsCol = collection(db, 'tournaments', tournamentId, 'inviteClaims');
   const participationsCol = collection(db, 'participations');
   const invitesCol = collection(db, 'leagueInvites');
 
@@ -144,6 +156,7 @@ export async function executeCascadeTournamentDeletion(
     roundsSnap,
     playersSnap,
     decksSnap,
+    inviteClaimsSnap,
     participationsSnap,
     invitesSnap
   ] = await Promise.all([
@@ -151,6 +164,7 @@ export async function executeCascadeTournamentDeletion(
     getDocs(roundsCol),
     getDocs(playersCol),
     getDocs(decksCol),
+    getDocs(inviteClaimsCol),
     getDocs(query(participationsCol, where('tournamentId', '==', tournamentId))),
     getDocs(query(invitesCol, where('tournamentId', '==', tournamentId)))
   ]);
@@ -159,6 +173,7 @@ export async function executeCascadeTournamentDeletion(
   const roundsCount = roundsSnap.size;
   const playersCount = playersSnap.size;
   const decksCount = decksSnap.size;
+  const inviteClaimsCount = inviteClaimsSnap.size;
   const participationsCount = participationsSnap.size;
   const leagueInvitesCount = invitesSnap.size;
 
@@ -168,6 +183,7 @@ export async function executeCascadeTournamentDeletion(
     rounds: roundsSnap.docs.map((d) => ({ id: d.id })),
     players: playersSnap.docs.map((d) => ({ id: d.id })),
     decks: decksSnap.docs.map((d) => ({ id: d.id })),
+    inviteClaims: inviteClaimsSnap.docs.map((d) => ({ id: d.id })),
     participations: participationsSnap.docs.map((d) => ({ id: d.id })),
     leagueInvites: invitesSnap.docs.map((d) => ({ id: d.id }))
   });
@@ -205,6 +221,7 @@ export async function executeCascadeTournamentDeletion(
       roundsCount,
       playersCount,
       decksCount,
+      inviteClaimsCount,
       participationsCount,
       leagueInvitesCount,
       totalDeleted: totalOperations
@@ -220,14 +237,15 @@ export async function executeCascadeTournamentDeletion(
     roundsCount,
     playersCount,
     decksCount,
+    inviteClaimsCount,
     participationsCount,
     leagueInvitesCount
   };
 }
 
 /**
- * Pindai koleksi participations dan leagueInvites secara bertahap (200 per halaman, maks 2000 dokumen)
- * dan identifikasi dokumen yang tournamentId-nya tidak punya dokumen turnamen.
+ * Pindai koleksi participations, leagueInvites, dan collectionGroup inviteClaims secara bertahap
+ * (200 per halaman, maks 2000 dokumen) untuk mendeteksi dokumen yatim.
  */
 export async function scanOrphanParticipations(
   maxTotal = 2000,
@@ -235,15 +253,20 @@ export async function scanOrphanParticipations(
 ): Promise<{
   orphanDocs: OrphanDocInfo[];
   orphanInvites: OrphanLeagueInviteInfo[];
+  orphanClaims: OrphanInviteClaimInfo[];
   totalScanned: number;
   totalInvitesScanned: number;
+  totalClaimsScanned: number;
 }> {
   const partsCol = collection(db, 'participations');
   const invitesCol = collection(db, 'leagueInvites');
+  const claimsGroup = collectionGroup(db, 'inviteClaims');
   const orphanDocs: OrphanDocInfo[] = [];
   const orphanInvites: OrphanLeagueInviteInfo[] = [];
+  const orphanClaims: OrphanInviteClaimInfo[] = [];
   let totalScanned = 0;
   let totalInvitesScanned = 0;
+  let totalClaimsScanned = 0;
   let lastVisibleDoc: QueryDocumentSnapshot<DocumentData> | null = null;
   let hasMore = true;
 
@@ -335,9 +358,81 @@ export async function scanOrphanParticipations(
     }
   }
 
+  // Pindai juga collectionGroup inviteClaims untuk mendeteksi klaim yatim
+  const scannedClaims: Array<{
+    uid: string;
+    tournamentId: string;
+    path: string;
+    createdAt?: number;
+  }> = [];
+  let lastClaimDoc: QueryDocumentSnapshot<DocumentData> | null = null;
+  let hasMoreClaims = true;
+
+  while (hasMoreClaims && totalClaimsScanned < maxTotal) {
+    const fetchLimit = Math.min(pageSize, maxTotal - totalClaimsScanned);
+    let q = query(claimsGroup, limit(fetchLimit));
+    if (lastClaimDoc) {
+      q = query(claimsGroup, startAfter(lastClaimDoc), limit(fetchLimit));
+    }
+
+    const snap = await getDocs(q);
+    if (snap.empty) {
+      hasMoreClaims = false;
+      break;
+    }
+
+    totalClaimsScanned += snap.size;
+    lastClaimDoc = snap.docs[snap.docs.length - 1];
+
+    for (const d of snap.docs) {
+      const data = d.data();
+      const tId = d.ref.parent.parent?.id || '';
+      if (tId) {
+        tournamentIdSet.add(tId);
+      }
+      scannedClaims.push({
+        uid: d.id,
+        tournamentId: tId,
+        path: d.ref.path,
+        createdAt: typeof data.createdAt === 'number' ? data.createdAt : undefined
+      });
+    }
+
+    if (snap.size < fetchLimit) {
+      hasMoreClaims = false;
+    }
+  }
+
   // Periksa turnamen mana yang masih ada
   const allTournamentIds = Array.from(tournamentIdSet);
   const existingSet = await checkExistingTournaments(allTournamentIds);
+
+  // Untuk klaim pada turnamen yang masih ada, cek apakah dokumen pemainnya juga masih ada
+  const existingPlayerKeys = new Set<string>();
+  const claimsInExistingTournaments = scannedClaims.filter(
+    (c) => c.tournamentId && existingSet.has(c.tournamentId)
+  );
+  if (claimsInExistingTournaments.length > 0) {
+    const checkChunks = chunkOperations(claimsInExistingTournaments, 25);
+    for (const chunk of checkChunks) {
+      await Promise.all(
+        chunk.map(async (c) => {
+          try {
+            const pSnap = await getDoc(
+              doc(db, 'tournaments', c.tournamentId, 'players', c.uid)
+            );
+            if (pSnap.exists()) {
+              existingPlayerKeys.add(`${c.tournamentId}/${c.uid}`);
+            }
+          } catch (err) {
+            // Jika gagal membaca status pemain, anggap masih ada agar tidak salah hapus
+            console.warn('Gagal memeriksa pemain untuk inviteClaim:', c.path, err);
+            existingPlayerKeys.add(`${c.tournamentId}/${c.uid}`);
+          }
+        })
+      );
+    }
+  }
 
   for (const item of scannedParticipations) {
     if (!item.tournamentId || !existingSet.has(item.tournamentId)) {
@@ -362,20 +457,42 @@ export async function scanOrphanParticipations(
     }
   }
 
-  return { orphanDocs, orphanInvites, totalScanned, totalInvitesScanned };
+  const detectedOrphanClaims = findOrphanInviteClaims(
+    scannedClaims.map((c) => ({ ...c, id: c.uid })),
+    existingSet,
+    existingPlayerKeys
+  );
+  for (const c of detectedOrphanClaims) {
+    orphanClaims.push({
+      uid: c.uid,
+      tournamentId: c.tournamentId,
+      path: c.path
+    });
+  }
+
+  return {
+    orphanDocs,
+    orphanInvites,
+    orphanClaims,
+    totalScanned,
+    totalInvitesScanned,
+    totalClaimsScanned
+  };
 }
 
 /**
- * Menghapus data partisipasi dan leagueInvites yatim dalam potongan batch maksimal 400 dokumen.
+ * Menghapus data partisipasi, leagueInvites, dan inviteClaims yatim dalam potongan batch maksimal 400 dokumen.
  */
 export async function cleanOrphanParticipations(
   orphanDocIds: string[],
   admin: { uid: string; name: string },
-  orphanInviteCodes: string[] = []
+  orphanInviteCodes: string[] = [],
+  orphanClaimPaths: string[] = []
 ): Promise<number> {
   const paths: string[] = [
     ...(orphanDocIds || []).map((id) => `participations/${id}`),
-    ...(orphanInviteCodes || []).map((code) => `leagueInvites/${code}`)
+    ...(orphanInviteCodes || []).map((code) => `leagueInvites/${code}`),
+    ...(orphanClaimPaths || [])
   ];
   if (paths.length === 0) return 0;
 
@@ -396,9 +513,9 @@ export async function cleanOrphanParticipations(
     admin.uid,
     admin.name,
     'ORPHAN_DATA_CLEANED',
-    'participations, leagueInvites',
+    'participations, leagueInvites, inviteClaims',
     null,
-    `Membersihkan ${orphanDocIds?.length || 0} dokumen partisipasi yatim dan ${orphanInviteCodes?.length || 0} kode undangan liga yatim`
+    `Membersihkan ${orphanDocIds?.length || 0} dokumen partisipasi yatim, ${orphanInviteCodes?.length || 0} kode undangan liga yatim, dan ${orphanClaimPaths?.length || 0} klaim undangan yatim`
   );
 
   // Bersihkan cache
