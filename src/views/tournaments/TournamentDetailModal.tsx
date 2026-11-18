@@ -12,7 +12,10 @@ import { StatusBadge } from '../../components/common/StatusBadge';
 import { BottomSheet } from '../../components/common/BottomSheet';
 import { ConfirmSheet } from '../../components/common/ConfirmSheet';
 import { ReauthModal } from '../../components/common/ReauthModal';
+import { TournamentFormSheet } from '../../components/tournaments/TournamentFormSheet';
 import {
+  createTournament,
+  updateTournamentDetails,
   getTournamentPlayers,
   registerPlayer,
   cancelRegistration,
@@ -48,6 +51,10 @@ import {
   PlayerActionConfirmRequest,
   PlayerActionConfirmType,
 } from '../../utils/playerActionConfirmLogic';
+import {
+  buildDuplicateTournamentDraft,
+  TournamentFormValues,
+} from '../../utils/tournamentEditLogic';
 import { executeLinkManualPlayerToAccount } from '../../services/playerLinkService';
 import {
   Swords,
@@ -62,6 +69,7 @@ import {
   Play,
   Trash2,
   Copy,
+  CopyPlus,
   Check,
   ShieldAlert,
   ArrowRight,
@@ -70,6 +78,7 @@ import {
   AlertCircle,
   Link2,
   History,
+  Pencil,
 } from 'lucide-react';
 import { AddFromHistoryModal } from './AddFromHistoryModal';
 
@@ -83,7 +92,7 @@ interface TournamentDetailModalProps {
 }
 
 export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
-  tournament,
+  tournament: initialTournament,
   isOpen,
   onClose,
   onTournamentUpdated,
@@ -91,10 +100,15 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
   onOpenRounds,
 }) => {
   const { currentUser, userProfile } = useAuth();
+  const [tournament, setTournament] = useState<Tournament | null>(initialTournament);
   const [players, setPlayers] = useState<TournamentPlayer[]>([]);
   const [loadingPlayers, setLoadingPlayers] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedStandings, setCopiedStandings] = useState(false);
+
+  useEffect(() => {
+    setTournament(initialTournament);
+  }, [initialTournament, isOpen]);
 
   const handleCopyStandingsText = async () => {
     if (!tournament) return;
@@ -157,6 +171,14 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
 
   const { success: showToastSuccess, info: showToastInfo } = useToast();
 
+  // Edit & Duplicate Tournament sheets
+  const [editSheetOpen, setEditSheetOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [duplicateSheetOpen, setDuplicateSheetOpen] = useState(false);
+  const [duplicateLoading, setDuplicateLoading] = useState(false);
+  const [duplicateError, setDuplicateError] = useState('');
+
   // Admin Delete Tournament Reauth & Progress
   const [deleteReauthOpen, setDeleteReauthOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -171,12 +193,14 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
   const isOrganizerOwner =
     Boolean(currentUser && tournament && tournament.organizerId === currentUser.uid);
   const isAdmin = userProfile?.role === 'admin';
+  const canManageTournament = isOrganizerOwner || isAdmin;
 
-  const fetchPlayers = async () => {
-    if (!tournament) return;
+  const fetchPlayers = async (targetTournamentId?: string) => {
+    const tid = targetTournamentId || tournament?.id;
+    if (!tid) return;
     setLoadingPlayers(true);
     try {
-      const list = await getTournamentPlayers(tournament.id);
+      const list = await getTournamentPlayers(tid);
       setPlayers(list);
     } catch (err) {
       console.error('Gagal memuat peserta:', err);
@@ -186,16 +210,20 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen && tournament) {
-      fetchPlayers();
+    if (isOpen && tournament?.id) {
+      fetchPlayers(tournament.id);
       setActionMessage('');
       setCopiedCode(false);
       setStatusConfirmRequest(null);
       setStatusConfirmLoading(false);
       setPlayerActionConfirmRequest(null);
       setPlayerActionConfirmLoading(false);
+      setEditSheetOpen(false);
+      setEditError('');
+      setDuplicateSheetOpen(false);
+      setDuplicateError('');
     }
-  }, [isOpen, tournament]);
+  }, [isOpen, tournament?.id]);
 
   if (!tournament || !isOpen) return null;
 
@@ -533,6 +561,58 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
     }
   };
 
+  // Organizer Owner / Admin: Edit Turnamen
+  const handleEditTournamentSubmit = async (values: TournamentFormValues) => {
+    if (!tournament || !currentUser || !userProfile) return;
+
+    setEditLoading(true);
+    setEditError('');
+    try {
+      const result = await updateTournamentDetails(tournament, values, {
+        uid: currentUser.uid,
+        name: userProfile.displayName || userProfile.username || 'Organizer',
+      });
+      setTournament(result.updatedTournament);
+      setEditSheetOpen(false);
+      if (result.syncedParticipationsCount > 0) {
+        showToastSuccess(
+          `Turnamen diperbarui (${result.syncedParticipationsCount} data partisipasi disinkronkan).`
+        );
+      } else {
+        showToastSuccess('Data turnamen berhasil diperbarui.');
+      }
+      if (onTournamentUpdated) onTournamentUpdated();
+    } catch (err: any) {
+      setEditError(err?.message || 'Gagal memperbarui data turnamen.');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  // Organizer Owner / Admin: Duplikat Turnamen
+  const handleDuplicateTournamentSubmit = async (values: TournamentFormValues) => {
+    if (!currentUser || !userProfile) return;
+
+    setDuplicateLoading(true);
+    setDuplicateError('');
+    try {
+      const created = await createTournament(values, {
+        uid: currentUser.uid,
+        name: userProfile.displayName || userProfile.username || 'Organizer',
+      });
+      setDuplicateSheetOpen(false);
+      setTournament(created);
+      showToastSuccess(
+        `Turnamen "${created.name}" berhasil diduplikat (#${created.joinCode}).`
+      );
+      if (onTournamentUpdated) onTournamentUpdated();
+    } catch (err: any) {
+      setDuplicateError(err?.message || 'Gagal menduplikat turnamen.');
+    } finally {
+      setDuplicateLoading(false);
+    }
+  };
+
   const calculatedRoundsPreview = calculateSwissRounds(acceptedPlayers.length);
 
   return (
@@ -611,6 +691,34 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
             </div>
           </div>
         </Card>
+
+        {/* Organizer Pemilik / Admin: Edit Turnamen & Duplikat */}
+        {canManageTournament && (
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant="secondary"
+              className="!min-h-[40px] !text-caption"
+              onClick={() => {
+                setEditError('');
+                setEditSheetOpen(true);
+              }}
+              icon={<Pencil size={15} />}
+            >
+              Edit Turnamen
+            </Button>
+            <Button
+              variant="secondary"
+              className="!min-h-[40px] !text-caption"
+              onClick={() => {
+                setDuplicateError('');
+                setDuplicateSheetOpen(true);
+              }}
+              icon={<CopyPlus size={15} />}
+            >
+              Duplikat
+            </Button>
+          </div>
+        )}
 
         {/* Notifikasi Pesan Aksi */}
         {actionMessage && (
@@ -716,6 +824,7 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
         {tournament.status === 'finished' && (
           <div className="flex flex-col gap-2">
             <FinalStandingsCard
+              key={`${tournament.id}-${tournament.name}-${tournament.date}`}
               tournamentId={tournament.id}
               tournamentName={tournament.name}
               format={tournament.format}
@@ -1410,6 +1519,35 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
           />
         );
       })()}
+
+      {/* Sheet Edit Turnamen */}
+      {canManageTournament && (
+        <TournamentFormSheet
+          isOpen={editSheetOpen}
+          mode="edit"
+          sourceTournament={tournament}
+          isLoading={editLoading}
+          errorMessage={editError}
+          zIndexClass="z-[60]"
+          onClose={() => setEditSheetOpen(false)}
+          onSubmit={handleEditTournamentSubmit}
+        />
+      )}
+
+      {/* Sheet Duplikat Turnamen */}
+      {canManageTournament && (
+        <TournamentFormSheet
+          isOpen={duplicateSheetOpen}
+          mode="duplicate"
+          sourceTournament={tournament}
+          initialValues={buildDuplicateTournamentDraft(tournament)}
+          isLoading={duplicateLoading}
+          errorMessage={duplicateError}
+          zIndexClass="z-[60]"
+          onClose={() => setDuplicateSheetOpen(false)}
+          onSubmit={handleDuplicateTournamentSubmit}
+        />
+      )}
     </BottomSheet>
   );
 };

@@ -18,6 +18,8 @@ export interface Participation {
   organizerId?: string;
   name?: string;
   rank: number;
+  swissRank?: number;
+  topCutResult?: 'Juara' | 'Runner-up' | 'Semifinal' | 'Perempat Final';
   wins: number;
   losses: number;
   gamesWon?: number;
@@ -46,6 +48,8 @@ export interface UserProfile {
 
 export interface PlayerStatsSummary {
   totalTournaments: number;
+  championCount: number;
+  podiumCount: number;
   totalWins: number;
   totalLosses: number;
   winRate: number;
@@ -139,6 +143,8 @@ export function calculatePlayerStats(participations: Participation[]): PlayerSta
   if (!participations || participations.length === 0) {
     return {
       totalTournaments: 0,
+      championCount: 0,
+      podiumCount: 0,
       totalWins: 0,
       totalLosses: 0,
       winRate: 0,
@@ -152,6 +158,8 @@ export function calculatePlayerStats(participations: Participation[]): PlayerSta
 
   let totalWins = 0;
   let totalLosses = 0;
+  let championCount = 0;
+  let podiumCount = 0;
   const deckMap = new Map<string, { count: number; wins: number; losses: number }>();
   const colorMap = new Map<DeckColor, { count: number; wins: number; losses: number }>();
 
@@ -167,6 +175,13 @@ export function calculatePlayerStats(participations: Participation[]): PlayerSta
   sorted.forEach((p) => {
     totalWins += p.wins || 0;
     totalLosses += p.losses || 0;
+
+    if (p.rank === 1) {
+      championCount += 1;
+    }
+    if (p.rank >= 1 && p.rank <= 3) {
+      podiumCount += 1;
+    }
 
     rankTrend.push({
       tournamentName: p.tournamentName,
@@ -246,6 +261,8 @@ export function calculatePlayerStats(participations: Participation[]): PlayerSta
 
   return {
     totalTournaments: participations.length,
+    championCount,
+    podiumCount,
     totalWins,
     totalLosses,
     winRate,

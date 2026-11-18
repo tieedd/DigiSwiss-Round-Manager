@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Participation, DeckColor } from '../../types';
+import { Participation, DeckColor, Tournament } from '../../types';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { DeckColorDots } from '../../components/common/DeckColorDots';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../firebaseConfig';
 import {
   getTournamentParticipations
 } from '../../services/participationService';
@@ -13,6 +15,10 @@ import {
   getAllTournamentMatches
 } from '../../services/roundService';
 import { calculateTournamentStandings } from '../../utils/standingsLogic';
+import {
+  computeFinalRankingsWithTopCut,
+  filterSwissMatches
+} from '../../utils/topCutLogic';
 import {
   buildFinalStandingsRows,
   FinalStandingsRowItem,
@@ -79,9 +85,25 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
         setIsProvisional(false);
       } else if (status === 'finished') {
         // 2. Jika turnamen finished tapi belum ada participations, hitung klasemen sementara
-        const players = await getTournamentPlayers(tournamentId);
-        const matches = await getAllTournamentMatches(tournamentId, false);
-        const calculated = calculateTournamentStandings(players, matches, format);
+        const [players, matches, tourneySnap] = await Promise.all([
+          getTournamentPlayers(tournamentId),
+          getAllTournamentMatches(tournamentId, false),
+          getDoc(doc(db, 'tournaments', tournamentId))
+        ]);
+        const tourneyData = tourneySnap.exists() ? (tourneySnap.data() as Tournament) : null;
+        const swissStandings = calculateTournamentStandings(
+          players,
+          filterSwissMatches(matches),
+          format
+        );
+        const calculated = tourneyData?.topCut
+          ? computeFinalRankingsWithTopCut(
+              swissStandings,
+              tourneyData.topCut,
+              matches,
+              tourneyData.totalRounds || 0
+            )
+          : swissStandings.map((s) => ({ ...s, swissRank: s.rank, topCutResult: undefined }));
 
         const provisionalList: Participation[] = calculated.map((s) => {
           const original = players.find((p) => p.id === s.playerId);
@@ -96,6 +118,8 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
             organizerId: '',
             name: s.playerName,
             rank: s.rank,
+            swissRank: s.swissRank,
+            ...(s.topCutResult ? { topCutResult: s.topCutResult } : {}),
             wins: s.matchWins,
             losses: s.matchLosses,
             gamesWon: s.gamesWon,
@@ -245,10 +269,23 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
 
                   {/* Nama Pemain & Deck */}
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-body font-semibold text-dark-text truncate leading-tight">
                         {row.name}
                       </span>
+                      {row.topCutResult && (
+                        <span
+                          className={`text-[9px] font-bold px-1.5 py-0.2 rounded font-mono ${
+                            row.topCutResult === 'Juara'
+                              ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                              : row.topCutResult === 'Runner-up'
+                              ? 'bg-accent/20 text-accent border border-accent/30'
+                              : 'bg-dark-surface-high text-dark-text border border-dark-border'
+                          }`}
+                        >
+                          {row.topCutResult}
+                        </span>
+                      )}
                       {row.isMe && (
                         <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-accent/20 text-accent border border-accent/30 font-mono">
                           Anda

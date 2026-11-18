@@ -4,6 +4,8 @@ import { OFFICIAL_DECK_COLORS } from './deckExportLogic.ts';
 export interface FinalStandingsRowItem {
   participationId: string;
   rank: number;
+  swissRank?: number;
+  topCutResult?: 'Juara' | 'Runner-up' | 'Semifinal' | 'Perempat Final';
   name: string;
   uid: string | null;
   wins: number;
@@ -40,6 +42,8 @@ export function buildFinalStandingsRows(
     return {
       participationId: p.id,
       rank: p.rank,
+      swissRank: p.swissRank,
+      topCutResult: p.topCutResult,
       name: p.name,
       uid: p.uid || null,
       wins: p.wins || 0,

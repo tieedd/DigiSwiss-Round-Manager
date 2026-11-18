@@ -9,6 +9,9 @@ interface RevertRoundModalProps {
   onClose: () => void;
   targetRoundNumber: number;
   currentRoundNumber: number;
+  targetRoundLabel?: string;
+  currentRoundLabel?: string;
+  willDiscardTopCut?: boolean;
   onConfirmRevert: (targetRound: number) => Promise<void>;
 }
 
@@ -17,12 +20,18 @@ export const RevertRoundModal: React.FC<RevertRoundModalProps> = ({
   onClose,
   targetRoundNumber,
   currentRoundNumber,
+  targetRoundLabel,
+  currentRoundLabel,
+  willDiscardTopCut = false,
   onConfirmRevert,
 }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   if (!isOpen) return null;
+
+  const targetDisplay = targetRoundLabel || `Ronde ${targetRoundNumber}`;
+  const currentDisplay = currentRoundLabel || `Ronde ${currentRoundNumber}`;
 
   const handleExecute = async () => {
     setLoading(true);
@@ -40,8 +49,8 @@ export const RevertRoundModal: React.FC<RevertRoundModalProps> = ({
   return (
     <BottomSheet
       isOpen={isOpen}
-      onClose={onClose}
-      title={`Peringatan Revert ke Ronde ${targetRoundNumber}`}
+      onClose={() => !loading && onClose()}
+      title={`Peringatan Revert ke ${targetDisplay}`}
     >
       <div className="flex flex-col gap-4 py-2 pb-6">
         {/* Banner Peringatan */}
@@ -50,7 +59,7 @@ export const RevertRoundModal: React.FC<RevertRoundModalProps> = ({
           <div className="text-caption">
             <span className="font-bold text-body block mb-0.5">Konfirmasi Pembatalan Progres Ronde</span>
             <span>
-              Anda akan memundurkan turnamen dari <strong>Ronde {currentRoundNumber}</strong> kembali ke <strong>Ronde {targetRoundNumber}</strong>.
+              Anda akan memundurkan turnamen dari <strong>{currentDisplay}</strong> kembali ke <strong>{targetDisplay}</strong>.
             </span>
           </div>
         </div>
@@ -62,16 +71,21 @@ export const RevertRoundModal: React.FC<RevertRoundModalProps> = ({
           </span>
           <ul className="text-caption text-dark-text space-y-2 list-disc list-inside">
             <li>
-              Seluruh ronde dan pertandingan <strong>setelah Ronde {targetRoundNumber}</strong> akan <strong>diarsipkan</strong> (tidak dihapus permanen).
+              Seluruh ronde dan pertandingan <strong>setelah {targetDisplay}</strong> akan <strong>diarsipkan</strong> (tidak dihapus permanen).
             </li>
+            {willDiscardTopCut && (
+              <li className="text-status-yellow font-medium">
+                Seluruh fase dan bagan <strong>Top Cut</strong> (beserta ronde/pertandingannya) akan <strong>dibatalkan dan diarsipkan</strong>.
+              </li>
+            )}
             <li>
-              Klasemen dan perolehan poin akan <strong>otomatis dihitung ulang</strong> hanya berdasarkan data ronde yang aktif (1 s.d. {targetRoundNumber}).
+              Klasemen dan perolehan poin akan <strong>otomatis dihitung ulang</strong> hanya berdasarkan data ronde yang aktif hingga {targetDisplay}.
             </li>
             <li>
               Status turnamen kembali menjadi <strong>Sedang Berjalan (running)</strong>.
             </li>
             <li>
-              Anda dapat mengoreksi skor pertandingan di Ronde {targetRoundNumber}. Setelah semua pertandingan confirmed lagi, sistem akan <strong>otomatis membuat ulang pairing Ronde {targetRoundNumber + 1}</strong>.
+              Anda dapat mengoreksi skor pertandingan di {targetDisplay}. Setelah semua pertandingan terkonfirmasi lagi, Anda dapat melanjutkan ke babak berikutnya.
             </li>
             <li>
               Tindakan ini akan dicatat ke <strong>Log Audit Keamanan</strong> turnamen.
@@ -89,9 +103,10 @@ export const RevertRoundModal: React.FC<RevertRoundModalProps> = ({
             fullWidth
             onClick={handleExecute}
             isLoading={loading}
+            disabled={loading}
             icon={<History size={16} />}
           >
-            Ya, Revert ke Ronde {targetRoundNumber}
+            Ya, Revert ke {targetDisplay}
           </Button>
           <Button
             variant="secondary"

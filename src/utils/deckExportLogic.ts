@@ -18,6 +18,8 @@ export interface Participation {
   organizerId: string;
   name: string;
   rank: number;
+  swissRank?: number;
+  topCutResult?: 'Juara' | 'Runner-up' | 'Semifinal' | 'Perempat Final';
   wins: number;
   losses: number;
   gamesWon: number;
@@ -203,6 +205,7 @@ export function generateStandingsCsv(
   tournamentName: string,
   participations: Participation[]
 ): string {
+  const hasTopCut = participations.some((p) => Boolean(p.topCutResult));
   const headers = [
     'Peringkat',
     'Nama Pemain',
@@ -216,7 +219,8 @@ export function generateStandingsCsv(
     'Game Lose',
     'OMW%',
     'GW%',
-    'OGW%'
+    'OGW%',
+    ...(hasTopCut ? ['Hasil Top Cut'] : [])
   ];
 
   const escapeCsv = (val: string | number | undefined | null) => {
@@ -225,21 +229,27 @@ export function generateStandingsCsv(
     return `"${str}"`;
   };
 
-  const rows = participations.map((p) => [
-    escapeCsv(p.rank),
-    escapeCsv(p.name),
-    escapeCsv(p.isManual ? 'Manual' : 'Akun Terdaftar'),
-    escapeCsv(p.deckName || '-'),
-    escapeCsv(p.deckColors && p.deckColors.length > 0 ? p.deckColors.join('/') : '-'),
-    escapeCsv(p.points),
-    escapeCsv(p.wins),
-    escapeCsv(p.losses),
-    escapeCsv(p.gamesWon),
-    escapeCsv(p.gamesLost),
-    escapeCsv(`${p.omw}%`),
-    escapeCsv(`${p.gw}%`),
-    escapeCsv(`${p.ogw}%`)
-  ]);
+  const rows = participations.map((p) => {
+    const cols = [
+      escapeCsv(p.rank),
+      escapeCsv(p.name),
+      escapeCsv(p.isManual ? 'Manual' : 'Akun Terdaftar'),
+      escapeCsv(p.deckName || '-'),
+      escapeCsv(p.deckColors && p.deckColors.length > 0 ? p.deckColors.join('/') : '-'),
+      escapeCsv(p.points),
+      escapeCsv(p.wins),
+      escapeCsv(p.losses),
+      escapeCsv(p.gamesWon),
+      escapeCsv(p.gamesLost),
+      escapeCsv(`${p.omw}%`),
+      escapeCsv(`${p.gw}%`),
+      escapeCsv(`${p.ogw}%`)
+    ];
+    if (hasTopCut) {
+      cols.push(escapeCsv(p.topCutResult || '-'));
+    }
+    return cols;
+  });
 
   return [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
 }
@@ -307,12 +317,13 @@ export function generateStandingsText(
 
   for (const p of parts) {
     const medal = p.rank === 1 ? '🥇' : p.rank === 2 ? '🥈' : p.rank === 3 ? '🥉' : `#${p.rank}`;
+    const topCutTag = p.topCutResult ? ` [${p.topCutResult}]` : '';
     const emojiStr = formatDeckColorsEmoji(p.deckColors);
     const deckInfo = p.deckName
       ? `${p.deckName}${emojiStr ? ` ${emojiStr}` : ''}`
       : 'Deck belum diisi';
     lines.push(
-      `${medal} ${p.name.padEnd(20)} | Poin: ${String(p.points).padStart(2)} | W-L: ${p.wins}-${p.losses} | Deck: ${deckInfo}`
+      `${medal} ${p.name.padEnd(20)}${topCutTag} | Poin: ${String(p.points).padStart(2)} | W-L: ${p.wins}-${p.losses} | Deck: ${deckInfo}`
     );
     lines.push(
       `   Tie-breakers -> OMW: ${p.omw}% | GW: ${p.gw}% | OGW: ${p.ogw}%`

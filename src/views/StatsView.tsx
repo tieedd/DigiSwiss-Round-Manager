@@ -193,6 +193,32 @@ export const StatsView: React.FC = () => {
                     </span>
                   </Card>
 
+                  <Card variant="surface" className="p-3 flex flex-col">
+                    <span className="text-[11px] font-mono text-dark-muted uppercase flex items-center gap-1">
+                      <Trophy size={12} className="text-amber-400" />
+                      <span>Juara 1</span>
+                    </span>
+                    <span className="text-2xl font-bold font-mono text-amber-400 mt-1">
+                      {playerStats.championCount}
+                    </span>
+                    <span className="text-[10px] text-dark-muted mt-0.5">
+                      Peringkat akhir #1
+                    </span>
+                  </Card>
+
+                  <Card variant="surface" className="p-3 flex flex-col">
+                    <span className="text-[11px] font-mono text-dark-muted uppercase flex items-center gap-1">
+                      <Award size={12} className="text-accent" />
+                      <span>Podium Top 3</span>
+                    </span>
+                    <span className="text-2xl font-bold font-mono text-dark-text mt-1">
+                      {playerStats.podiumCount}
+                    </span>
+                    <span className="text-[10px] text-dark-muted mt-0.5">
+                      Masuk 3 besar akhir
+                    </span>
+                  </Card>
+
                   <Card variant="surface" className="p-3 flex flex-col col-span-2">
                     <div className="flex items-center justify-between">
                       <div className="min-w-0">

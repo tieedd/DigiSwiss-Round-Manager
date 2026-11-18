@@ -10,6 +10,7 @@ interface MatchScoreModalProps {
   onClose: () => void;
   match: TournamentMatch | null;
   format: TournamentFormat;
+  roundLabel?: string;
   onSaveScore: (matchId: string, p1Score: number, p2Score: number, confirm: boolean) => Promise<void>;
 }
 
@@ -18,6 +19,7 @@ export const MatchScoreModal: React.FC<MatchScoreModalProps> = ({
   onClose,
   match,
   format,
+  roundLabel,
   onSaveScore,
 }) => {
   if (!match) return null;
@@ -78,7 +80,7 @@ export const MatchScoreModal: React.FC<MatchScoreModalProps> = ({
       <div className="flex flex-col gap-4 py-2 pb-6">
         <div className="flex items-center justify-between text-caption text-dark-muted px-1">
           <span>Format: <strong className="text-dark-text">{format}</strong></span>
-          <span>Ronde: <strong className="text-accent">{match.round}</strong></span>
+          <span>Babak: <strong className="text-accent">{roundLabel || `Ronde ${match.round}`}</strong></span>
         </div>
 
         {isBye ? (

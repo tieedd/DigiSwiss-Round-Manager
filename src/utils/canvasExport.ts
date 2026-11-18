@@ -190,10 +190,29 @@ export function exportStandingsToImage(
     ctx.fillStyle = p.rank === 1 ? '#facc15' : p.rank <= 3 ? '#e2e8f0' : '#94a3b8';
     ctx.fillText(String(p.rank), padding + 22, currentY + 27);
 
-    // Player Name
+    // Player Name + optional Top Cut badge
+    const playerColStartX = padding + 80;
+    const playerColMaxWidth = 248;
+    const tcBadge = p.topCutResult ? `[${p.topCutResult}]` : '';
+    ctx.font = 'bold 11px monospace';
+    const tcBadgeWidth = tcBadge ? ctx.measureText(tcBadge).width + 8 : 0;
+
     ctx.font = 'bold 14px sans-serif';
     ctx.fillStyle = '#f8fafc';
-    ctx.fillText(p.name.length > 24 ? p.name.substring(0, 22) + '...' : p.name, padding + 80, currentY + 27);
+    const maxNameWidth = Math.max(80, playerColMaxWidth - tcBadgeWidth);
+    const displayName = truncateTextToWidth(
+      (str) => ctx.measureText(str).width,
+      p.name,
+      maxNameWidth
+    );
+    ctx.fillText(displayName, playerColStartX, currentY + 27);
+
+    if (tcBadge) {
+      const nameWidth = ctx.measureText(displayName).width;
+      ctx.font = 'bold 11px monospace';
+      ctx.fillStyle = p.topCutResult === 'Juara' ? '#facc15' : '#38bdf8';
+      ctx.fillText(tcBadge, playerColStartX + nameWidth + 6, currentY + 26);
+    }
 
     // Deck & Color Dots
     ctx.font = '13px sans-serif';

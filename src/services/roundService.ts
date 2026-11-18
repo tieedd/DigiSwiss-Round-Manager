@@ -9,15 +9,19 @@ import {
   limit,
   writeBatch,
   updateDoc,
+  deleteField,
   serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import {
+  Tournament,
   TournamentFormat,
   TournamentRound,
   TournamentMatch,
   MatchStatus,
-  AuditLog
+  AuditLog,
+  TopCutSize,
+  TournamentTopCut
 } from '../types';
 import { getClockOffset, recordAuditLog } from './authService';
 import { calculateRemainingTime } from '../utils/timerLogic';
@@ -28,6 +32,15 @@ import {
   validateManualSwap
 } from '../utils/swissPairing';
 import { calculateMatchPoints } from '../utils/standingsLogic';
+import {
+  buildNextTopCutRoundMatches,
+  buildTopCutSeeds,
+  createTopCutInitialMatches,
+  filterSwissMatches,
+  getRoundDisplayLabel,
+  getTopCutFinalRoundNumber,
+  isSwissMatch
+} from '../utils/topCutLogic';
 import { getTournamentPlayers } from './tournamentService';
 
 /**
@@ -76,7 +89,8 @@ export async function getAllTournamentMatches(
 }
 
 /**
- * Menghitung poin match setiap pemain dari pertandingan yang sudah terkonfirmasi (confirmed)
+ * Menghitung poin match setiap pemain dari pertandingan SWISS yang sudah terkonfirmasi (confirmed).
+ * Pertandingan Top Cut diabaikan agar statistik Swiss tetap murni.
  */
 export function calculatePlayerPointsFromMatches(
   matches: TournamentMatch[],
@@ -85,7 +99,7 @@ export function calculatePlayerPointsFromMatches(
   const pointsMap = new Map<string, number>();
 
   for (const m of matches) {
-    if (m.status !== 'confirmed') continue;
+    if (m.status !== 'confirmed' || !isSwissMatch(m)) continue;
 
     const p1Current = pointsMap.get(m.p1Id) || 0;
 
@@ -108,7 +122,7 @@ export function calculatePlayerPointsFromMatches(
 }
 
 /**
- * Membuat Pairing untuk Ronde X dan menyimpan ronde + matches dalam SATU writeBatch.
+ * Membuat Pairing untuk Ronde Swiss X dan menyimpan ronde + matches dalam SATU writeBatch.
  * Memastikan ronde sebelumnya sudah selesai (seluruh pertandingan confirmed).
  */
 export async function createRoundPairing(
@@ -125,8 +139,8 @@ export async function createRoundPairing(
     throw new Error('Jumlah peserta aktif kurang dari 2. Tidak dapat membuat pairing.');
   }
 
-  // 2. Ambil seluruh riwayat pertandingan terdahulu
-  const allPastMatches = await getAllTournamentMatches(tournamentId);
+  // 2. Ambil seluruh riwayat pertandingan Swiss terdahulu
+  const allPastMatches = filterSwissMatches(await getAllTournamentMatches(tournamentId));
 
   // Guard pencegahan klik ganda: jika ronde target sudah memiliki pertandingan aktif, jangan buat ulang
   const existingMatchesForRound = allPastMatches.filter((m) => m.round === targetRoundNumber);
@@ -135,11 +149,11 @@ export async function createRoundPairing(
     const existingRound = rounds.find((r) => r.number === targetRoundNumber) || {
       number: targetRoundNumber,
       status: 'active' as const,
+      stage: 'swiss' as const,
       timer: {
-        durationMinutes: format === 'BO1' ? 25 : 45,
-        remainingSeconds: (format === 'BO1' ? 25 : 45) * 60,
-        status: 'idle' as const,
-        lastUpdated: Date.now()
+        durationMs: (format === 'BO1' ? 25 : 45) * 60 * 1000,
+        remainingMs: (format === 'BO1' ? 25 : 45) * 60 * 1000,
+        status: 'idle' as const
       }
     };
     return { round: existingRound as TournamentRound, matches: existingMatchesForRound };
@@ -161,7 +175,7 @@ export async function createRoundPairing(
     }
   }
 
-  // 3. Hitung poin untuk setiap peserta (mengikuti konfigurasi format resmi)
+  // 3. Hitung poin untuk setiap peserta (hanya dari ronde Swiss)
   const pointsMap = calculatePlayerPointsFromMatches(allPastMatches, format);
 
   const pairingPlayers: PairingPlayer[] = allPlayers.map((p) => ({
@@ -194,6 +208,7 @@ export async function createRoundPairing(
   const roundData: TournamentRound = {
     number: targetRoundNumber,
     status: 'active',
+    stage: 'swiss',
     timer: {
       status: 'idle',
       durationMs: roundDurationMs,
@@ -211,6 +226,7 @@ export async function createRoundPairing(
     const matchData: TournamentMatch = {
       id: matchDocRef.id,
       round: targetRoundNumber,
+      stage: 'swiss',
       table: gm.table,
       p1Id: gm.p1Id,
       p2Id: gm.p2Id,
@@ -405,7 +421,9 @@ export async function organizerSetMatchResult(
 }
 
 /**
- * Menyelesaikan ronde & memeriksa apakah turnamen sudah mencapai totalRounds
+ * Menandai ronde selesai jika seluruh pertandingan di ronde tersebut sudah confirmed.
+ * Tidak lagi otomatis mengubah status turnamen menjadi 'finished' agar organizer dapat memilih
+ * lanjut ke Top Cut (Top 4 / Top 8) atau mengakhiri turnamen secara eksplisit.
  */
 export async function checkAndFinishTournamentIfComplete(
   tournamentId: string,
@@ -413,6 +431,9 @@ export async function checkAndFinishTournamentIfComplete(
   totalRounds: number
 ): Promise<{ allRoundsComplete: boolean; tournamentFinished: boolean }> {
   const currentMatches = await getMatchesForRound(tournamentId, currentRoundNumber);
+  if (currentMatches.length === 0) {
+    return { allRoundsComplete: false, tournamentFinished: false };
+  }
   const unconfirmed = currentMatches.filter((m) => m.status !== 'confirmed');
 
   if (unconfirmed.length > 0) {
@@ -423,22 +444,329 @@ export async function checkAndFinishTournamentIfComplete(
   const roundRef = doc(db, 'tournaments', tournamentId, 'rounds', String(currentRoundNumber));
   await updateDoc(roundRef, { status: 'completed' });
 
-  // Jika ini ronde terakhir
-  if (currentRoundNumber >= totalRounds) {
-    const tournamentRef = doc(db, 'tournaments', tournamentId);
-    await updateDoc(tournamentRef, {
-      status: 'finished',
-      finishedAt: Date.now(),
-    });
-    return { allRoundsComplete: true, tournamentFinished: true };
+  return { allRoundsComplete: true, tournamentFinished: false };
+}
+
+/**
+ * Mengakhiri turnamen secara eksplisit oleh organizer (baik tanpa Top Cut maupun setelah Final Top Cut).
+ */
+export async function finishTournamentExplicit(
+  tournamentId: string
+): Promise<{ tournamentFinished: boolean }> {
+  const tournamentRef = doc(db, 'tournaments', tournamentId);
+  const tourneySnap = await getDoc(tournamentRef);
+  if (!tourneySnap.exists()) {
+    throw new Error('Data turnamen tidak ditemukan.');
   }
 
-  return { allRoundsComplete: true, tournamentFinished: false };
+  const tourneyData = tourneySnap.data() as Tournament;
+  const activeRounds = await getTournamentRounds(tournamentId, false);
+  const targetRoundNum =
+    tourneyData.currentRound ||
+    (activeRounds.length > 0 ? activeRounds[activeRounds.length - 1].number : tourneyData.totalRounds || 1);
+
+  const currentMatches = await getMatchesForRound(tournamentId, targetRoundNum, false);
+  if (currentMatches.length === 0) {
+    throw new Error('Belum ada pertandingan pada ronde terakhir untuk diselesaikan.');
+  }
+  const unconfirmed = currentMatches.filter((m) => m.status !== 'confirmed');
+  if (unconfirmed.length > 0) {
+    throw new Error('Belum semua pertandingan ronde terakhir terkonfirmasi.');
+  }
+
+  // Jika sedang dalam fase Top Cut, pastikan babak saat ini memang Final Top Cut
+  if (tourneyData.topCut) {
+    const finalTopCutRound = getTopCutFinalRoundNumber(
+      tourneyData.totalRounds || 3,
+      tourneyData.topCut.size
+    );
+    if (targetRoundNum < finalTopCutRound) {
+      throw new Error('Fase Top Cut belum mencapai babak Final.');
+    }
+    const finalMatch = currentMatches[0];
+    if (finalMatch && finalMatch.p2Id && finalMatch.p1Score === finalMatch.p2Score) {
+      throw new Error('Pertandingan Final Top Cut tidak boleh berakhir seri.');
+    }
+  }
+
+  const batch = writeBatch(db);
+  const roundRef = doc(db, 'tournaments', tournamentId, 'rounds', String(targetRoundNum));
+  batch.update(roundRef, { status: 'completed' });
+  batch.update(tournamentRef, {
+    status: 'finished',
+    finishedAt: Date.now(),
+  });
+  await batch.commit();
+
+  return { tournamentFinished: true };
+}
+
+/**
+ * Memulai fase Top Cut (Top 4 atau Top 8) setelah ronde Swiss terakhir selesai:
+ * - Menghitung seed dari klasemen Swiss akhir (pemain dropped dilewati)
+ * - Membuat dokumen ronde Top Cut pertama (round = totalSwissRounds + 1, stage: 'topcut')
+ * - Membuat pertandingan bracket awal (stage: 'topcut') dalam SATU writeBatch
+ * - Mencatat audit log 'TOPCUT_STARTED'
+ */
+export async function startTopCutPhase(
+  tournamentId: string,
+  topCutSize: TopCutSize,
+  format: TournamentFormat,
+  totalSwissRounds: number,
+  organizer: { uid: string; name: string }
+): Promise<{
+  topCut: TournamentTopCut;
+  round: TournamentRound;
+  matches: TournamentMatch[];
+}> {
+  const tournamentRef = doc(db, 'tournaments', tournamentId);
+  const tourneySnap = await getDoc(tournamentRef);
+  if (!tourneySnap.exists()) {
+    throw new Error('Data turnamen tidak ditemukan.');
+  }
+  const tourneyData = tourneySnap.data() as Tournament;
+
+  const targetRoundNumber = totalSwissRounds + 1;
+  const allActiveMatches = await getAllTournamentMatches(tournamentId, false);
+
+  // Guard double-tap jika Top Cut sudah dimulai
+  const existingRoundMatches = allActiveMatches.filter((m) => m.round === targetRoundNumber);
+  if (tourneyData.topCut && existingRoundMatches.length > 0) {
+    const rounds = await getTournamentRounds(tournamentId, false);
+    const existingRound = rounds.find((r) => r.number === targetRoundNumber) || {
+      number: targetRoundNumber,
+      status: 'active' as const,
+      stage: 'topcut' as const,
+      timer: {
+        status: 'idle' as const,
+        durationMs: (format === 'BO1' ? 25 : 45) * 60 * 1000,
+        remainingMs: (format === 'BO1' ? 25 : 45) * 60 * 1000,
+      },
+    };
+    return {
+      topCut: tourneyData.topCut,
+      round: existingRound,
+      matches: existingRoundMatches,
+    };
+  }
+
+  // Pastikan ronde Swiss terakhir sudah selesai dan terkonfirmasi semua
+  const lastSwissMatches = filterSwissMatches(allActiveMatches).filter(
+    (m) => m.round === totalSwissRounds
+  );
+  if (lastSwissMatches.length === 0) {
+    throw new Error(`Ronde Swiss terakhir (Ronde ${totalSwissRounds}) belum dimainkan.`);
+  }
+  const unconfirmedSwiss = lastSwissMatches.filter((m) => m.status !== 'confirmed');
+  if (unconfirmedSwiss.length > 0) {
+    throw new Error(
+      `Masih ada ${unconfirmedSwiss.length} pertandingan Ronde ${totalSwissRounds} yang belum terkonfirmasi.`
+    );
+  }
+
+  // Hitung seed dari klasemen Swiss murni (melewati dropped)
+  const players = await getTournamentPlayers(tournamentId);
+  const seeds = buildTopCutSeeds(players, filterSwissMatches(allActiveMatches), format, topCutSize);
+  const initialDrafts = createTopCutInitialMatches(seeds, topCutSize);
+
+  const now = Date.now();
+  const topCut: TournamentTopCut = {
+    size: topCutSize,
+    seeds,
+    startedAt: now,
+  };
+
+  const roundDurationMs = format === 'BO1' ? 25 * 60 * 1000 : 45 * 60 * 1000;
+  const roundData: TournamentRound = {
+    number: targetRoundNumber,
+    status: 'active',
+    stage: 'topcut',
+    timer: {
+      status: 'idle',
+      durationMs: roundDurationMs,
+      remainingMs: roundDurationMs,
+    },
+  };
+
+  const batch = writeBatch(db);
+
+  // Tandai ronde Swiss terakhir sebagai completed
+  const lastSwissRoundRef = doc(db, 'tournaments', tournamentId, 'rounds', String(totalSwissRounds));
+  batch.update(lastSwissRoundRef, { status: 'completed' });
+
+  // Simpan ronde Top Cut pertama
+  const roundDocRef = doc(db, 'tournaments', tournamentId, 'rounds', String(targetRoundNumber));
+  batch.set(roundDocRef, roundData);
+
+  // Simpan pertandingan Top Cut awal
+  const createdMatches: TournamentMatch[] = [];
+  for (const draft of initialDrafts) {
+    const matchDocRef = doc(collection(db, 'tournaments', tournamentId, 'matches'));
+    const matchData: TournamentMatch = {
+      id: matchDocRef.id,
+      round: targetRoundNumber,
+      stage: 'topcut',
+      table: draft.table,
+      p1Id: draft.p1Id,
+      p2Id: draft.p2Id,
+      p1Name: draft.p1Name,
+      p2Name: draft.p2Name,
+      p1Score: 0,
+      p2Score: 0,
+      status: 'pending',
+      updatedAt: now,
+    };
+    batch.set(matchDocRef, matchData);
+    createdMatches.push(matchData);
+  }
+
+  // Update turnamen
+  batch.update(tournamentRef, {
+    topCut,
+    currentRound: targetRoundNumber,
+    status: 'running',
+  });
+
+  await batch.commit();
+
+  // Catat log audit
+  try {
+    const firstLabel = getRoundDisplayLabel(targetRoundNumber, totalSwissRounds, topCutSize);
+    await recordAuditLog(
+      organizer.uid,
+      organizer.name,
+      'TOPCUT_STARTED',
+      `Top ${topCutSize} (${firstLabel}) - ${tourneyData.name}`,
+      `Ronde ${totalSwissRounds} (Swiss)`,
+      seeds.map((s, idx) => `#${idx + 1} ${s.name}`).join(', '),
+      tournamentId
+    );
+  } catch (err) {
+    console.warn('Gagal mencatat audit log TOPCUT_STARTED:', err);
+  }
+
+  return { topCut, round: roundData, matches: createdMatches };
+}
+
+/**
+ * Membuat babak Top Cut berikutnya (Semifinal atau Final) secara manual dari pemenang babak saat ini.
+ */
+export async function createNextTopCutRound(
+  tournamentId: string,
+  targetRoundNumber: number,
+  format: TournamentFormat,
+  totalSwissRounds: number,
+  topCutSize: TopCutSize,
+  organizer: { uid: string; name: string }
+): Promise<{ round: TournamentRound; matches: TournamentMatch[] }> {
+  const finalRoundNumber = getTopCutFinalRoundNumber(totalSwissRounds, topCutSize);
+  if (targetRoundNumber > finalRoundNumber) {
+    throw new Error('Tidak ada babak Top Cut berikutnya setelah Final.');
+  }
+
+  const allActiveMatches = await getAllTournamentMatches(tournamentId, false);
+
+  // Guard klik ganda
+  const existingTargetMatches = allActiveMatches.filter((m) => m.round === targetRoundNumber);
+  if (existingTargetMatches.length > 0) {
+    const rounds = await getTournamentRounds(tournamentId, false);
+    const existingRound = rounds.find((r) => r.number === targetRoundNumber) || {
+      number: targetRoundNumber,
+      status: 'active' as const,
+      stage: 'topcut' as const,
+      timer: {
+        status: 'idle' as const,
+        durationMs: (format === 'BO1' ? 25 : 45) * 60 * 1000,
+        remainingMs: (format === 'BO1' ? 25 : 45) * 60 * 1000,
+      },
+    };
+    return { round: existingRound, matches: existingTargetMatches };
+  }
+
+  const prevRoundNumber = targetRoundNumber - 1;
+  const prevMatches = allActiveMatches.filter((m) => m.round === prevRoundNumber);
+  if (prevMatches.length === 0) {
+    throw new Error('Pertandingan babak sebelumnya tidak ditemukan.');
+  }
+
+  const nextDrafts = buildNextTopCutRoundMatches(prevMatches);
+  const now = Date.now();
+  const roundDurationMs = format === 'BO1' ? 25 * 60 * 1000 : 45 * 60 * 1000;
+
+  const roundData: TournamentRound = {
+    number: targetRoundNumber,
+    status: 'active',
+    stage: 'topcut',
+    timer: {
+      status: 'idle',
+      durationMs: roundDurationMs,
+      remainingMs: roundDurationMs,
+    },
+  };
+
+  const batch = writeBatch(db);
+
+  // Tandai babak sebelumnya completed
+  const prevRoundRef = doc(db, 'tournaments', tournamentId, 'rounds', String(prevRoundNumber));
+  batch.update(prevRoundRef, { status: 'completed' });
+
+  // Buat babak baru
+  const nextRoundRef = doc(db, 'tournaments', tournamentId, 'rounds', String(targetRoundNumber));
+  batch.set(nextRoundRef, roundData);
+
+  const createdMatches: TournamentMatch[] = [];
+  for (const draft of nextDrafts) {
+    const matchDocRef = doc(collection(db, 'tournaments', tournamentId, 'matches'));
+    const matchData: TournamentMatch = {
+      id: matchDocRef.id,
+      round: targetRoundNumber,
+      stage: 'topcut',
+      table: draft.table,
+      p1Id: draft.p1Id,
+      p2Id: draft.p2Id,
+      p1Name: draft.p1Name,
+      p2Name: draft.p2Name,
+      p1Score: 0,
+      p2Score: 0,
+      status: 'pending',
+      updatedAt: now,
+    };
+    batch.set(matchDocRef, matchData);
+    createdMatches.push(matchData);
+  }
+
+  const tournamentRef = doc(db, 'tournaments', tournamentId);
+  batch.update(tournamentRef, {
+    currentRound: targetRoundNumber,
+    status: 'running',
+  });
+
+  await batch.commit();
+
+  // Catat log audit
+  try {
+    const prevLabel = getRoundDisplayLabel(prevRoundNumber, totalSwissRounds, topCutSize);
+    const nextLabel = getRoundDisplayLabel(targetRoundNumber, totalSwissRounds, topCutSize);
+    await recordAuditLog(
+      organizer.uid,
+      organizer.name,
+      'TOPCUT_ROUND_CREATED',
+      `Babak ${nextLabel} (Top ${topCutSize})`,
+      prevLabel,
+      nextLabel,
+      tournamentId
+    );
+  } catch (err) {
+    console.warn('Gagal mencatat audit log TOPCUT_ROUND_CREATED:', err);
+  }
+
+  return { round: roundData, matches: createdMatches };
 }
 
 /**
  * Revert ke Ronde X:
  * Mengarsipkan (archived = true, JANGAN hapus permanen) ronde dan pertandingan SETELAH ronde X.
+ * Bila revert kembali ke ronde Swiss sementara fase Top Cut aktif/selesai, field `topCut` juga dihapus.
  * Status turnamen kembali running dan currentRound menjadi X.
  */
 export async function revertTournamentToRound(
@@ -447,6 +775,13 @@ export async function revertTournamentToRound(
   currentRoundNumber: number,
   organizer: { uid: string; name: string }
 ): Promise<void> {
+  const tournamentRef = doc(db, 'tournaments', tournamentId);
+  const tourneySnap = await getDoc(tournamentRef);
+  const tourneyData = tourneySnap.exists() ? (tourneySnap.data() as Tournament) : null;
+  const totalSwissRounds = tourneyData?.totalRounds || 3;
+  const hadTopCut = Boolean(tourneyData?.topCut);
+  const isRevertingToSwiss = targetRoundNumber <= totalSwissRounds;
+
   const batch = writeBatch(db);
   const now = Date.now();
 
@@ -464,6 +799,7 @@ export async function revertTournamentToRound(
     } else if (rData.number === targetRoundNumber) {
       batch.update(d.ref, {
         status: 'active',
+        archived: false,
       });
     }
   });
@@ -482,14 +818,27 @@ export async function revertTournamentToRound(
   });
 
   // 3. Update dokumen turnamen
-  const tournamentRef = doc(db, 'tournaments', tournamentId);
-  batch.update(tournamentRef, {
+  const tourneyPatch: Record<string, any> = {
     currentRound: targetRoundNumber,
     status: 'running',
     finishedAt: null,
-  });
+    finalized: false,
+  };
+  if (hadTopCut && isRevertingToSwiss) {
+    tourneyPatch.topCut = deleteField();
+  }
+  batch.update(tournamentRef, tourneyPatch);
 
   // 4. Catat peristiwa revert ke koleksi auditLogs
+  const oldLabel =
+    hadTopCut && currentRoundNumber > totalSwissRounds
+      ? getRoundDisplayLabel(currentRoundNumber, totalSwissRounds, tourneyData?.topCut?.size)
+      : `Ronde ${currentRoundNumber}`;
+  const newLabel =
+    hadTopCut && !isRevertingToSwiss
+      ? getRoundDisplayLabel(targetRoundNumber, totalSwissRounds, tourneyData?.topCut?.size)
+      : `Ronde ${targetRoundNumber}`;
+
   const auditDocRef = doc(collection(db, 'auditLogs'));
   batch.set(auditDocRef, {
     id: auditDocRef.id,
@@ -498,8 +847,8 @@ export async function revertTournamentToRound(
     action: 'REVERT_RONDE',
     target: `Turnamen #${tournamentId}`,
     tournamentId: tournamentId,
-    oldValue: `Ronde ${currentRoundNumber}`,
-    newValue: `Ronde ${targetRoundNumber}`,
+    oldValue: oldLabel,
+    newValue: hadTopCut && isRevertingToSwiss ? `${newLabel} (Top Cut dibatalkan)` : newLabel,
     createdAt: now,
   });
 

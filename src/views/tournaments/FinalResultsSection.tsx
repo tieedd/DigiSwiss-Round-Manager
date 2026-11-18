@@ -336,6 +336,11 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
                             <span className="text-body font-semibold text-dark-text truncate">
                               {p.name}
                             </span>
+                            {p.topCutResult && (
+                              <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-accent/20 text-accent border border-accent/30">
+                                {p.topCutResult}
+                              </span>
+                            )}
                             {isCurrentUser && (
                               <span className="text-[10px] font-mono px-1 rounded bg-accent/20 text-accent">
                                 Anda
@@ -349,6 +354,7 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
                           </div>
                           <span className="text-caption text-dark-muted font-mono block">
                             Poin: <strong className="text-accent">{p.points}</strong> • Match: {p.wins}W - {p.losses}L • OMW: {p.omw}%
+                            {p.swissRank !== undefined && tournament.topCut ? ` • Swiss #${p.swissRank}` : ''}
                           </span>
                         </div>
                       </div>

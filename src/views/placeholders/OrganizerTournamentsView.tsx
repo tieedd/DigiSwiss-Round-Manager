@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Tournament, TournamentFormat } from '../../types';
+import { Tournament } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
-import { Input } from '../../components/common/Input';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { EmptyState } from '../../components/common/EmptyState';
-import { BottomSheet } from '../../components/common/BottomSheet';
 import { TournamentDetailModal } from '../tournaments/TournamentDetailModal';
+import { TournamentFormSheet } from '../../components/tournaments/TournamentFormSheet';
 import {
   getOrganizerTournaments,
   createTournament
 } from '../../services/tournamentService';
+import { TournamentFormValues } from '../../utils/tournamentEditLogic';
 import { Trophy, Plus, Calendar, MapPin, RefreshCw, Play, Timer } from 'lucide-react';
 
 interface OrganizerTournamentsViewProps {
@@ -27,10 +27,6 @@ export const OrganizerTournamentsView: React.FC<OrganizerTournamentsViewProps> =
 
   // Modal Buat Turnamen
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [location, setLocation] = useState('');
-  const [format, setFormat] = useState<TournamentFormat>('BO3');
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState('');
 
@@ -56,36 +52,18 @@ export const OrganizerTournamentsView: React.FC<OrganizerTournamentsViewProps> =
   }, [currentUser]);
 
   const handleOpenCreate = () => {
-    setName('');
-    setDate(new Date().toISOString().split('T')[0]);
-    setLocation('');
-    setFormat('BO3');
     setCreateError('');
     setCreateSheetOpen(true);
   };
 
-  const handleCreateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateSubmit = async (values: TournamentFormValues) => {
     if (!currentUser || !userProfile) return;
-
-    if (!name.trim()) {
-      setCreateError('Nama turnamen wajib diisi.');
-      return;
-    }
-    if (!date) {
-      setCreateError('Tanggal turnamen wajib diisi.');
-      return;
-    }
-    if (!location.trim()) {
-      setCreateError('Lokasi turnamen wajib diisi.');
-      return;
-    }
 
     setCreateLoading(true);
     setCreateError('');
     try {
       const created = await createTournament(
-        { name, date, location, format },
+        values,
         { uid: currentUser.uid, name: userProfile.displayName || userProfile.username }
       );
       setCreateSheetOpen(false);
@@ -209,99 +187,14 @@ export const OrganizerTournamentsView: React.FC<OrganizerTournamentsViewProps> =
       </div>
 
       {/* Bottom Sheet Buat Turnamen Baru */}
-      <BottomSheet
+      <TournamentFormSheet
         isOpen={createSheetOpen}
+        mode="create"
+        isLoading={createLoading}
+        errorMessage={createError}
         onClose={() => setCreateSheetOpen(false)}
-        title="Buat Turnamen Baru"
-      >
-        <form onSubmit={handleCreateSubmit} className="flex flex-col gap-3 py-1">
-          <Input
-            label="Nama Turnamen"
-            placeholder="Contoh: Digimon Evolution Cup 2026"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-              if (createError) setCreateError('');
-            }}
-            disabled={createLoading}
-            maxLength={50}
-          />
-
-          <Input
-            label="Tanggal Turnamen"
-            type="date"
-            value={date}
-            onChange={(e) => {
-              setDate(e.target.value);
-              if (createError) setCreateError('');
-            }}
-            disabled={createLoading}
-          />
-
-          <Input
-            label="Lokasi Turnamen"
-            placeholder="Contoh: Arcanum Game Store, Jakarta"
-            value={location}
-            onChange={(e) => {
-              setLocation(e.target.value);
-              if (createError) setCreateError('');
-            }}
-            disabled={createLoading}
-            maxLength={60}
-          />
-
-          {/* Pemilihan Format (BO1 atau BO3 saja, TANPA input jumlah ronde) */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-caption font-medium text-dark-text">Format Pertandingan</label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setFormat('BO1')}
-                className={`min-h-[44px] rounded-btn border text-caption font-medium transition-colors ${
-                  format === 'BO1'
-                    ? 'border-accent bg-accent/10 text-accent font-semibold'
-                    : 'border-dark-border bg-dark-surface-high text-dark-muted hover:text-dark-text'
-                }`}
-              >
-                Best of 1 (BO1 - 25 Menit)
-              </button>
-              <button
-                type="button"
-                onClick={() => setFormat('BO3')}
-                className={`min-h-[44px] rounded-btn border text-caption font-medium transition-colors ${
-                  format === 'BO3'
-                    ? 'border-accent bg-accent/10 text-accent font-semibold'
-                    : 'border-dark-border bg-dark-surface-high text-dark-muted hover:text-dark-text'
-                }`}
-              >
-                Best of 3 (BO3 - 45 Menit)
-              </button>
-            </div>
-            <p className="text-[11px] text-dark-muted mt-0.5">
-              *Jumlah ronde akan ditentukan otomatis oleh sistem berdasarkan total peserta saat turnamen dimulai.
-            </p>
-          </div>
-
-          {createError && (
-            <p className="text-caption text-status-red text-center py-1">{createError}</p>
-          )}
-
-          <div className="flex flex-col gap-2 mt-2">
-            <Button variant="primary" fullWidth type="submit" isLoading={createLoading}>
-              Simpan & Buat Turnamen
-            </Button>
-            <Button
-              variant="secondary"
-              fullWidth
-              type="button"
-              onClick={() => setCreateSheetOpen(false)}
-              disabled={createLoading}
-            >
-              Batal
-            </Button>
-          </div>
-        </form>
-      </BottomSheet>
+        onSubmit={handleCreateSubmit}
+      />
 
       {/* Modal Detail Turnamen */}
       <TournamentDetailModal

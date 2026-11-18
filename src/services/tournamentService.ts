@@ -17,6 +17,13 @@ import { Tournament, TournamentFormat, TournamentPlayer, PlayerStatus, Participa
 import { calculateSwissRounds, generateJoinCode } from '../utils/swissLogic';
 import { recordAuditLog } from './authService';
 import { executeCascadeTournamentDeletion } from './tournamentCleanupService';
+import { syncParticipationsTournamentInfo } from './participationService';
+import {
+  computeTournamentChanges,
+  formatAuditDiffSummary,
+  TournamentFieldChange,
+  TournamentFormValues
+} from '../utils/tournamentEditLogic';
 import {
   HistoryPlayerCandidate,
   preparePlayersToAdd
@@ -75,6 +82,76 @@ export async function createTournament(
   );
 
   return tournamentData;
+}
+
+export interface UpdateTournamentDetailsResult {
+  updatedTournament: Tournament;
+  changes: TournamentFieldChange[];
+  syncedParticipationsCount: number;
+}
+
+/**
+ * Memperbarui metadata turnamen (nama, tanggal, lokasi, dan format jika status 'registration').
+ * - Tidak pernah mengubah joinCode, organizerId, status, atau totalRounds.
+ * - Jika turnamen sudah finalized dan nama/tanggal berubah, menyinkronkan koleksi participations.
+ * - Mencatat audit log TOURNAMENT_EDITED dengan nilai lama dan baru.
+ */
+export async function updateTournamentDetails(
+  currentTournament: Tournament,
+  input: TournamentFormValues,
+  actor: { uid: string; name: string }
+): Promise<UpdateTournamentDetailsResult> {
+  const plan = computeTournamentChanges(currentTournament, input);
+  if (!plan.valid) {
+    throw new Error(plan.error || 'Data turnamen tidak valid.');
+  }
+
+  if (!plan.hasChanges) {
+    return {
+      updatedTournament: currentTournament,
+      changes: [],
+      syncedParticipationsCount: 0,
+    };
+  }
+
+  const tournamentRef = doc(db, 'tournaments', currentTournament.id);
+  await updateDoc(tournamentRef, plan.updates);
+
+  let syncedParticipationsCount = 0;
+  if (
+    currentTournament.finalized &&
+    (plan.updates.name !== undefined || plan.updates.date !== undefined)
+  ) {
+    syncedParticipationsCount = await syncParticipationsTournamentInfo(
+      currentTournament.id,
+      {
+        ...(plan.updates.name !== undefined
+          ? { tournamentName: plan.updates.name }
+          : {}),
+        ...(plan.updates.date !== undefined ? { date: plan.updates.date } : {}),
+      }
+    );
+  }
+
+  const { oldValue, newValue } = formatAuditDiffSummary(plan.changes);
+  await recordAuditLog(
+    actor.uid,
+    actor.name,
+    'TOURNAMENT_EDITED',
+    `tournaments/${currentTournament.id}`,
+    oldValue,
+    newValue,
+    currentTournament.id
+  );
+
+  return {
+    updatedTournament: {
+      ...currentTournament,
+      ...plan.updates,
+    },
+    changes: plan.changes,
+    syncedParticipationsCount,
+  };
 }
 
 /**

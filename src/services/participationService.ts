@@ -18,13 +18,19 @@ import {
   DeckColor
 } from '../types';
 import { calculateTournamentStandings } from '../utils/standingsLogic';
+import {
+  computeFinalRankingsWithTopCut,
+  filterSwissMatches
+} from '../utils/topCutLogic';
 import { recordAuditLog } from './authService';
 import { filterParticipationsByExistingTournaments } from '../utils/cascadeDeleteLogic';
+import { invalidateStandingsCache } from '../utils/finalStandingsLogic';
+import { chunkBatchItems } from '../utils/tournamentEditLogic';
 import { checkExistingTournaments } from './tournamentCleanupService';
 
 /**
  * Melakukan finalisasi hasil turnamen:
- * 1. Menghitung klasemen akhir resmi
+ * 1. Menghitung klasemen Swiss (hanya dari ronde Swiss) dan rank akhir (termasuk Top Cut bila ada)
  * 2. Menyimpan seluruh dokumen participations/{tid}_{pid} dalam SATU writeBatch
  * 3. Memperbarui status turnamen menjadi finalized
  * 4. Mencatat log audit
@@ -36,11 +42,25 @@ export async function finalizeTournamentResults(
   actorId: string,
   actorName: string
 ): Promise<{ success: boolean; count: number; participations: Participation[] }> {
-  // Hitung klasemen akhir
-  const standings = calculateTournamentStandings(players, matches, tournament.format);
-  if (standings.length === 0) {
+  // Hitung klasemen Swiss murni (mengabaikan pertandingan Top Cut)
+  const swissStandings = calculateTournamentStandings(
+    players,
+    filterSwissMatches(matches),
+    tournament.format
+  );
+  if (swissStandings.length === 0) {
     throw new Error('Tidak ada data peserta untuk difinalisasi.');
   }
+
+  // Jika ada fase Top Cut, sesuaikan rank akhir dan penanda topCutResult, sambil mempertahankan metrik Swiss
+  const totalSwissRounds = tournament.totalRounds || 3;
+  const finalStandings = tournament.topCut
+    ? computeFinalRankingsWithTopCut(swissStandings, tournament.topCut, matches, totalSwissRounds)
+    : swissStandings.map((s) => ({
+        ...s,
+        swissRank: s.rank,
+        topCutResult: undefined
+      }));
 
   // Ambil partisipasi yang mungkin sudah ada (idempoten: jangan buat ulang / jangan menimpa deck yang sudah terisi)
   let existingMap = new Map<string, Participation>();
@@ -57,7 +77,7 @@ export async function finalizeTournamentResults(
   const now = Date.now();
   const createdParticipations: Participation[] = [];
 
-  for (const s of standings) {
+  for (const s of finalStandings) {
     const originalPlayer = players.find((p) => p.id === s.playerId);
     const participationId = `${tournament.id}_${s.playerId}`;
     const partDocRef = doc(db, 'participations', participationId);
@@ -74,6 +94,8 @@ export async function finalizeTournamentResults(
       organizerId: tournament.organizerId,
       name: s.playerName,
       rank: s.rank,
+      ...(s.swissRank !== undefined ? { swissRank: s.swissRank } : {}),
+      ...(s.topCutResult ? { topCutResult: s.topCutResult } : {}),
       wins: s.matchWins,
       losses: s.matchLosses,
       gamesWon: s.gamesWon,
@@ -223,3 +245,53 @@ export async function updateParticipationDeck(
     console.warn('Gagal mencatat audit log deck (non-blocking):', auditErr);
   }
 }
+
+/**
+ * Menyinkronkan nama dan/atau tanggal turnamen ke seluruh dokumen participations
+ * milik turnamen tersebut dalam writeBatch (dipecah per 400 operasi).
+ */
+export async function syncParticipationsTournamentInfo(
+  tournamentId: string,
+  updates: { tournamentName?: string; date?: string }
+): Promise<number> {
+  if (!tournamentId) return 0;
+
+  const patch: Record<string, any> = {};
+  if (updates.tournamentName !== undefined) {
+    patch.tournamentName = updates.tournamentName;
+  }
+  if (updates.date !== undefined) {
+    patch.date = updates.date;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return 0;
+  }
+
+  patch.updatedAt = Date.now();
+
+  const partsCol = collection(db, 'participations');
+  const q = query(partsCol, where('tournamentId', '==', tournamentId));
+  const snap = await getDocs(q);
+
+  invalidateStandingsCache(tournamentId);
+
+  if (snap.empty) {
+    return 0;
+  }
+
+  const chunks = chunkBatchItems(snap.docs, 400);
+  let updatedCount = 0;
+
+  for (const chunk of chunks) {
+    const batch = writeBatch(db);
+    chunk.forEach((docSnap) => {
+      batch.update(docSnap.ref, patch);
+    });
+    await batch.commit();
+    updatedCount += chunk.length;
+  }
+
+  return updatedCount;
+}
+

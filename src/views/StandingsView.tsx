@@ -24,6 +24,11 @@ import {
   Award
 } from 'lucide-react';
 import { FinalResultsSection } from './tournaments/FinalResultsSection';
+import { TopCutBracketCard } from '../components/rounds/TopCutBracketCard';
+import {
+  computeFinalRankingsWithTopCut,
+  filterSwissMatches
+} from '../utils/topCutLogic';
 import { getSessionTournament, setSessionTournament } from '../utils/sessionStore';
 
 export const StandingsView: React.FC = () => {
@@ -120,11 +125,29 @@ export const StandingsView: React.FC = () => {
 
     const calculated = calculateTournamentStandings(
       players,
-      matches,
+      filterSwissMatches(matches),
       selectedTournament.format
     );
     setStandings(calculated);
   }, [selectedTournament?.format, players, matches]);
+
+  const topCutBadgesMap = React.useMemo(() => {
+    const map = new Map<string, string>();
+    if (!selectedTournament?.topCut) return map;
+    const totalSwissRounds = selectedTournament.totalRounds || 3;
+    const computed = computeFinalRankingsWithTopCut(
+      standings,
+      selectedTournament.topCut,
+      matches,
+      totalSwissRounds
+    );
+    for (const item of computed) {
+      if (item.topCutResult) {
+        map.set(item.playerId, item.topCutResult);
+      }
+    }
+    return map;
+  }, [selectedTournament?.topCut, selectedTournament?.totalRounds, standings, matches]);
 
   const toggleExpand = (playerId: string) => {
     setExpandedPlayerId((prev) => (prev === playerId ? null : playerId));
@@ -228,6 +251,16 @@ export const StandingsView: React.FC = () => {
             </Card>
           )}
 
+          {/* Bagan Top Cut (jika fase Top Cut sudah dimulai) */}
+          {selectedTournament && selectedTournament.topCut && (
+            <TopCutBracketCard
+              topCut={selectedTournament.topCut}
+              matches={matches}
+              totalSwissRounds={selectedTournament.totalRounds || 3}
+              highlightUid={currentUser?.uid}
+            />
+          )}
+
           {/* Bagian Finalisasi Hasil & Pengisian Deck & Ekspor (Saat Turnamen Selesai) */}
           {selectedTournament && selectedTournament.status === 'finished' && (
             <FinalResultsSection
@@ -258,7 +291,11 @@ export const StandingsView: React.FC = () => {
           ) : (
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between px-1 text-[11px] font-mono text-dark-muted uppercase">
-                <span>Daftar Klasemen ({standings.length} Peserta)</span>
+                <span>
+                  {selectedTournament?.topCut
+                    ? `Klasemen Swiss (${standings.length} Peserta)`
+                    : `Daftar Klasemen (${standings.length} Peserta)`}
+                </span>
                 <span>Klik untuk Detail Tie-breaker</span>
               </div>
 
@@ -302,6 +339,11 @@ export const StandingsView: React.FC = () => {
                             <span className="text-body font-semibold text-dark-text truncate">
                               {s.playerName}
                             </span>
+                            {topCutBadgesMap.get(s.playerId) && (
+                              <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-accent/15 text-accent border border-accent/30">
+                                {topCutBadgesMap.get(s.playerId)}
+                              </span>
+                            )}
                             {isCurrentUser && (
                               <span className="text-[10px] font-mono px-1 rounded bg-accent/20 text-accent">
                                 Anda

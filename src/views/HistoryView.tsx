@@ -389,6 +389,19 @@ export const HistoryView: React.FC = () => {
                           <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-accent/10 text-accent border border-accent/20">
                             {p.format}
                           </span>
+                          {p.topCutResult && (
+                            <span
+                              className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded ${
+                                p.topCutResult === 'Juara'
+                                  ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                                  : p.topCutResult === 'Runner-up'
+                                  ? 'bg-accent/20 text-accent border border-accent/30'
+                                  : 'bg-dark-surface-high text-dark-text border border-dark-border'
+                              }`}
+                            >
+                              {p.topCutResult}
+                            </span>
+                          )}
                         </div>
                         <span className="text-caption text-dark-muted flex items-center gap-1.5 mt-0.5">
                           <Calendar size={12} />
@@ -530,6 +543,7 @@ export const HistoryView: React.FC = () => {
                 <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-dark-border/60 text-caption">
                   <span className="text-dark-muted">
                     Total: <strong className="text-dark-text">{t.totalRounds || '-'} Ronde</strong>
+                    {t.topCut ? ` + Top ${t.topCut.size}` : ''}
                     {t.organizerName ? ` • Oleh: ${t.organizerName}` : ''}
                   </span>
 

@@ -12,6 +12,21 @@ export interface UserProfile {
 
 export type TournamentFormat = 'BO1' | 'BO3';
 export type TournamentStatus = 'registration' | 'running' | 'finished';
+export type MatchStage = 'swiss' | 'topcut';
+export type TopCutSize = 4 | 8;
+export type TopCutResultLabel = 'Juara' | 'Runner-up' | 'Semifinal' | 'Perempat Final';
+
+export interface TopCutSeed {
+  playerId: string;
+  name: string;
+  swissRank: number;
+}
+
+export interface TournamentTopCut {
+  size: TopCutSize;
+  seeds: TopCutSeed[];
+  startedAt: number;
+}
 
 export interface Tournament {
   id: string;
@@ -24,6 +39,7 @@ export interface Tournament {
   organizerName: string;
   totalRounds?: number;
   currentRound?: number;
+  topCut?: TournamentTopCut;
   joinCode: string;
   createdAt: number;
   startedAt?: number;
@@ -57,6 +73,7 @@ export type RoundStatus = 'active' | 'completed';
 export interface TournamentRound {
   number: number;
   status: RoundStatus;
+  stage?: MatchStage;
   archived?: boolean;
   timer: RoundTimer;
 }
@@ -66,6 +83,7 @@ export type MatchStatus = 'pending' | 'awaiting' | 'confirmed' | 'disputed';
 export interface TournamentMatch {
   id: string;
   round: number;
+  stage?: MatchStage;
   table: number;
   p1Id: string;
   p2Id: string | null; // null jika BYE
@@ -99,6 +117,8 @@ export interface Participation {
   organizerId: string;
   name: string;
   rank: number;
+  swissRank?: number;
+  topCutResult?: TopCutResultLabel;
   wins: number;
   losses: number;
   gamesWon: number;

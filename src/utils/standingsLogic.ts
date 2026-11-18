@@ -92,18 +92,22 @@ export interface StandingMatchInput {
   p2Score: number;
   status: string;
   archived?: boolean;
+  stage?: string;
 }
 
 /**
  * Menghitung Klasemen Turnamen Lengkap (Sisi Klien)
+ * Hanya menghitung pertandingan babak Swiss (dokumen tanpa field stage dianggap 'swiss').
  */
 export function calculateTournamentStandings(
   players: StandingPlayerInput[],
   matches: StandingMatchInput[],
   format: TournamentFormat
 ): PlayerStanding[] {
-  // Hanya pertimbangkan pertandingan yang sudah terkonfirmasi (confirmed) dan TIDAK diarsipkan
-  const confirmedMatches = matches.filter((m) => m.status === 'confirmed' && !m.archived);
+  // Hanya pertimbangkan pertandingan Swiss yang sudah terkonfirmasi (confirmed) dan TIDAK diarsipkan
+  const confirmedMatches = matches.filter(
+    (m) => m.status === 'confirmed' && !m.archived && (!m.stage || m.stage === 'swiss')
+  );
 
   // Struktur akumulasi data per pemain
   interface PlayerAccumulator {

@@ -48,6 +48,12 @@ import {
 } from '../../utils/sessionStore';
 import { shouldShowNextRoundPause } from '../../utils/roundPauseLogic';
 import { resolvePlayerMatchState } from '../../utils/playerMatchStateLogic';
+import {
+  getNextTopCutRoundLabel,
+  getRoundDisplayLabel,
+  isFinalTopCutRound,
+  isTopCutMatch
+} from '../../utils/topCutLogic';
 
 export const MyMatchesView: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
@@ -66,7 +72,7 @@ export const MyMatchesView: React.FC = () => {
   const [myFinishedParticipation, setMyFinishedParticipation] = useState<Participation | null>(null);
   const [deckModalOpen, setDeckModalOpen] = useState(false);
   const [isWaitingNextRound, setIsWaitingNextRound] = useState(false);
-  const [waitingNextRoundNum, setWaitingNextRoundNum] = useState(2);
+  const [waitingNextRoundLabel, setWaitingNextRoundLabel] = useState('Ronde 2');
 
   // Helper session cache untuk dokumen pemain
   const getCachedPlayerStatus = (
@@ -231,12 +237,32 @@ export const MyMatchesView: React.FC = () => {
           }
         });
 
-        const isPause =
-          selectedTournament.status === 'running' &&
-          shouldShowNextRoundPause(currentRoundMatches, currentRound, totalRounds, nextRoundExists);
+        const topCutSize = selectedTournament.topCut?.size || null;
+        const isAllConfirmed =
+          currentRoundMatches.length > 0 &&
+          currentRoundMatches.every((m) => m && m.status === 'confirmed');
+
+        let isPause = false;
+        let nextLabel = `Ronde ${currentRound + 1}`;
+
+        if (selectedTournament.status === 'running') {
+          if (!topCutSize && shouldShowNextRoundPause(currentRoundMatches, currentRound, totalRounds, nextRoundExists)) {
+            isPause = true;
+            nextLabel = `Ronde ${currentRound + 1}`;
+          } else if (
+            topCutSize &&
+            currentRound > totalRounds &&
+            isAllConfirmed &&
+            !nextRoundExists &&
+            !isFinalTopCutRound(currentRound, totalRounds, topCutSize)
+          ) {
+            isPause = true;
+            nextLabel = getNextTopCutRoundLabel(currentRound, totalRounds, topCutSize) || nextLabel;
+          }
+        }
 
         setIsWaitingNextRound(isPause);
-        setWaitingNextRoundNum(currentRound + 1);
+        setWaitingNextRoundLabel(nextLabel);
 
         // Urutkan ronde terbaru di paling atas
         matchesList.sort((a, b) => b.round - a.round);
@@ -478,7 +504,7 @@ export const MyMatchesView: React.FC = () => {
                   <strong className={selectedTournament.status === 'running' ? 'text-status-green' : 'text-dark-text'}>
                     {selectedTournament.status === 'running' ? 'Sedang Berjalan' : 'Selesai'}
                   </strong>{' '}
-                  • Total: {selectedTournament.totalRounds || 3} Ronde
+                  • Total: {selectedTournament.totalRounds || 3} Ronde{selectedTournament.topCut ? ` + Top ${selectedTournament.topCut.size}` : ''}
                 </span>
                 {currentPlayerStatus && (
                   <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-dark-surface border border-dark-border">
@@ -539,7 +565,7 @@ export const MyMatchesView: React.FC = () => {
           {selectedTournament && selectedTournament.status === 'running' && isWaitingNextRound && (
             <div className="p-3 bg-dark-surface border border-accent/40 rounded-card flex items-center gap-2.5 text-caption text-accent font-medium shadow-sm animate-fade-in">
               <Clock size={16} className="text-accent flex-shrink-0" />
-              <span>Menunggu organizer melanjutkan ke Ronde {waitingNextRoundNum}</span>
+              <span>Menunggu organizer melanjutkan ke {waitingNextRoundLabel}</span>
             </div>
           )}
 
@@ -563,11 +589,15 @@ export const MyMatchesView: React.FC = () => {
 
                 const isReporter = match.reportedBy === currentUser?.uid;
                 const format: TournamentFormat = selectedTournament?.format || 'BO3';
+                const totalSwissRounds = selectedTournament?.totalRounds || 3;
+                const topCutSize = selectedTournament?.topCut?.size || null;
+                const isTopCut = isTopCutMatch(match) || match.round > totalSwissRounds;
+                const roundLabel = getRoundDisplayLabel(match.round, totalSwissRounds, topCutSize);
 
                 const isLoadingAction = actionLoadingId === match.id;
 
                 const pointsEarned =
-                  match.status === 'confirmed'
+                  match.status === 'confirmed' && !isTopCut
                     ? calculateMatchPoints(format, myScore, oppScore, isBye)
                     : null;
 
@@ -577,7 +607,7 @@ export const MyMatchesView: React.FC = () => {
                     <div className="flex items-center justify-between pb-2 border-b border-dark-border">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-caption font-bold text-accent">
-                          Ronde {match.round}
+                          {roundLabel}
                         </span>
                         <span className="text-caption text-dark-muted font-mono">
                           {isBye ? '• BYE (menang otomatis)' : `• Meja #${match.table}`}
@@ -624,8 +654,20 @@ export const MyMatchesView: React.FC = () => {
                             <span className="font-mono text-2xl font-bold text-accent">
                               {myScore} - {oppScore}
                             </span>
-                            <span className="text-[11px] font-mono text-status-green block font-medium">
-                              +{pointsEarned} Poin
+                            <span
+                              className={`text-[11px] font-mono block font-medium ${
+                                isTopCut
+                                  ? myScore > oppScore
+                                    ? 'text-status-green'
+                                    : 'text-status-red'
+                                  : 'text-status-green'
+                              }`}
+                            >
+                              {isTopCut
+                                ? myScore > oppScore
+                                  ? 'Lolos Top Cut'
+                                  : 'Gugur Top Cut'
+                                : `+${pointsEarned} Poin`}
                             </span>
                           </div>
                         ) : match.status === 'awaiting' ? (
