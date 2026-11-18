@@ -55,6 +55,13 @@ import {
   isFinalTopCutRound
 } from '../../utils/topCutLogic';
 import { getSessionTournament, setSessionTournament } from '../../utils/sessionStore';
+import { LeagueSeasonBadge } from '../../components/tournaments/LeagueSeasonBadge';
+import {
+  formatSeasonLabel,
+  isLeagueTournament,
+  isRoundTimerEnabledForTournament,
+  isTopCutMandatoryForTournament
+} from '../../utils/seasonLogic';
 import {
   Timer,
   Play,
@@ -641,18 +648,24 @@ export const RoundsView: React.FC = () => {
               }}
               className="w-full bg-dark-surface border border-dark-border rounded-btn px-3 py-2 text-caption text-dark-text focus:outline-none focus:border-accent"
             >
-              {tournaments.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.status === 'running' ? 'Berjalan' : t.status === 'finished' ? 'Selesai' : 'Pendaftaran'}) - #{t.joinCode}
-                </option>
-              ))}
+              {tournaments.map((t) => {
+                const sLabel = isLeagueTournament(t) ? formatSeasonLabel(t.season) : null;
+                return (
+                  <option key={t.id} value={t.id}>
+                    {isLeagueTournament(t) ? '[LIGA] ' : ''}
+                    {t.name}
+                    {sLabel ? ` - ${sLabel}` : ''} (
+                    {t.status === 'running' ? 'Berjalan' : t.status === 'finished' ? 'Selesai' : 'Pendaftaran'}) - #{t.joinCode}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
           {selectedTournament && (
             <Card variant="surface-high" className="flex flex-col gap-2 p-3">
               <div className="flex items-start justify-between gap-2">
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-body font-semibold text-dark-text">
                       {selectedTournament.name}
@@ -661,6 +674,7 @@ export const RoundsView: React.FC = () => {
                       {selectedTournament.format}
                     </span>
                   </div>
+                  <LeagueSeasonBadge tournament={selectedTournament} compact className="mt-1" />
                   <span className="text-caption text-dark-muted mt-0.5 block">
                     Total: <strong className="text-dark-text">{totalRounds} Ronde Swiss</strong>
                     {selectedTournament.topCut ? ` + Top ${selectedTournament.topCut.size}` : ''}
@@ -836,7 +850,7 @@ export const RoundsView: React.FC = () => {
                   </div>
                 )}
 
-              {/* Kartu Aksi: Setelah Ronde Swiss Terakhir Selesai -> Pilih Top 4 / Top 8 / Akhiri Tanpa Top Cut */}
+              {/* Kartu Aksi: Setelah Ronde Swiss Terakhir Selesai -> Pilih Top 4 / Top 8 / Akhiri Tanpa Top Cut (kecuali Liga) */}
               {isLastSwissRoundComplete && (
                 <Card variant="surface" className="flex flex-col gap-3 p-3.5 border-accent/40 bg-accent/5">
                   <div>
@@ -846,7 +860,11 @@ export const RoundsView: React.FC = () => {
                     </span>
                     <span className="text-caption text-dark-muted mt-0.5 block">
                       {isOrganizerOwner
-                        ? `Peserta aktif: ${topCutEligibility.activeCount} pemain. Pilih lanjut ke babak gugur Top Cut atau akhiri turnamen langsung.`
+                        ? isTopCutMandatoryForTournament(selectedTournament)
+                          ? `Peserta aktif: ${topCutEligibility.activeCount} pemain. Turnamen Liga mewajibkan fase gugur Top Cut (Top 4 atau Top 8).`
+                          : `Peserta aktif: ${topCutEligibility.activeCount} pemain. Pilih lanjut ke babak gugur Top Cut atau akhiri turnamen langsung.`
+                        : isTopCutMandatoryForTournament(selectedTournament)
+                        ? 'Menunggu organizer melanjutkan ke fase Top Cut'
                         : 'Menunggu organizer memutuskan lanjut ke Top Cut atau mengakhiri turnamen'}
                     </span>
                   </div>
@@ -873,21 +891,27 @@ export const RoundsView: React.FC = () => {
                           Lanjut ke Top 8 {!topCutEligibility.canStartTop8 ? '(Min. 8 Aktif)' : ''}
                         </Button>
                       </div>
-                      <Button
-                        variant="secondary"
-                        fullWidth
-                        className="!min-h-[40px] !text-caption"
-                        disabled={startingTopCut}
-                        onClick={() => setFinishConfirmModalOpen(true)}
-                        icon={<Trophy size={15} />}
-                      >
-                        Akhiri Tanpa Top Cut
-                      </Button>
+                      {!isTopCutMandatoryForTournament(selectedTournament) && (
+                        <Button
+                          variant="secondary"
+                          fullWidth
+                          className="!min-h-[40px] !text-caption"
+                          disabled={startingTopCut}
+                          onClick={() => setFinishConfirmModalOpen(true)}
+                          icon={<Trophy size={15} />}
+                        >
+                          Akhiri Tanpa Top Cut
+                        </Button>
+                      )}
                     </div>
                   ) : (
                     <div className="text-caption font-medium text-status-yellow flex items-center gap-1.5 bg-status-yellow/10 px-3 py-1.5 rounded-btn border border-status-yellow/30 w-fit">
                       <Clock size={14} />
-                      <span>Menunggu organizer melanjutkan ke Top Cut atau mengakhiri turnamen</span>
+                      <span>
+                        {isTopCutMandatoryForTournament(selectedTournament)
+                          ? 'Menunggu organizer melanjutkan ke fase Top Cut'
+                          : 'Menunggu organizer melanjutkan ke Top Cut atau mengakhiri turnamen'}
+                      </span>
                     </div>
                   )}
                 </Card>
@@ -948,8 +972,8 @@ export const RoundsView: React.FC = () => {
                 </Card>
               )}
 
-              {/* Komponen Timer Ronde */}
-              {rounds.length > 0 && (
+              {/* Komponen Timer Ronde (disembunyikan pada Turnamen Liga) */}
+              {rounds.length > 0 && isRoundTimerEnabledForTournament(selectedTournament) && (
                 <RoundTimerCard
                   tournamentId={selectedTournament.id}
                   round={rounds.find((r) => r.number === activeRound) || null}

@@ -1,18 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import { Tournament } from '../../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Tournament, TournamentType } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { EmptyState } from '../../components/common/EmptyState';
+import { BottomSheet } from '../../components/common/BottomSheet';
 import { TournamentDetailModal } from '../tournaments/TournamentDetailModal';
 import { TournamentFormSheet } from '../../components/tournaments/TournamentFormSheet';
+import { LeagueSeasonBadge } from '../../components/tournaments/LeagueSeasonBadge';
+import { TournamentTypeFilterBar } from '../../components/tournaments/TournamentTypeFilterBar';
 import {
   getOrganizerTournaments,
   createTournament
 } from '../../services/tournamentService';
 import { TournamentFormValues } from '../../utils/tournamentEditLogic';
-import { Trophy, Plus, Calendar, MapPin, RefreshCw, Play, Timer } from 'lucide-react';
+import {
+  filterTournamentsByType,
+  isLeagueTournament,
+  TournamentTypeFilter
+} from '../../utils/seasonLogic';
+import { Trophy, Plus, Calendar, MapPin, RefreshCw, Swords, ChevronRight } from 'lucide-react';
 
 interface OrganizerTournamentsViewProps {
   onNavigateToRounds?: (tournamentId: string) => void;
@@ -24,8 +32,11 @@ export const OrganizerTournamentsView: React.FC<OrganizerTournamentsViewProps> =
   const { currentUser, userProfile } = useAuth();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
+  const [typeFilter, setTypeFilter] = useState<TournamentTypeFilter>('all');
 
-  // Modal Buat Turnamen
+  // Pilihan Jenis Turnamen + Modal Buat Turnamen
+  const [typeChoiceOpen, setTypeChoiceOpen] = useState(false);
+  const [createTournamentType, setCreateTournamentType] = useState<TournamentType>('regular');
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState('');
@@ -51,7 +62,28 @@ export const OrganizerTournamentsView: React.FC<OrganizerTournamentsViewProps> =
     fetchTournaments();
   }, [currentUser]);
 
+  const filterCounts = useMemo(
+    () => ({
+      all: tournaments.length,
+      league: tournaments.filter((t) => isLeagueTournament(t)).length,
+      regular: tournaments.filter((t) => !isLeagueTournament(t)).length,
+    }),
+    [tournaments]
+  );
+
+  const filteredTournaments = useMemo(
+    () => filterTournamentsByType(tournaments, typeFilter),
+    [tournaments, typeFilter]
+  );
+
   const handleOpenCreate = () => {
+    setCreateError('');
+    setTypeChoiceOpen(true);
+  };
+
+  const handleChooseTournamentType = (chosenType: TournamentType) => {
+    setTypeChoiceOpen(false);
+    setCreateTournamentType(chosenType);
     setCreateError('');
     setCreateSheetOpen(true);
   };
@@ -111,6 +143,15 @@ export const OrganizerTournamentsView: React.FC<OrganizerTournamentsViewProps> =
         </div>
       </div>
 
+      {/* Tab/Filter Jenis Turnamen */}
+      {tournaments.length > 0 && (
+        <TournamentTypeFilterBar
+          value={typeFilter}
+          onChange={setTypeFilter}
+          counts={filterCounts}
+        />
+      )}
+
       {/* Daftar Turnamen Organizer */}
       <div className="flex flex-col gap-2.5">
         {loading ? (
@@ -126,8 +167,19 @@ export const OrganizerTournamentsView: React.FC<OrganizerTournamentsViewProps> =
               onAction={handleOpenCreate}
             />
           </Card>
+        ) : filteredTournaments.length === 0 ? (
+          <Card variant="surface" className="my-2">
+            <EmptyState
+              icon={Trophy}
+              message={
+                typeFilter === 'league'
+                  ? 'Belum ada Turnamen Liga yang Anda selenggarakan.'
+                  : 'Belum ada Turnamen Reguler yang Anda selenggarakan.'
+              }
+            />
+          </Card>
         ) : (
-          tournaments.map((t) => (
+          filteredTournaments.map((t) => (
             <Card
               key={t.id}
               variant="surface"
@@ -135,15 +187,18 @@ export const OrganizerTournamentsView: React.FC<OrganizerTournamentsViewProps> =
               onClick={() => handleOpenDetail(t)}
             >
               <div className="flex items-start justify-between gap-2">
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-body font-semibold text-dark-text">{t.name}</span>
                     <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-accent/10 text-accent border border-accent/20">
                       {t.format}
                     </span>
                   </div>
+                  <LeagueSeasonBadge tournament={t} compact className="mt-1" />
                   <span className="text-caption font-mono text-dark-muted mt-0.5 block">
-                    Kode: #{t.joinCode}
+                    {isLeagueTournament(t)
+                      ? 'Undangan Privat (Kode & QR di Detail)'
+                      : `Kode: #${t.joinCode}`}
                   </span>
                 </div>
                 <StatusBadge
@@ -186,10 +241,78 @@ export const OrganizerTournamentsView: React.FC<OrganizerTournamentsViewProps> =
         )}
       </div>
 
+      {/* Bottom Sheet Pilihan Jenis Turnamen */}
+      <BottomSheet
+        isOpen={typeChoiceOpen}
+        onClose={() => setTypeChoiceOpen(false)}
+        title="Pilih Jenis Turnamen"
+      >
+        <div className="flex flex-col gap-2.5 py-1 pb-2">
+          <button
+            type="button"
+            onClick={() => handleChooseTournamentType('league')}
+            className="w-full text-left p-3.5 rounded-card bg-amber-500/10 border border-amber-400/40 hover:border-amber-400 transition-colors flex items-center justify-between gap-3"
+          >
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-btn bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300 flex-shrink-0">
+                <Trophy size={20} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-body font-bold text-dark-text">
+                    Turnamen Liga
+                  </span>
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                    SEASON
+                  </span>
+                </div>
+                <p className="text-caption text-dark-muted mt-0.5 leading-snug">
+                  Berbasis Season (bulan & tahun). Format BO3 terkunci, min. 4 peserta, tanpa timer ronde, wajib Top Cut.
+                </p>
+              </div>
+            </div>
+            <ChevronRight size={18} className="text-amber-300 flex-shrink-0" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleChooseTournamentType('regular')}
+            className="w-full text-left p-3.5 rounded-card bg-dark-surface-high border border-dark-border hover:border-accent/60 transition-colors flex items-center justify-between gap-3"
+          >
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-btn bg-accent/15 border border-accent/30 flex items-center justify-center text-accent flex-shrink-0">
+                <Swords size={20} />
+              </div>
+              <div className="min-w-0">
+                <span className="text-body font-bold text-dark-text block">
+                  Turnamen Reguler
+                </span>
+                <p className="text-caption text-dark-muted mt-0.5 leading-snug">
+                  Turnamen standar (BO1/BO3), min. 3 peserta, timer ronde aktif, Top Cut opsional.
+                </p>
+              </div>
+            </div>
+            <ChevronRight size={18} className="text-dark-muted flex-shrink-0" />
+          </button>
+
+          <Button
+            variant="secondary"
+            fullWidth
+            type="button"
+            className="mt-1"
+            onClick={() => setTypeChoiceOpen(false)}
+          >
+            Batal
+          </Button>
+        </div>
+      </BottomSheet>
+
       {/* Bottom Sheet Buat Turnamen Baru */}
       <TournamentFormSheet
         isOpen={createSheetOpen}
         mode="create"
+        tournamentType={createTournamentType}
+        existingTournaments={tournaments}
         isLoading={createLoading}
         errorMessage={createError}
         onClose={() => setCreateSheetOpen(false)}

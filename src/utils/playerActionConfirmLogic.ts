@@ -1,4 +1,4 @@
-export type PlayerActionConfirmType = 'drop' | 'deleteManual';
+export type PlayerActionConfirmType = 'drop' | 'deleteManual' | 'deleteParticipant';
 
 export interface PlayerActionConfirmRequest {
   action: PlayerActionConfirmType;
@@ -43,6 +43,14 @@ export function buildPlayerActionConfirmContent(
         confirmLabel: 'Ya, Hapus',
         variant: 'danger',
       };
+    case 'deleteParticipant':
+      return {
+        title: 'Hapus Peserta?',
+        message: `Hapus peserta ${safeName} dari turnamen ini? Data deck peserta di turnamen ini juga akan dihapus.`,
+        cancelLabel: 'Batal',
+        confirmLabel: 'Ya, Hapus',
+        variant: 'danger',
+      };
   }
 }
 
@@ -60,5 +68,7 @@ export function getPlayerActionSuccessToast(
       return `${safeName} ditandai dropped`;
     case 'deleteManual':
       return `Peserta manual ${safeName} dihapus`;
+    case 'deleteParticipant':
+      return `Peserta ${safeName} dihapus dari turnamen`;
   }
 }

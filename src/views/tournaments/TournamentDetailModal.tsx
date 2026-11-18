@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import {
   Tournament,
   TournamentPlayer,
-  PlayerStatus
+  PlayerStatus,
+  LeaguePlayerDecks,
+  LeagueDeckEntry,
 } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/common/Card';
@@ -12,7 +14,11 @@ import { StatusBadge } from '../../components/common/StatusBadge';
 import { BottomSheet } from '../../components/common/BottomSheet';
 import { ConfirmSheet } from '../../components/common/ConfirmSheet';
 import { ReauthModal } from '../../components/common/ReauthModal';
+import { DeckColorDots } from '../../components/common/DeckColorDots';
 import { TournamentFormSheet } from '../../components/tournaments/TournamentFormSheet';
+import { LeagueInviteQrCard } from '../../components/tournaments/LeagueInviteQrCard';
+import { LeagueInviteJoinSheet } from '../../components/tournaments/LeagueInviteJoinSheet';
+import { LeagueDeckModal } from './LeagueDeckModal';
 import {
   createTournament,
   updateTournamentDetails,
@@ -26,6 +32,10 @@ import {
   dropPlayer,
   deleteTournament
 } from '../../services/tournamentService';
+import {
+  getAllTournamentLeagueDecks,
+  getPlayerLeagueDecks,
+} from '../../services/leagueDeckService';
 import { TournamentAuditLogModal } from '../rounds/TournamentAuditLogModal';
 import { calculateSwissRounds } from '../../utils/swissLogic';
 import { FinalStandingsCard } from '../history/FinalStandingsCard';
@@ -55,6 +65,16 @@ import {
   buildDuplicateTournamentDraft,
   TournamentFormValues,
 } from '../../utils/tournamentEditLogic';
+import { LeagueSeasonBadge } from '../../components/tournaments/LeagueSeasonBadge';
+import {
+  formatSeasonLabel,
+  getMinParticipantsToStart,
+  isLeagueTournament,
+} from '../../utils/seasonLogic';
+import {
+  hasValidTwoLeagueDecks,
+  validateLeagueStartRequirements,
+} from '../../utils/leagueDeckLogic';
 import { executeLinkManualPlayerToAccount } from '../../services/playerLinkService';
 import {
   Swords,
@@ -79,6 +99,9 @@ import {
   Link2,
   History,
   Pencil,
+  Ticket,
+  Layers,
+  Lock,
 } from 'lucide-react';
 import { AddFromHistoryModal } from './AddFromHistoryModal';
 
@@ -115,13 +138,16 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
     try {
       const participations = await getTournamentParticipations(tournament.id);
       if (participations.length > 0) {
+        const seasonLabel = formatSeasonLabel(tournament.season);
         const text = generateStandingsText({
           tournamentName: tournament.name,
           tournamentDate: tournament.date,
           format: tournament.format,
           participations,
           organizerName: tournament.organizerName,
-          location: tournament.location
+          location: tournament.location,
+          seasonLabel,
+          isLeague: isLeagueTournament(tournament),
         });
         const res = await copyTextNative(text);
         if (res.ok) {
@@ -190,6 +216,26 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
   const [playerActionLoading, setPlayerActionLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
 
+  // League Stage 2: 2 Deck privat & Undangan
+  const [myLeagueDecks, setMyLeagueDecks] = useState<LeaguePlayerDecks | null>(null);
+  const [loadingMyLeagueDecks, setLoadingMyLeagueDecks] = useState(false);
+  const [leagueDecksMap, setLeagueDecksMap] = useState<Map<string, LeaguePlayerDecks>>(
+    new Map()
+  );
+  const [loadingLeagueDecks, setLoadingLeagueDecks] = useState(false);
+  const [leagueInviteJoinOpen, setLeagueInviteJoinOpen] = useState(false);
+  const [cancelLeagueConfirmOpen, setCancelLeagueConfirmOpen] = useState(false);
+  const [leagueDeckModalTarget, setLeagueDeckModalTarget] = useState<{
+    tournamentId: string;
+    tournamentName: string;
+    playerId: string;
+    playerName: string;
+    playerUid: string | null;
+    initialDecks?: [LeagueDeckEntry, LeagueDeckEntry] | null;
+    isOrganizerMode: boolean;
+    allowSkip: boolean;
+  } | null>(null);
+
   const isOrganizerOwner =
     Boolean(currentUser && tournament && tournament.organizerId === currentUser.uid);
   const isAdmin = userProfile?.role === 'admin';
@@ -209,9 +255,44 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
     }
   };
 
+  const fetchLeagueDecksData = async (targetTournament?: Tournament | null) => {
+    const t = targetTournament || tournament;
+    if (!t || !isLeagueTournament(t)) {
+      setMyLeagueDecks(null);
+      setLeagueDecksMap(new Map());
+      return;
+    }
+
+    if (canManageTournament) {
+      setLoadingLeagueDecks(true);
+      try {
+        const allDecks = await getAllTournamentLeagueDecks(t.id);
+        setLeagueDecksMap(allDecks);
+        if (currentUser) {
+          setMyLeagueDecks(allDecks.get(currentUser.uid) || null);
+        }
+      } catch (err) {
+        console.error('Gagal memuat daftar deck liga:', err);
+      } finally {
+        setLoadingLeagueDecks(false);
+      }
+    } else if (currentUser) {
+      setLoadingMyLeagueDecks(true);
+      try {
+        const own = await getPlayerLeagueDecks(t.id, currentUser.uid);
+        setMyLeagueDecks(own);
+      } catch (err) {
+        console.error('Gagal memuat deck liga pribadi:', err);
+      } finally {
+        setLoadingMyLeagueDecks(false);
+      }
+    }
+  };
+
   useEffect(() => {
     if (isOpen && tournament?.id) {
       fetchPlayers(tournament.id);
+      fetchLeagueDecksData(tournament);
       setActionMessage('');
       setCopiedCode(false);
       setStatusConfirmRequest(null);
@@ -222,8 +303,11 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
       setEditError('');
       setDuplicateSheetOpen(false);
       setDuplicateError('');
+      setLeagueInviteJoinOpen(false);
+      setCancelLeagueConfirmOpen(false);
+      setLeagueDeckModalTarget(null);
     }
-  }, [isOpen, tournament?.id]);
+  }, [isOpen, tournament?.id, canManageTournament, currentUser?.uid]);
 
   if (!tournament || !isOpen) return null;
 
@@ -270,7 +354,10 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
     setPlayerActionLoading(true);
     try {
       await cancelRegistration(tournament.id, currentUser.uid);
+      setMyLeagueDecks(null);
+      setCancelLeagueConfirmOpen(false);
       await fetchPlayers();
+      await fetchLeagueDecksData(tournament);
       setActionMessage('Pendaftaran telah dibatalkan.');
       if (onTournamentUpdated) onTournamentUpdated();
     } catch (err: any) {
@@ -356,6 +443,7 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
         `Berhasil menautkan ${selectedManualPlayer.name} ke akun ${targetAccount.name}.`
       );
       await fetchPlayers();
+      await fetchLeagueDecksData(tournament);
       if (onTournamentUpdated) onTournamentUpdated();
     } catch (err: any) {
       console.error('Gagal menautkan peserta manual:', err);
@@ -394,6 +482,7 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
         await cancelRegistration(tournament.id, playerActionConfirmRequest.playerId);
       }
       await fetchPlayers();
+      await fetchLeagueDecksData(tournament);
       if (onTournamentUpdated) onTournamentUpdated();
       const toastMessage = getPlayerActionSuccessToast(
         playerActionConfirmRequest.action,
@@ -499,10 +588,33 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
     }
   };
 
-  // Organizer: Start Tournament (dengan preflight check akun waiting & nama ganda)
+  const isLeague = isLeagueTournament(tournament);
+  const minParticipantsToStart = getMinParticipantsToStart(tournament);
+  const leagueStartValidation = isLeague
+    ? validateLeagueStartRequirements(players, leagueDecksMap)
+    : null;
+  const canStartTournament = isLeague
+    ? Boolean(leagueStartValidation?.canStart) && !loadingLeagueDecks
+    : acceptedPlayers.length >= minParticipantsToStart;
+
+  // Organizer: Start Tournament (dengan preflight check akun waiting, nama ganda, & kelengkapan 2 deck liga)
   const handleOpenStartTournament = () => {
-    if (acceptedPlayers.length < 3) {
-      alert(`Minimal 3 peserta accepted diperlukan untuk memulai turnamen (saat ini: ${acceptedPlayers.length}).`);
+    if (isLeague) {
+      if (loadingLeagueDecks) {
+        alert('Sedang memeriksa kelengkapan 2 deck peserta...');
+        return;
+      }
+      if (leagueStartValidation && !leagueStartValidation.canStart) {
+        alert(
+          leagueStartValidation.errorMessage ||
+            'Turnamen Liga belum memenuhi syarat untuk dimulai.'
+        );
+        return;
+      }
+    } else if (acceptedPlayers.length < minParticipantsToStart) {
+      alert(
+        `Minimal ${minParticipantsToStart} peserta accepted diperlukan untuk memulai turnamen (saat ini: ${acceptedPlayers.length}).`
+      );
       return;
     }
     setStartConfirmOpen(true);
@@ -516,7 +628,8 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
       await startTournament(
         tournament.id,
         acceptedPlayers.length,
-        { uid: currentUser.uid, name: userProfile.displayName || userProfile.username }
+        { uid: currentUser.uid, name: userProfile.displayName || userProfile.username },
+        tournament.type
       );
       setStartConfirmOpen(false);
       if (onTournamentUpdated) onTournamentUpdated();
@@ -603,7 +716,9 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
       setDuplicateSheetOpen(false);
       setTournament(created);
       showToastSuccess(
-        `Turnamen "${created.name}" berhasil diduplikat (#${created.joinCode}).`
+        isLeagueTournament(created)
+          ? `Turnamen Liga "${created.name}" berhasil diduplikat. Kode undangan baru telah dibuat.`
+          : `Turnamen "${created.name}" berhasil diduplikat (#${created.joinCode}).`
       );
       if (onTournamentUpdated) onTournamentUpdated();
     } catch (err: any) {
@@ -621,13 +736,14 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
         {/* Info Utama Turnamen */}
         <Card variant="surface-high" className="flex flex-col gap-2.5">
           <div className="flex items-start justify-between gap-2">
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-body text-dark-text">{tournament.name}</span>
                 <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-accent/10 text-accent border border-accent/20">
                   {tournament.format}
                 </span>
               </div>
+              <LeagueSeasonBadge tournament={tournament} className="mt-1" />
               <p className="text-caption text-dark-muted mt-0.5">
                 Penyelenggara: <strong className="text-dark-text">{tournament.organizerName}</strong>
               </p>
@@ -661,22 +777,31 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Kode Unik & Ronde */}
-          <div className="pt-2 border-t border-dark-border flex items-center justify-between gap-2 text-caption">
-            <div className="flex items-center gap-2">
-              <span className="text-dark-muted">Kode Gabung:</span>
-              <span className="font-mono font-bold text-accent px-1.5 py-0.5 rounded bg-dark-surface border border-dark-border">
-                {tournament.joinCode}
-              </span>
-              <button
-                type="button"
-                onClick={copyJoinCode}
-                className="p-1 text-dark-muted hover:text-dark-text"
-                title="Salin Kode"
-              >
-                {copiedCode ? <Check size={14} className="text-status-green" /> : <Copy size={14} />}
-              </button>
-            </div>
+          {/* Kode Unik / Info Undangan Liga & Ronde */}
+          <div className="pt-2 border-t border-dark-border flex items-center justify-between gap-2 text-caption flex-wrap">
+            {isLeague ? (
+              <div className="flex items-center gap-1.5">
+                <Ticket size={14} className="text-amber-300" />
+                <span className="font-medium text-amber-300">
+                  Khusus Undangan (Kode / QR)
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-dark-muted">Kode Gabung:</span>
+                <span className="font-mono font-bold text-accent px-1.5 py-0.5 rounded bg-dark-surface border border-dark-border">
+                  {tournament.joinCode}
+                </span>
+                <button
+                  type="button"
+                  onClick={copyJoinCode}
+                  className="p-1 text-dark-muted hover:text-dark-text"
+                  title="Salin Kode"
+                >
+                  {copiedCode ? <Check size={14} className="text-status-green" /> : <Copy size={14} />}
+                </button>
+              </div>
+            )}
 
             <div>
               {tournament.totalRounds ? (
@@ -720,6 +845,17 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
           </div>
         )}
 
+        {/* Organizer Pemilik / Admin: Kartu Undangan & QR Turnamen Liga */}
+        {isLeague && canManageTournament && currentUser && (
+          <LeagueInviteQrCard
+            tournament={tournament}
+            actor={{
+              uid: currentUser.uid,
+              name: userProfile?.displayName || userProfile?.username || 'Organizer',
+            }}
+          />
+        )}
+
         {/* Notifikasi Pesan Aksi */}
         {actionMessage && (
           <div className="p-3 bg-accent/10 border border-accent/20 rounded-btn text-caption text-accent flex items-center gap-2">
@@ -732,15 +868,31 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
         {!isOrganizerOwner && !isAdmin && isRegistration && (
           <div className="flex flex-col gap-2">
             {!myPlayerRecord ? (
-              <Button
-                variant="primary"
-                fullWidth
-                isLoading={playerActionLoading}
-                onClick={handleRegisterSelf}
-                icon={<UserPlus size={18} />}
-              >
-                Daftar Turnamen
-              </Button>
+              isLeague ? (
+                <div className="flex flex-col gap-1.5">
+                  <Button
+                    variant="primary"
+                    fullWidth
+                    onClick={() => setLeagueInviteJoinOpen(true)}
+                    icon={<Ticket size={18} />}
+                  >
+                    Masukkan Kode Undangan
+                  </Button>
+                  <p className="text-[11px] text-dark-muted text-center">
+                    Turnamen Liga khusus undangan. Gunakan kode 8 karakter atau teks QR dari organizer.
+                  </p>
+                </div>
+              ) : (
+                <Button
+                  variant="primary"
+                  fullWidth
+                  isLoading={playerActionLoading}
+                  onClick={handleRegisterSelf}
+                  icon={<UserPlus size={18} />}
+                >
+                  Daftar Turnamen
+                </Button>
+              )
             ) : myPlayerRecord.status === 'waiting' ? (
               <div className="flex flex-col gap-2">
                 <div className="p-2.5 rounded-btn bg-status-yellow/10 border border-status-yellow/30 text-caption text-status-yellow flex items-center justify-between">
@@ -756,11 +908,101 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
                 </Button>
               </div>
             ) : myPlayerRecord.status === 'accepted' ? (
-              <div className="p-2.5 rounded-btn bg-status-green/10 border border-status-green/30 text-caption text-status-green font-medium text-center">
-                Pendaftaran Diterima! Anda terdaftar sebagai peserta aktif.
+              <div className="flex flex-col gap-2">
+                <div className="p-2.5 rounded-btn bg-status-green/10 border border-status-green/30 text-caption text-status-green font-medium text-center">
+                  Pendaftaran Diterima! Anda terdaftar sebagai peserta aktif.
+                </div>
+                {isLeague && (
+                  <Button
+                    variant="danger"
+                    fullWidth
+                    className="!min-h-[36px] !text-caption"
+                    isLoading={playerActionLoading}
+                    onClick={() => setCancelLeagueConfirmOpen(true)}
+                  >
+                    Batalkan Pendaftaran
+                  </Button>
+                )}
               </div>
             ) : null}
           </div>
+        )}
+
+        {/* Kartu Deck Saya untuk Peserta Turnamen Liga */}
+        {isLeague && myPlayerRecord?.status === 'accepted' && currentUser && (
+          <Card
+            variant="surface"
+            className="flex flex-col gap-2.5 border-amber-400/30 bg-amber-500/5"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Layers size={16} className="text-amber-300 flex-shrink-0" />
+                <span className="text-body font-semibold text-dark-text truncate">
+                  Deck Saya (Privat)
+                </span>
+              </div>
+              {isRegistration ? (
+                <Button
+                  variant={hasValidTwoLeagueDecks(myLeagueDecks) ? 'secondary' : 'primary'}
+                  className="!min-h-[30px] !px-2.5 !text-[11px]"
+                  onClick={() =>
+                    setLeagueDeckModalTarget({
+                      tournamentId: tournament.id,
+                      tournamentName: tournament.name,
+                      playerId: currentUser.uid,
+                      playerName:
+                        myPlayerRecord.name ||
+                        userProfile?.displayName ||
+                        userProfile?.username ||
+                        'Pemain',
+                      playerUid: currentUser.uid,
+                      initialDecks: myLeagueDecks?.decks || null,
+                      isOrganizerMode: false,
+                      allowSkip: false,
+                    })
+                  }
+                  icon={<Pencil size={12} />}
+                >
+                  {hasValidTwoLeagueDecks(myLeagueDecks) ? 'Edit Deck' : 'Isi 2 Deck'}
+                </Button>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-dark-surface-high text-dark-muted border border-dark-border">
+                  <Lock size={11} />
+                  Deck Terkunci
+                </span>
+              )}
+            </div>
+
+            {loadingMyLeagueDecks ? (
+              <p className="text-caption text-dark-muted">Memuat data deck Anda...</p>
+            ) : hasValidTwoLeagueDecks(myLeagueDecks) && myLeagueDecks ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {myLeagueDecks.decks.map((d, i) => (
+                  <div
+                    key={i}
+                    className="p-2.5 rounded-btn bg-dark-surface-high border border-dark-border flex flex-col gap-1"
+                  >
+                    <span className="text-[10px] font-mono uppercase text-amber-300 font-semibold">
+                      Deck {i + 1}
+                    </span>
+                    <span className="text-caption font-semibold text-dark-text truncate">
+                      {d.name}
+                    </span>
+                    <DeckColorDots colors={d.colors} size="sm" showLabels />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-2.5 rounded-btn bg-status-yellow/10 border border-status-yellow/30 text-caption text-status-yellow flex items-start gap-2">
+                <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
+                <span>
+                  {isRegistration
+                    ? 'Anda wajib mengisi 2 deck berbeda sebelum Turnamen Liga dimulai. Deck Anda tersembunyi dari pemain lain.'
+                    : 'Anda belum mengisi data 2 deck. Hubungi organizer jika diperlukan pembaruan.'}
+                </span>
+              </div>
+            )}
+          </Card>
         )}
 
         {/* Bagian Organizer: Waiting List */}
@@ -824,11 +1066,13 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
         {tournament.status === 'finished' && (
           <div className="flex flex-col gap-2">
             <FinalStandingsCard
-              key={`${tournament.id}-${tournament.name}-${tournament.date}`}
+              key={`${tournament.id}-${tournament.name}-${tournament.date}-${tournament.season?.number ?? ''}-${tournament.season?.month ?? ''}-${tournament.season?.year ?? ''}`}
               tournamentId={tournament.id}
               tournamentName={tournament.name}
               format={tournament.format}
               status={tournament.status}
+              tournamentType={tournament.type}
+              season={tournament.season}
               highlightUid={currentUser?.uid}
             />
             <Button
@@ -884,64 +1128,140 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
             </Card>
           ) : (
             <div className="flex flex-col gap-1.5">
-              {acceptedPlayers.map((p, idx) => (
-                <Card key={p.id} variant="surface" padding="sm" className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-caption font-mono text-dark-muted w-5 text-right">
-                      {idx + 1}.
-                    </span>
-                    <div className="min-w-0">
-                      <span className="text-body font-medium text-dark-text block truncate">
-                        {p.name}
-                      </span>
-                      {p.manual && (
-                        <span className="text-[10px] text-dark-muted font-mono">
-                          (Peserta Manual)
+              {acceptedPlayers.map((p, idx) => {
+                const playerDeckDoc = isLeague ? leagueDecksMap.get(p.id) : undefined;
+                const playerHasTwoDecks =
+                  isLeague && hasValidTwoLeagueDecks(playerDeckDoc);
+
+                return (
+                  <Card
+                    key={p.id}
+                    variant="surface"
+                    padding="sm"
+                    className="flex flex-col gap-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="text-caption font-mono text-dark-muted w-5 text-right flex-shrink-0">
+                          {idx + 1}.
                         </span>
-                      )}
+                        <div className="min-w-0">
+                          <span className="text-body font-medium text-dark-text block truncate">
+                            {p.name}
+                          </span>
+                          {p.manual && (
+                            <span className="text-[10px] text-dark-muted font-mono">
+                              (Peserta Manual)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
+                        {/* Organizer / Admin di Turnamen Liga: Isi / Edit 2 Deck peserta kapan saja */}
+                        {isLeague && canManageTournament && (
+                          <Button
+                            variant="secondary"
+                            className="!min-h-[28px] !px-2 !text-[11px]"
+                            onClick={() =>
+                              setLeagueDeckModalTarget({
+                                tournamentId: tournament.id,
+                                tournamentName: tournament.name,
+                                playerId: p.id,
+                                playerName: p.name,
+                                playerUid: p.uid || null,
+                                initialDecks: playerDeckDoc?.decks || null,
+                                isOrganizerMode: true,
+                                allowSkip: false,
+                              })
+                            }
+                            icon={<Layers size={12} />}
+                          >
+                            {playerHasTwoDecks ? 'Edit Deck' : 'Isi Deck'}
+                          </Button>
+                        )}
+
+                        {/* Organizer: Tautkan Peserta Manual ke Akun (sebelum & sesudah turnamen mulai) */}
+                        {isOrganizerOwner && p.manual && (
+                          <Button
+                            variant="secondary"
+                            className="!min-h-[28px] !px-2 !text-[11px]"
+                            onClick={() => handleOpenLinkModal(p)}
+                            icon={<Link2 size={12} />}
+                          >
+                            Tautkan
+                          </Button>
+                        )}
+
+                        {/* Organizer/Admin: Hapus peserta jika masih pendaftaran */}
+                        {isRegistration &&
+                          ((isOrganizerOwner && p.manual) ||
+                            (isLeague && canManageTournament)) && (
+                            <button
+                              type="button"
+                              disabled={playerActionConfirmLoading}
+                              onClick={() =>
+                                handleOpenPlayerActionConfirm(
+                                  p.manual ? 'deleteManual' : 'deleteParticipant',
+                                  p
+                                )
+                              }
+                              className="text-[11px] text-dark-muted hover:text-status-red hover:underline px-1.5 py-1 disabled:opacity-50"
+                              title={p.manual ? 'Hapus Peserta Manual' : 'Hapus Peserta'}
+                            >
+                              Hapus
+                            </button>
+                          )}
+
+                        {/* Organizer: Tandai Dropped jika running */}
+                        {isOrganizerOwner && isRunning && (
+                          <button
+                            type="button"
+                            disabled={playerActionConfirmLoading}
+                            onClick={() => handleOpenPlayerActionConfirm('drop', p)}
+                            className="text-[11px] text-status-red hover:underline px-2 py-1 disabled:opacity-50"
+                          >
+                            Tandai Dropped
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    {/* Organizer: Tautkan Peserta Manual ke Akun (sebelum & sesudah turnamen mulai) */}
-                    {isOrganizerOwner && p.manual && (
-                      <Button
-                        variant="secondary"
-                        className="!min-h-[28px] !px-2 !text-[11px]"
-                        onClick={() => handleOpenLinkModal(p)}
-                        icon={<Link2 size={12} />}
-                      >
-                        Tautkan
-                      </Button>
+                    {/* Hanya Organizer pemilik & Admin yang dapat melihat deck peserta lain */}
+                    {isLeague && canManageTournament && (
+                      <div className="pl-7 border-t border-dark-border/60 pt-1.5">
+                        {loadingLeagueDecks ? (
+                          <span className="text-[11px] text-dark-muted">
+                            Memuat data deck...
+                          </span>
+                        ) : playerHasTwoDecks && playerDeckDoc ? (
+                          <div className="flex flex-col gap-1">
+                            {playerDeckDoc.decks.map((d, dIdx) => (
+                              <div
+                                key={dIdx}
+                                className="flex items-center justify-between gap-2 text-[11px]"
+                              >
+                                <span className="text-dark-muted truncate">
+                                  <strong className="text-amber-300 font-mono">
+                                    D{dIdx + 1}:
+                                  </strong>{' '}
+                                  <span className="text-dark-text">{d.name}</span>
+                                </span>
+                                <DeckColorDots colors={d.colors} size="sm" />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-status-yellow">
+                            <AlertTriangle size={12} />
+                            Belum isi deck
+                          </span>
+                        )}
+                      </div>
                     )}
-
-                    {/* Organizer: Hapus peserta manual jika masih pendaftaran */}
-                    {isOrganizerOwner && isRegistration && p.manual && (
-                      <button
-                        type="button"
-                        disabled={playerActionConfirmLoading}
-                        onClick={() => handleOpenPlayerActionConfirm('deleteManual', p)}
-                        className="text-[11px] text-dark-muted hover:text-status-red hover:underline px-1.5 py-1 disabled:opacity-50"
-                        title="Hapus Peserta Manual"
-                      >
-                        Hapus
-                      </button>
-                    )}
-
-                    {/* Organizer: Tandai Dropped jika running */}
-                    {isOrganizerOwner && isRunning && (
-                      <button
-                        type="button"
-                        disabled={playerActionConfirmLoading}
-                        onClick={() => handleOpenPlayerActionConfirm('drop', p)}
-                        className="text-[11px] text-status-red hover:underline px-2 py-1 disabled:opacity-50"
-                      >
-                        Tandai Dropped
-                      </button>
-                    )}
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
@@ -971,15 +1291,24 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
               variant="primary"
               fullWidth
               onClick={handleOpenStartTournament}
-              disabled={acceptedPlayers.length < 3}
+              disabled={!canStartTournament}
               icon={<Play size={18} />}
             >
               Mulai Turnamen ({acceptedPlayers.length} Peserta)
             </Button>
-            {acceptedPlayers.length < 3 && (
-              <p className="text-[11px] text-status-yellow text-center mt-1">
-                Minimal 3 peserta accepted diperlukan untuk memulai turnamen.
-              </p>
+            {isLeague ? (
+              leagueStartValidation && !leagueStartValidation.canStart ? (
+                <div className="mt-2 p-2.5 rounded-btn bg-status-yellow/10 border border-status-yellow/30 text-[11px] text-status-yellow flex items-start gap-2">
+                  <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                  <span>{leagueStartValidation.errorMessage}</span>
+                </div>
+              ) : null
+            ) : (
+              acceptedPlayers.length < minParticipantsToStart && (
+                <p className="text-[11px] text-status-yellow text-center mt-1">
+                  Minimal {minParticipantsToStart} peserta accepted diperlukan untuk memulai turnamen.
+                </p>
+              )
             )}
           </div>
         )}
@@ -1233,11 +1562,18 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
                     </div>
                   </div>
 
+                  {isLeague && leagueStartValidation && !leagueStartValidation.canStart && (
+                    <div className="p-2.5 rounded-btn bg-status-red/10 border border-status-red/30 text-caption text-status-red flex items-start gap-2">
+                      <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+                      <span>{leagueStartValidation.errorMessage}</span>
+                    </div>
+                  )}
+
                   <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-dark-border">
                     <Button
                       variant="primary"
                       fullWidth
-                      disabled={acceptedPlayers.length < 3}
+                      disabled={!canStartTournament}
                       isLoading={startLoading}
                       onClick={handleConfirmStartTournament}
                       icon={<Play size={18} />}
@@ -1262,6 +1598,7 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
                   <div className="flex flex-col gap-2 text-caption">
                     <div className="p-3 bg-dark-surface-high rounded-btn border border-dark-border flex flex-col gap-1.5">
                       <span className="text-body font-semibold text-dark-text">{tournament.name}</span>
+                      <LeagueSeasonBadge tournament={tournament} compact />
                       <div>
                         Jumlah Peserta Accepted: <strong className="text-dark-text">{acceptedPlayers.length} orang</strong>
                       </div>
@@ -1271,6 +1608,13 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
                       </div>
                       <div>Format: <strong className="text-dark-text">{tournament.format}</strong></div>
                     </div>
+
+                    {isLeague && leagueStartValidation && !leagueStartValidation.canStart && (
+                      <div className="p-2.5 rounded-btn bg-status-red/10 border border-status-red/30 text-caption text-status-red flex items-start gap-2">
+                        <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+                        <span>{leagueStartValidation.errorMessage}</span>
+                      </div>
+                    )}
 
                     <div className="p-2.5 rounded-btn bg-status-yellow/10 border border-status-yellow/30 text-status-yellow flex items-start gap-2">
                       <ShieldAlert size={16} className="flex-shrink-0 mt-0.5" />
@@ -1284,7 +1628,7 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
                     <Button
                       variant="primary"
                       fullWidth
-                      disabled={acceptedPlayers.length < 3}
+                      disabled={!canStartTournament}
                       isLoading={startLoading}
                       onClick={handleConfirmStartTournament}
                       icon={<Play size={18} />}
@@ -1548,6 +1892,82 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
           onSubmit={handleDuplicateTournamentSubmit}
         />
       )}
+
+      {/* Sheet Gabung Turnamen Liga via Kode Undangan */}
+      {currentUser && (
+        <LeagueInviteJoinSheet
+          isOpen={leagueInviteJoinOpen}
+          onClose={() => setLeagueInviteJoinOpen(false)}
+          currentUser={{
+            uid: currentUser.uid,
+            name: userProfile?.displayName || userProfile?.username || 'Pemain',
+          }}
+          onRegistered={async (joinedTournament) => {
+            setLeagueInviteJoinOpen(false);
+            if (joinedTournament.id === tournament.id) {
+              await fetchPlayers(tournament.id);
+              await fetchLeagueDecksData(tournament);
+            } else {
+              setTournament(joinedTournament);
+            }
+            if (onTournamentUpdated) onTournamentUpdated();
+            setLeagueDeckModalTarget({
+              tournamentId: joinedTournament.id,
+              tournamentName: joinedTournament.name,
+              playerId: currentUser.uid,
+              playerName:
+                userProfile?.displayName || userProfile?.username || 'Pemain',
+              playerUid: currentUser.uid,
+              initialDecks: null,
+              isOrganizerMode: false,
+              allowSkip: true,
+            });
+          }}
+        />
+      )}
+
+      {/* Modal Pengisian / Edit 2 Deck Liga */}
+      {leagueDeckModalTarget && currentUser && (
+        <LeagueDeckModal
+          isOpen={Boolean(leagueDeckModalTarget)}
+          onClose={() => setLeagueDeckModalTarget(null)}
+          tournamentId={leagueDeckModalTarget.tournamentId}
+          tournamentName={leagueDeckModalTarget.tournamentName}
+          playerId={leagueDeckModalTarget.playerId}
+          playerName={leagueDeckModalTarget.playerName}
+          playerUid={leagueDeckModalTarget.playerUid}
+          initialDecks={leagueDeckModalTarget.initialDecks}
+          isOrganizerMode={leagueDeckModalTarget.isOrganizerMode}
+          allowSkip={leagueDeckModalTarget.allowSkip}
+          actor={{
+            uid: currentUser.uid,
+            name:
+              userProfile?.displayName ||
+              userProfile?.username ||
+              'Organizer',
+          }}
+          onSaved={async () => {
+            await fetchLeagueDecksData(tournament);
+            if (onTournamentUpdated) onTournamentUpdated();
+          }}
+        />
+      )}
+
+      {/* ConfirmSheet Batalkan Pendaftaran Liga (Hapus Pemain + Deck) */}
+      <ConfirmSheet
+        isOpen={cancelLeagueConfirmOpen}
+        title="Batalkan Pendaftaran Liga?"
+        message={`Batalkan pendaftaran Anda dari ${tournament.name}? Data 2 deck liga Anda untuk turnamen ini juga akan dihapus.`}
+        confirmLabel="Ya, Batalkan"
+        cancelLabel="Batal"
+        variant="danger"
+        isLoading={playerActionLoading}
+        zIndexClass="z-[60]"
+        onConfirm={handleCancelSelf}
+        onCancel={() => {
+          if (!playerActionLoading) setCancelLeagueConfirmOpen(false);
+        }}
+      />
     </BottomSheet>
   );
 };

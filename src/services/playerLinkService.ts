@@ -2,6 +2,7 @@ import { db } from '../firebaseConfig';
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   writeBatch,
   serverTimestamp,
@@ -13,7 +14,7 @@ import { planPlayerLink, chunkOperations } from '../utils/playerLinkLogic';
  * Menautkan peserta manual ke akun pendaftar:
  * 1. Ubah status akun target menjadi accepted bila perlu
  * 2. Ganti semua p1Id dan p2Id yang bernilai id manual menjadi UID akun pada SEMUA pertandingan
- * 3. Hapus dokumen peserta manual
+ * 3. Hapus dokumen peserta manual (serta pindahkan/hapus dokumen deck liga bila ada)
  * 4. Catat auditLogs PLAYER_LINKED
  * Menggunakan potongan batch maksimal 400 operasi.
  */
@@ -65,6 +66,28 @@ export async function executeLinkManualPlayerToAccount(
       }
     }
     await batch.commit();
+  }
+
+  // 5. Sinkronkan/bersihkan dokumen deck liga milik peserta manual jika ada
+  try {
+    const targetUid = targetAccount.uid || targetAccount.id;
+    const manualDeckRef = doc(db, 'tournaments', tournamentId, 'decks', manualPlayer.id);
+    const manualDeckSnap = await getDoc(manualDeckRef);
+    if (manualDeckSnap.exists()) {
+      const targetDeckRef = doc(db, 'tournaments', tournamentId, 'decks', targetUid);
+      const targetDeckSnap = await getDoc(targetDeckRef);
+      const deckBatch = writeBatch(db);
+      if (!targetDeckSnap.exists()) {
+        deckBatch.set(targetDeckRef, {
+          ...manualDeckSnap.data(),
+          updatedAt: Date.now(),
+        });
+      }
+      deckBatch.delete(manualDeckRef);
+      await deckBatch.commit();
+    }
+  } catch (deckErr) {
+    console.warn('Gagal menyinkronkan deck liga saat menautkan pemain:', deckErr);
   }
 
   return { success: true, totalOps: ops.length };

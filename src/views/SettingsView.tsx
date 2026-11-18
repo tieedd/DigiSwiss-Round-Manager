@@ -19,7 +19,8 @@ import { CURRENT_APP_VERSION } from '../services/versionService';
 import {
   scanOrphanParticipations,
   cleanOrphanParticipations,
-  OrphanDocInfo
+  OrphanDocInfo,
+  OrphanLeagueInviteInfo
 } from '../services/tournamentCleanupService';
 
 interface SettingsViewProps {
@@ -36,17 +37,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigateConnection
   const [cleaning, setCleaning] = useState(false);
   const [scanResult, setScanResult] = useState<{
     orphanDocs: OrphanDocInfo[];
+    orphanInvites: OrphanLeagueInviteInfo[];
     totalScanned: number;
+    totalInvitesScanned: number;
   } | null>(null);
   const [reauthOpen, setReauthOpen] = useState(false);
+
+  const totalOrphansCount =
+    (scanResult?.orphanDocs.length || 0) + (scanResult?.orphanInvites.length || 0);
 
   const handleScanOrphans = async () => {
     setScanning(true);
     try {
       const res = await scanOrphanParticipations();
       setScanResult(res);
-      if (res.orphanDocs.length === 0) {
-        showToastSuccess(`Pemeriksaan selesai (${res.totalScanned} dokumen). Tidak ada data yatim.`);
+      const totalOrphans = res.orphanDocs.length + res.orphanInvites.length;
+      if (totalOrphans === 0) {
+        showToastSuccess(
+          `Pemeriksaan selesai (${res.totalScanned} partisipasi, ${res.totalInvitesScanned} undangan liga). Tidak ada data yatim.`
+        );
       }
     } catch (err: any) {
       console.error('Gagal memindai data yatim:', err);
@@ -57,15 +66,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigateConnection
   };
 
   const handleExecuteCleanOrphans = async () => {
-    if (!currentUser || !userProfile || !scanResult || scanResult.orphanDocs.length === 0) return;
+    if (!currentUser || !userProfile || !scanResult || totalOrphansCount === 0) return;
     setCleaning(true);
     try {
       const ids = scanResult.orphanDocs.map((d) => d.id);
-      const deletedCount = await cleanOrphanParticipations(ids, {
-        uid: currentUser.uid,
-        name: userProfile.displayName || userProfile.username || 'Admin'
-      });
-      showToastSuccess(`Berhasil menghapus ${deletedCount} data hasil turnamen yang sudah dihapus.`);
+      const inviteCodes = scanResult.orphanInvites.map((inv) => inv.code);
+      const deletedCount = await cleanOrphanParticipations(
+        ids,
+        {
+          uid: currentUser.uid,
+          name: userProfile.displayName || userProfile.username || 'Admin'
+        },
+        inviteCodes
+      );
+      showToastSuccess(
+        `Berhasil menghapus ${deletedCount} data yatim (partisipasi & undangan liga) dari turnamen yang sudah dihapus.`
+      );
       setScanResult(null);
     } catch (err: any) {
       console.error('Gagal membersihkan data yatim:', err);
@@ -128,31 +144,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigateConnection
           </div>
 
           <p className="text-caption text-dark-muted leading-relaxed">
-            Membersihkan sisa data partisipasi dan hasil dari turnamen yang dihapus sebelum perbaikan ini, agar Statistik dan Riwayat pemain tetap akurat.
+            Membersihkan sisa data partisipasi dan kode undangan liga dari turnamen yang sudah dihapus, agar Statistik dan Riwayat pemain tetap akurat.
           </p>
 
           {/* Hasil Pemindaian */}
           {scanResult && (
             <div
               className={`p-3 rounded-btn border text-caption flex items-start gap-2.5 ${
-                scanResult.orphanDocs.length > 0
+                totalOrphansCount > 0
                   ? 'bg-status-yellow/10 border-status-yellow/30 text-status-yellow'
                   : 'bg-status-green/10 border-status-green/30 text-status-green'
               }`}
             >
-              {scanResult.orphanDocs.length > 0 ? (
+              {totalOrphansCount > 0 ? (
                 <AlertCircle size={18} className="flex-shrink-0 mt-0.5" />
               ) : (
                 <CheckCircle2 size={18} className="flex-shrink-0 mt-0.5" />
               )}
               <div className="flex flex-col gap-0.5">
                 <strong className="font-semibold">
-                  {scanResult.orphanDocs.length > 0
-                    ? `${scanResult.orphanDocs.length} data hasil turnamen yang sudah dihapus`
+                  {totalOrphansCount > 0
+                    ? `${scanResult.orphanDocs.length} partisipasi & ${scanResult.orphanInvites.length} undangan liga yatim ditemukan`
                     : 'Tidak ada data yatim ditemukan'}
                 </strong>
                 <span className="text-[11px] opacity-90">
-                  Dari total {scanResult.totalScanned} dokumen partisipasi yang dipindai.
+                  Dari {scanResult.totalScanned} partisipasi dan {scanResult.totalInvitesScanned} undangan liga yang dipindai.
                 </span>
               </div>
             </div>
@@ -173,7 +189,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigateConnection
             <Button
               variant="danger"
               className="!min-h-[36px] !text-caption flex-1"
-              disabled={!scanResult || scanResult.orphanDocs.length === 0 || cleaning}
+              disabled={!scanResult || totalOrphansCount === 0 || cleaning}
               isLoading={cleaning}
               onClick={() => setReauthOpen(true)}
               icon={<Trash2 size={14} />}

@@ -4,6 +4,7 @@ import { getAllTournamentMatches } from '../../services/roundService';
 import { Button } from '../../components/common/Button';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { DeckColorDots } from '../../components/common/DeckColorDots';
+import { LeagueSeasonBadge } from '../../components/tournaments/LeagueSeasonBadge';
 import { FinalStandingsCard } from './FinalStandingsCard';
 import {
   X,
@@ -64,6 +65,12 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
               <h3 className="text-body font-semibold text-dark-text truncate max-w-[240px]">
                 {participation.tournamentName}
               </h3>
+              <LeagueSeasonBadge
+                tournamentType={participation.tournamentType}
+                season={participation.season}
+                compact
+                className="mt-0.5"
+              />
               <p className="text-caption text-dark-muted flex items-center gap-1.5 mt-0.5">
                 <Calendar size={12} />
                 <span>{participation.date}</span>
@@ -165,6 +172,8 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
               tournamentName={participation.tournamentName}
               format={participation.format as any}
               status="finished"
+              tournamentType={participation.tournamentType}
+              season={participation.season}
               highlightUid={participation.uid || undefined}
               onDeckChanged={onDeckChanged}
             />

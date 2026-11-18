@@ -13,7 +13,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { Tournament, TournamentFormat, TournamentPlayer, PlayerStatus, Participation } from '../types';
+import { Tournament, TournamentFormat, TournamentPlayer, PlayerStatus, Participation, TournamentType, TournamentSeason } from '../types';
 import { calculateSwissRounds, generateJoinCode } from '../utils/swissLogic';
 import { recordAuditLog } from './authService';
 import { executeCascadeTournamentDeletion } from './tournamentCleanupService';
@@ -25,15 +25,28 @@ import {
   TournamentFormValues
 } from '../utils/tournamentEditLogic';
 import {
+  formatSeasonLabel,
+  getMinParticipantsToStart,
+  validateSeasonInput
+} from '../utils/seasonLogic';
+import {
   HistoryPlayerCandidate,
   preparePlayersToAdd
 } from '../utils/playerHistoryImportLogic';
+import { validateLeagueStartRequirements } from '../utils/leagueDeckLogic';
+import {
+  createLeagueInviteForTournament,
+  syncLeagueInvitesMetadata
+} from './leagueInviteService';
+import { getAllTournamentLeagueDecks } from './leagueDeckService';
 
 export interface CreateTournamentParams {
   name: string;
   date: string;
   location: string;
   format: TournamentFormat;
+  type?: TournamentType;
+  season?: TournamentSeason;
 }
 
 /**
@@ -45,11 +58,22 @@ export async function createTournament(
 ): Promise<Tournament> {
   const cleanName = params.name.trim();
   const cleanLocation = params.location.trim();
+  const isLeague = params.type === 'league';
+  const effectiveFormat: TournamentFormat = isLeague ? 'BO3' : params.format;
 
-  if (!cleanName) throw new Error('Nama turnamen wajib diisi.');
+  if (!cleanName) throw new Error(isLeague ? 'Nama liga wajib diisi.' : 'Nama turnamen wajib diisi.');
   if (!params.date) throw new Error('Tanggal turnamen wajib diisi.');
   if (!cleanLocation) throw new Error('Lokasi turnamen wajib diisi.');
-  if (!['BO1', 'BO3'].includes(params.format)) throw new Error('Format turnamen tidak valid (pilih BO1 atau BO3).');
+  if (!['BO1', 'BO3'].includes(effectiveFormat)) throw new Error('Format turnamen tidak valid (pilih BO1 atau BO3).');
+
+  let validatedSeason: TournamentSeason | undefined;
+  if (isLeague) {
+    const seasonRes = validateSeasonInput(params.season);
+    if (!seasonRes.valid || !seasonRes.sanitized) {
+      throw new Error(seasonRes.error || 'Data Season Liga tidak valid.');
+    }
+    validatedSeason = seasonRes.sanitized;
+  }
 
   const joinCode = generateJoinCode();
   const tournamentsCol = collection(db, 'tournaments');
@@ -61,7 +85,10 @@ export async function createTournament(
     name: cleanName,
     date: params.date,
     location: cleanLocation,
-    format: params.format,
+    format: effectiveFormat,
+    ...(isLeague && validatedSeason
+      ? { type: 'league' as const, season: validatedSeason }
+      : {}),
     status: 'registration',
     organizerId: organizer.uid,
     organizerName: organizer.name,
@@ -71,6 +98,12 @@ export async function createTournament(
 
   await setDoc(newDocRef, tournamentData);
 
+  if (isLeague) {
+    await createLeagueInviteForTournament(tournamentData);
+  }
+
+  const seasonTag = validatedSeason ? ` • ${formatSeasonLabel(validatedSeason)}` : '';
+
   // Catat ke audit log
   await recordAuditLog(
     organizer.uid,
@@ -78,7 +111,7 @@ export async function createTournament(
     'TOURNAMENT_CREATED',
     `tournaments/${newDocRef.id}`,
     null,
-    `${cleanName} (${params.format})`
+    `${cleanName} (${effectiveFormat}${seasonTag})`
   );
 
   return tournamentData;
@@ -120,7 +153,9 @@ export async function updateTournamentDetails(
   let syncedParticipationsCount = 0;
   if (
     currentTournament.finalized &&
-    (plan.updates.name !== undefined || plan.updates.date !== undefined)
+    (plan.updates.name !== undefined ||
+      plan.updates.date !== undefined ||
+      plan.updates.season !== undefined)
   ) {
     syncedParticipationsCount = await syncParticipationsTournamentInfo(
       currentTournament.id,
@@ -129,8 +164,34 @@ export async function updateTournamentDetails(
           ? { tournamentName: plan.updates.name }
           : {}),
         ...(plan.updates.date !== undefined ? { date: plan.updates.date } : {}),
+        ...(plan.updates.season !== undefined
+          ? { season: plan.updates.season }
+          : {}),
       }
     );
+  }
+
+  if (
+    currentTournament.type === 'league' &&
+    (plan.updates.name !== undefined || plan.updates.season !== undefined)
+  ) {
+    try {
+      const nextSeason = plan.updates.season || currentTournament.season;
+      await syncLeagueInvitesMetadata(
+        currentTournament.id,
+        currentTournament.organizerId,
+        {
+          ...(plan.updates.name !== undefined
+            ? { tournamentName: plan.updates.name }
+            : {}),
+          ...(plan.updates.season !== undefined
+            ? { seasonLabel: formatSeasonLabel(nextSeason) || '' }
+            : {}),
+        }
+      );
+    } catch (syncErr) {
+      console.warn('Gagal menyinkronkan metadata leagueInvites:', syncErr);
+    }
   }
 
   const { oldValue, newValue } = formatAuditDiffSummary(plan.changes);
@@ -268,11 +329,16 @@ export async function registerPlayer(
 }
 
 /**
- * Pemain membatalkan pendaftaran
+ * Pemain membatalkan pendaftaran / Organizer menghapus peserta:
+ * menghapus dokumen player dan dokumen deck privatnya secara atomik dalam writeBatch.
  */
 export async function cancelRegistration(tid: string, uid: string): Promise<void> {
+  const batch = writeBatch(db);
   const playerRef = doc(db, 'tournaments', tid, 'players', uid);
-  await deleteDoc(playerRef);
+  const deckRef = doc(db, 'tournaments', tid, 'decks', uid);
+  batch.delete(playerRef);
+  batch.delete(deckRef);
+  await batch.commit();
 }
 
 /**
@@ -330,7 +396,8 @@ export async function acceptAllWaitingPlayers(
 
 /**
  * Organizer memulai turnamen:
- * - Butuh minimal 3 peserta berstatus 'accepted'
+ * - Reguler: minimal 3 peserta berstatus 'accepted'
+ * - Liga: minimal 4 peserta berstatus 'accepted'
  * - Format terkunci
  * - Jumlah ronde otomatis dihitung: max(3, ceil(log2(jumlah pemain)))
  * - Status turnamen menjadi 'running'
@@ -338,14 +405,39 @@ export async function acceptAllWaitingPlayers(
 export async function startTournament(
   tid: string,
   acceptedCount: number,
-  organizer: { uid: string; name: string }
+  organizer: { uid: string; name: string },
+  tournamentType?: TournamentType
 ): Promise<{ totalRounds: number }> {
-  if (acceptedCount < 3) {
-    throw new Error('Minimal 3 peserta accepted diperlukan untuk memulai turnamen.');
+  const tournamentRef = doc(db, 'tournaments', tid);
+  const tourneySnap = await getDoc(tournamentRef);
+  const resolvedType: TournamentType = tourneySnap.exists()
+    ? ((tourneySnap.data() as Tournament).type === 'league' ? 'league' : 'regular')
+    : tournamentType === 'league'
+    ? 'league'
+    : 'regular';
+
+  const minParticipants = getMinParticipantsToStart(resolvedType);
+  if (acceptedCount < minParticipants) {
+    throw new Error(
+      `Minimal ${minParticipants} peserta accepted diperlukan untuk memulai turnamen${resolvedType === 'league' ? ' Liga' : ''}.`
+    );
+  }
+
+  if (resolvedType === 'league') {
+    const [players, decksMap] = await Promise.all([
+      getTournamentPlayers(tid),
+      getAllTournamentLeagueDecks(tid),
+    ]);
+    const leagueStartCheck = validateLeagueStartRequirements(players, decksMap);
+    if (!leagueStartCheck.canStart) {
+      throw new Error(
+        leagueStartCheck.errorMessage ||
+          'Seluruh peserta Liga harus melengkapi 2 deck valid sebelum turnamen dimulai.'
+      );
+    }
   }
 
   const totalRounds = calculateSwissRounds(acceptedCount);
-  const tournamentRef = doc(db, 'tournaments', tid);
   const now = Date.now();
 
   await updateDoc(tournamentRef, {

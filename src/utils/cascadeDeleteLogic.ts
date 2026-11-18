@@ -1,7 +1,7 @@
 import type { Participation } from '../types/index.ts';
 
 export interface DeletionOperation {
-  type: 'match' | 'round' | 'player' | 'participation' | 'tournament';
+  type: 'match' | 'round' | 'player' | 'deck' | 'participation' | 'leagueInvite' | 'tournament';
   id: string;
   path: string;
 }
@@ -10,7 +10,9 @@ export interface TournamentSubcollectionItems {
   matches?: Array<{ id: string }>;
   rounds?: Array<{ id: string }>;
   players?: Array<{ id: string }>;
+  decks?: Array<{ id: string }>;
   participations?: Array<{ id: string }>;
+  leagueInvites?: Array<{ id: string }>;
 }
 
 /**
@@ -18,8 +20,10 @@ export interface TournamentSubcollectionItems {
  * (1) matches (termasuk yang archived)
  * (2) rounds
  * (3) players
- * (4) participations (tournamentId == tid)
- * (5) TERAKHIR: dokumen turnamen itu sendiri
+ * (4) decks (subkoleksi deck liga)
+ * (5) participations (tournamentId == tid)
+ * (6) leagueInvites (tournamentId == tid)
+ * (7) TERAKHIR: dokumen turnamen itu sendiri
  */
 export function planTournamentDeletion(
   tournamentId: string,
@@ -60,7 +64,18 @@ export function planTournamentDeletion(
     }
   }
 
-  // 4. Participations
+  // 4. Decks
+  if (items.decks && items.decks.length > 0) {
+    for (const d of items.decks) {
+      operations.push({
+        type: 'deck',
+        id: d.id,
+        path: `tournaments/${tournamentId}/decks/${d.id}`
+      });
+    }
+  }
+
+  // 5. Participations
   if (items.participations && items.participations.length > 0) {
     for (const part of items.participations) {
       operations.push({
@@ -71,7 +86,18 @@ export function planTournamentDeletion(
     }
   }
 
-  // 5. Dokumen turnamen utama (selalu paling akhir)
+  // 6. League Invites
+  if (items.leagueInvites && items.leagueInvites.length > 0) {
+    for (const inv of items.leagueInvites) {
+      operations.push({
+        type: 'leagueInvite',
+        id: inv.id,
+        path: `leagueInvites/${inv.id}`
+      });
+    }
+  }
+
+  // 7. Dokumen turnamen utama (selalu paling akhir)
   operations.push({
     type: 'tournament',
     id: tournamentId,
@@ -131,5 +157,25 @@ export function findOrphanParticipations(
 
   return participations.filter(
     (p) => !p.tournamentId || !validSet.has(p.tournamentId)
+  );
+}
+
+/**
+ * Mencari dokumen leagueInvites yatim (turnamennya sudah tidak ada di sistem)
+ */
+export function findOrphanLeagueInvites<
+  T extends { id?: string; code?: string; tournamentId?: string | null }
+>(
+  invites: T[],
+  existingTournamentIds: Set<string> | string[]
+): T[] {
+  if (!invites || invites.length === 0) return [];
+  const validSet =
+    existingTournamentIds instanceof Set
+      ? existingTournamentIds
+      : new Set(existingTournamentIds || []);
+
+  return invites.filter(
+    (inv) => !inv.tournamentId || !validSet.has(inv.tournamentId)
   );
 }

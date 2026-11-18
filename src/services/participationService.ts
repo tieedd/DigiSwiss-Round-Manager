@@ -15,8 +15,10 @@ import {
   TournamentPlayer,
   TournamentMatch,
   Participation,
-  DeckColor
+  DeckColor,
+  TournamentSeason
 } from '../types';
+import { isLeagueTournament } from '../utils/seasonLogic';
 import { calculateTournamentStandings } from '../utils/standingsLogic';
 import {
   computeFinalRankingsWithTopCut,
@@ -83,12 +85,19 @@ export async function finalizeTournamentResults(
     const partDocRef = doc(db, 'participations', participationId);
     const existing = existingMap.get(s.playerId);
 
+    const isLeague = isLeagueTournament(tournament);
     const partData: Participation = {
       id: participationId,
       tournamentId: tournament.id,
       tournamentName: tournament.name,
       date: tournament.date,
       format: tournament.format,
+      ...(isLeague
+        ? {
+            tournamentType: 'league' as const,
+            ...(tournament.season ? { season: tournament.season } : {})
+          }
+        : {}),
       playerId: s.playerId,
       uid: originalPlayer?.uid || existing?.uid || null,
       organizerId: tournament.organizerId,
@@ -252,7 +261,7 @@ export async function updateParticipationDeck(
  */
 export async function syncParticipationsTournamentInfo(
   tournamentId: string,
-  updates: { tournamentName?: string; date?: string }
+  updates: { tournamentName?: string; date?: string; season?: TournamentSeason }
 ): Promise<number> {
   if (!tournamentId) return 0;
 
@@ -262,6 +271,9 @@ export async function syncParticipationsTournamentInfo(
   }
   if (updates.date !== undefined) {
     patch.date = updates.date;
+  }
+  if (updates.season !== undefined) {
+    patch.season = updates.season;
   }
 
   if (Object.keys(patch).length === 0) {

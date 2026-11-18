@@ -11,10 +11,17 @@ export interface UserProfile {
 }
 
 export type TournamentFormat = 'BO1' | 'BO3';
+export type TournamentType = 'regular' | 'league';
 export type TournamentStatus = 'registration' | 'running' | 'finished';
 export type MatchStage = 'swiss' | 'topcut';
 export type TopCutSize = 4 | 8;
 export type TopCutResultLabel = 'Juara' | 'Runner-up' | 'Semifinal' | 'Perempat Final';
+
+export interface TournamentSeason {
+  number: number;
+  month: number; // 1-12
+  year: number;
+}
 
 export interface TopCutSeed {
   playerId: string;
@@ -34,6 +41,8 @@ export interface Tournament {
   date: string;
   location: string;
   format: TournamentFormat;
+  type?: TournamentType;
+  season?: TournamentSeason;
   status: TournamentStatus;
   organizerId: string;
   organizerName: string;
@@ -56,7 +65,31 @@ export interface TournamentPlayer {
   uid: string | null;
   manual: boolean;
   status: PlayerStatus;
+  inviteCode?: string;
   joinedAt: number;
+}
+
+export interface LeagueInvite {
+  code: string;
+  tournamentId: string;
+  tournamentName: string;
+  seasonLabel: string;
+  organizerId: string;
+  organizerName: string;
+  active: boolean;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface LeagueDeckEntry {
+  name: string;
+  colors: DeckColor[];
+}
+
+export interface LeaguePlayerDecks {
+  decks: [LeagueDeckEntry, LeagueDeckEntry];
+  revealedTo: string[];
+  updatedAt: number;
 }
 
 export type RoundTimerStatus = 'idle' | 'running' | 'paused' | 'expired';
@@ -112,6 +145,8 @@ export interface Participation {
   tournamentName: string;
   date: string;
   format: TournamentFormat;
+  tournamentType?: TournamentType;
+  season?: TournamentSeason;
   playerId: string;
   uid: string | null;
   organizerId: string;

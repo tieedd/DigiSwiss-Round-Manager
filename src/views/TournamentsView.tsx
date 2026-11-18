@@ -8,8 +8,17 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { EmptyState } from '../components/common/EmptyState';
 import { BottomSheet } from '../components/common/BottomSheet';
 import { TournamentDetailModal } from './tournaments/TournamentDetailModal';
+import { LeagueDeckModal } from './tournaments/LeagueDeckModal';
+import { LeagueSeasonBadge } from '../components/tournaments/LeagueSeasonBadge';
+import { TournamentTypeFilterBar } from '../components/tournaments/TournamentTypeFilterBar';
+import { LeagueInviteJoinSheet } from '../components/tournaments/LeagueInviteJoinSheet';
 import { getRegistrationTournaments, getAllTournaments } from '../services/tournamentService';
-import { Swords, Search, KeyRound, Calendar, MapPin, RefreshCw, Trophy } from 'lucide-react';
+import {
+  filterTournamentsByType,
+  isLeagueTournament,
+  TournamentTypeFilter
+} from '../utils/seasonLogic';
+import { Swords, Search, KeyRound, Calendar, MapPin, RefreshCw, Ticket } from 'lucide-react';
 
 export const TournamentsView: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
@@ -17,15 +26,20 @@ export const TournamentsView: React.FC = () => {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<TournamentTypeFilter>('all');
 
   // Selected tournament modal
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
-  // Join Code Modal
+  // Join Code Modal (Reguler 6-digit)
   const [isJoinCodeOpen, setIsJoinCodeOpen] = useState(false);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [joinCodeError, setJoinCodeError] = useState('');
+
+  // League Invite Join Sheet & Post-Join 2-Deck Prompt
+  const [isLeagueInviteOpen, setIsLeagueInviteOpen] = useState(false);
+  const [postJoinDeckTournament, setPostJoinDeckTournament] = useState<Tournament | null>(null);
 
   const fetchTournaments = async () => {
     setLoading(true);
@@ -36,7 +50,7 @@ export const TournamentsView: React.FC = () => {
           const q = searchQuery.trim().toLowerCase();
           setTournaments(list.filter((t) =>
             (t.name && t.name.toLowerCase().includes(q)) ||
-            (t.joinCode && t.joinCode.toLowerCase() === q)
+            (!isLeagueTournament(t) && t.joinCode && t.joinCode.toLowerCase() === q)
           ));
         } else {
           setTournaments(list);
@@ -69,21 +83,31 @@ export const TournamentsView: React.FC = () => {
       return;
     }
 
-    const found = tournaments.find((t) => t.joinCode.toUpperCase() === clean);
+    const found = tournaments.find(
+      (t) => !isLeagueTournament(t) && t.joinCode.toUpperCase() === clean
+    );
     if (found) {
       setIsJoinCodeOpen(false);
       setJoinCodeInput('');
       setJoinCodeError('');
       handleOpenDetail(found);
     } else {
-      setJoinCodeError(`Turnamen dengan kode "${clean}" tidak ditemukan.`);
+      setJoinCodeError(
+        `Turnamen reguler dengan kode "${clean}" tidak ditemukan. Untuk Turnamen Liga, gunakan tombol "Masukkan Kode Undangan".`
+      );
     }
+  };
+
+  const handleLeagueInviteRegistered = (joinedTournament: Tournament) => {
+    setIsLeagueInviteOpen(false);
+    fetchTournaments();
+    setPostJoinDeckTournament(joinedTournament);
   };
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
           <h2 className="text-section-title text-dark-text font-semibold">
             Turnamen Tersedia
           </h2>
@@ -91,7 +115,7 @@ export const TournamentsView: React.FC = () => {
             Pendaftaran turnamen Swiss Round Digimon TCG
           </p>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           <Button
             variant="secondary"
             className="!min-h-[36px] !px-2.5 !text-caption"
@@ -109,13 +133,54 @@ export const TournamentsView: React.FC = () => {
         </div>
       </div>
 
+      {/* Kartu Pendaftaran Turnamen Liga via Kode Undangan */}
+      <Card
+        variant="surface"
+        className="flex items-center justify-between gap-3 border-amber-400/30 bg-amber-500/5"
+      >
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40">
+              LIGA
+            </span>
+            <span className="text-body font-semibold text-dark-text truncate">
+              Punya Undangan Liga?
+            </span>
+          </div>
+          <p className="text-[11px] text-dark-muted mt-0.5">
+            Daftar ke Turnamen Liga dengan kode undangan 8 karakter atau teks QR.
+          </p>
+        </div>
+        <Button
+          variant="primary"
+          className="!min-h-[36px] !px-3 !text-caption flex-shrink-0"
+          onClick={() => setIsLeagueInviteOpen(true)}
+          icon={<Ticket size={15} />}
+        >
+          Masukkan Kode Undangan
+        </Button>
+      </Card>
+
       {/* Pencarian Turnamen */}
       <Input
-        placeholder="Cari nama atau 6-digit kode turnamen..."
+        placeholder="Cari nama atau 6-digit kode turnamen reguler..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
         leftIcon={<Search size={18} />}
       />
+
+      {/* Filter Jenis Turnamen */}
+      {tournaments.length > 0 && (
+        <TournamentTypeFilterBar
+          value={typeFilter}
+          onChange={setTypeFilter}
+          counts={{
+            all: tournaments.length,
+            league: tournaments.filter((t) => isLeagueTournament(t)).length,
+            regular: tournaments.filter((t) => !isLeagueTournament(t)).length,
+          }}
+        />
+      )}
 
       {/* Daftar Turnamen */}
       <div className="flex flex-col gap-2.5">
@@ -130,48 +195,69 @@ export const TournamentsView: React.FC = () => {
               message="Belum ada turnamen berstatus pendaftaran saat ini."
             />
           </Card>
+        ) : filterTournamentsByType(tournaments, typeFilter).length === 0 ? (
+          <Card variant="surface" className="my-1">
+            <EmptyState
+              icon={Swords}
+              message={
+                typeFilter === 'league'
+                  ? 'Belum ada Turnamen Liga yang sedang membuka pendaftaran.'
+                  : 'Belum ada Turnamen Reguler yang sedang membuka pendaftaran.'
+              }
+            />
+          </Card>
         ) : (
-          tournaments.map((t) => (
-            <Card
-              key={t.id}
-              variant="surface"
-              className="cursor-pointer hover:border-accent/40 transition-colors flex flex-col gap-2"
-              onClick={() => handleOpenDetail(t)}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-body font-semibold text-dark-text">{t.name}</span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-accent/10 text-accent border border-accent/20">
-                      {t.format}
-                    </span>
+          filterTournamentsByType(tournaments, typeFilter).map((t) => {
+            const isLeague = isLeagueTournament(t);
+            return (
+              <Card
+                key={t.id}
+                variant="surface"
+                className="cursor-pointer hover:border-accent/40 transition-colors flex flex-col gap-2"
+                onClick={() => handleOpenDetail(t)}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-body font-semibold text-dark-text">{t.name}</span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-accent/10 text-accent border border-accent/20">
+                        {t.format}
+                      </span>
+                    </div>
+                    <LeagueSeasonBadge tournament={t} compact className="mt-1" />
+                    <p className="text-caption text-dark-muted mt-0.5">
+                      Oleh: <strong className="text-dark-text">{t.organizerName}</strong>
+                    </p>
                   </div>
-                  <p className="text-caption text-dark-muted mt-0.5">
-                    Oleh: <strong className="text-dark-text">{t.organizerName}</strong>
-                  </p>
+                  <StatusBadge label="Pendaftaran" variant="yellow" />
                 </div>
-                <StatusBadge label="Pendaftaran" variant="yellow" />
-              </div>
 
-              <div className="pt-2 border-t border-dark-border flex items-center justify-between text-caption text-dark-muted">
-                <div className="flex items-center gap-1.5">
-                  <Calendar size={13} />
-                  <span>{t.date}</span>
+                <div className="pt-2 border-t border-dark-border flex items-center justify-between text-caption text-dark-muted">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar size={13} />
+                    <span>{t.date}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <MapPin size={13} />
+                    <span className="truncate max-w-[140px]">{t.location}</span>
+                  </div>
+                  {isLeague ? (
+                    <span className="font-mono text-amber-300 text-[11px] font-semibold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-400/30">
+                      Khusus Undangan
+                    </span>
+                  ) : (
+                    <span className="font-mono text-accent text-[11px] font-semibold bg-dark-surface-high px-1.5 py-0.5 rounded border border-dark-border">
+                      #{t.joinCode}
+                    </span>
+                  )}
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <MapPin size={13} />
-                  <span className="truncate max-w-[140px]">{t.location}</span>
-                </div>
-                <span className="font-mono text-accent text-[11px] font-semibold bg-dark-surface-high px-1.5 py-0.5 rounded border border-dark-border">
-                  #{t.joinCode}
-                </span>
-              </div>
-            </Card>
-          ))
+              </Card>
+            );
+          })
         )}
       </div>
 
-      {/* Modal Gabung Lewat Kode */}
+      {/* Modal Gabung Lewat Kode Reguler */}
       <BottomSheet
         isOpen={isJoinCodeOpen}
         onClose={() => {
@@ -182,7 +268,7 @@ export const TournamentsView: React.FC = () => {
       >
         <form onSubmit={handleJoinByCode} className="flex flex-col gap-3 py-1">
           <Input
-            label="Kode Unik Turnamen (6 Karakter)"
+            label="Kode Unik Turnamen Reguler (6 Karakter)"
             placeholder="Contoh: X8K9P2"
             value={joinCodeInput}
             onChange={(e) => {
@@ -208,6 +294,47 @@ export const TournamentsView: React.FC = () => {
           </div>
         </form>
       </BottomSheet>
+
+      {/* Sheet Gabung Turnamen Liga via Kode Undangan */}
+      <LeagueInviteJoinSheet
+        isOpen={isLeagueInviteOpen}
+        onClose={() => setIsLeagueInviteOpen(false)}
+        currentUser={
+          currentUser
+            ? {
+                uid: currentUser.uid,
+                name: userProfile?.displayName || userProfile?.username || 'Pemain',
+              }
+            : null
+        }
+        onRegistered={handleLeagueInviteRegistered}
+      />
+
+      {/* Prompt Pengisian 2 Deck Liga Sesaat Setelah Berhasil Daftar */}
+      {postJoinDeckTournament && currentUser && (
+        <LeagueDeckModal
+          isOpen={Boolean(postJoinDeckTournament)}
+          onClose={() => {
+            const target = postJoinDeckTournament;
+            setPostJoinDeckTournament(null);
+            handleOpenDetail(target);
+          }}
+          tournamentId={postJoinDeckTournament.id}
+          tournamentName={postJoinDeckTournament.name}
+          playerId={currentUser.uid}
+          playerName={userProfile?.displayName || userProfile?.username || 'Pemain'}
+          playerUid={currentUser.uid}
+          isOrganizerMode={false}
+          actor={{
+            uid: currentUser.uid,
+            name: userProfile?.displayName || userProfile?.username || 'Pemain',
+          }}
+          allowSkip={true}
+          onSaved={() => {
+            fetchTournaments();
+          }}
+        />
+      )}
 
       {/* Modal Detail Turnamen */}
       <TournamentDetailModal

@@ -4,7 +4,8 @@ import {
   planTournamentDeletion,
   chunkOperations,
   filterParticipationsByExistingTournaments,
-  findOrphanParticipations
+  findOrphanParticipations,
+  findOrphanLeagueInvites
 } from '../utils/cascadeDeleteLogic.ts';
 
 test('CASCADE 1: planTournamentDeletion menyusun urutan (matches -> rounds -> players -> participations -> tournament)', () => {
@@ -144,5 +145,37 @@ test('CASCADE 5: findOrphanParticipations mendeteksi dokumen partisipasi dari tu
       'tourney_deleted_2'
     ]).length,
     0
+  );
+});
+
+test('CASCADE 6: planTournamentDeletion menyertakan decks dan leagueInvites sebelum menghapus turnamen', () => {
+  const plan = planTournamentDeletion('league_1', {
+    players: [{ id: 'p1' }],
+    decks: [{ id: 'p1' }],
+    leagueInvites: [{ id: 'K7P9M2WX' }]
+  });
+
+  assert.equal(plan.length, 4);
+  assert.deepEqual(
+    plan.map((op) => `${op.type}:${op.path}`),
+    [
+      'player:tournaments/league_1/players/p1',
+      'deck:tournaments/league_1/decks/p1',
+      'leagueInvite:leagueInvites/K7P9M2WX',
+      'tournament:tournaments/league_1'
+    ]
+  );
+});
+
+test('CASCADE 7: findOrphanLeagueInvites mendeteksi kode undangan yatim tanpa turnamen induk', () => {
+  const invites = [
+    { id: 'AAAA2222', tournamentId: 't_active' },
+    { id: 'BBBB3333', tournamentId: 't_deleted' },
+    { id: 'CCCC4444', tournamentId: '' }
+  ];
+  const orphans = findOrphanLeagueInvites(invites, new Set(['t_active']));
+  assert.deepEqual(
+    orphans.map((i) => i.id),
+    ['BBBB3333', 'CCCC4444']
   );
 });

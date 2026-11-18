@@ -42,6 +42,7 @@ import {
   isSwissMatch
 } from '../utils/topCutLogic';
 import { getTournamentPlayers } from './tournamentService';
+import { isTopCutMandatoryForTournament } from '../utils/seasonLogic';
 
 /**
  * Mengambil daftar seluruh ronde pada turnamen
@@ -472,6 +473,11 @@ export async function finishTournamentExplicit(
   const unconfirmed = currentMatches.filter((m) => m.status !== 'confirmed');
   if (unconfirmed.length > 0) {
     throw new Error('Belum semua pertandingan ronde terakhir terkonfirmasi.');
+  }
+
+  // Turnamen Liga wajib melewati fase Top Cut hingga babak Final selesai
+  if (isTopCutMandatoryForTournament(tourneyData) && !tourneyData.topCut) {
+    throw new Error('Turnamen Liga mewajibkan fase Top Cut (Top 4 atau Top 8) sebelum diakhiri.');
   }
 
   // Jika sedang dalam fase Top Cut, pastikan babak saat ini memang Final Top Cut

@@ -14,6 +14,8 @@ export interface ExportStandingsImageOptions {
   participations: Participation[];
   organizerName?: string;
   location?: string;
+  seasonLabel?: string | null;
+  isLeague?: boolean;
 }
 
 /**
@@ -83,6 +85,8 @@ export function exportStandingsToImage(
   let parts: Participation[] = [];
   let orgName: string | undefined;
   let locName: string | undefined;
+  let seasonLabel: string | null | undefined;
+  let isLeague = false;
 
   if (typeof nameOrOptions === 'object' && nameOrOptions !== null) {
     tName = nameOrOptions.tournamentName;
@@ -91,6 +95,8 @@ export function exportStandingsToImage(
     parts = nameOrOptions.participations || [];
     orgName = nameOrOptions.organizerName;
     locName = nameOrOptions.location;
+    seasonLabel = nameOrOptions.seasonLabel;
+    isLeague = Boolean(nameOrOptions.isLeague || seasonLabel);
   } else {
     tName = nameOrOptions || '';
     tDate = tournamentDate || '';
@@ -100,9 +106,10 @@ export function exportStandingsToImage(
     locName = location;
   }
 
+  const hasSeasonBanner = Boolean(seasonLabel || isLeague);
   const width = 1000;
   const rowHeight = 44;
-  const headerHeight = 185;
+  const headerHeight = hasSeasonBanner ? 215 : 185;
   const padding = 30;
   const totalRows = Math.min(parts.length, 32);
 
@@ -139,7 +146,7 @@ export function exportStandingsToImage(
     90
   );
 
-  // Baris Baru: Organizer dan Lokasi (Bold 15px, #E2E8F0)
+  // Baris Organizer dan Lokasi (Bold 15px, #E2E8F0)
   ctx.font = 'bold 15px sans-serif';
   ctx.fillStyle = '#e2e8f0';
   const orgLocLine = formatOrganizerLocationLine(
@@ -150,8 +157,28 @@ export function exportStandingsToImage(
   );
   ctx.fillText(orgLocLine, padding, 118);
 
-  // Table Header Background (digeser ~25px ke tableY = 150)
-  const tableY = 150;
+  // Baris penanda LIGA & Season (jika Turnamen Liga)
+  if (hasSeasonBanner) {
+    let cursorX = padding;
+    if (isLeague) {
+      ctx.font = 'bold 12px monospace';
+      const ligaText = 'LIGA';
+      const ligaWidth = ctx.measureText(ligaText).width + 16;
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect(cursorX, 132, ligaWidth, 22);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText(ligaText, cursorX + 8, 147);
+      cursorX += ligaWidth + 10;
+    }
+    if (seasonLabel) {
+      ctx.font = 'bold 14px monospace';
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillText(seasonLabel, cursorX, 148);
+    }
+  }
+
+  // Table Header Background
+  const tableY = hasSeasonBanner ? 176 : 150;
   ctx.fillStyle = '#1e293b'; // slate-800
   ctx.fillRect(padding, tableY, width - padding * 2, 36);
 

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Participation, DeckColor, Tournament } from '../../types';
+import { Participation, DeckColor, Tournament, TournamentSeason, TournamentType } from '../../types';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { DeckColorDots } from '../../components/common/DeckColorDots';
+import { LeagueSeasonBadge } from '../../components/tournaments/LeagueSeasonBadge';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import {
@@ -40,6 +41,8 @@ export interface FinalStandingsCardProps {
   tournamentName: string;
   format: 'BO1' | 'BO3';
   status: string;
+  tournamentType?: TournamentType;
+  season?: TournamentSeason;
   highlightUid?: string;
   onDeckChanged?: () => void;
 }
@@ -51,6 +54,8 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
   tournamentName,
   format,
   status,
+  tournamentType,
+  season,
   highlightUid,
   onDeckChanged
 }) => {
@@ -59,6 +64,8 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isProvisional, setIsProvisional] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [resolvedType, setResolvedType] = useState<TournamentType | undefined>(tournamentType);
+  const [resolvedSeason, setResolvedSeason] = useState<TournamentSeason | undefined>(season);
 
   const loadData = useCallback(async (forceReload: boolean = false) => {
     if (!tournamentId) return;
@@ -83,6 +90,12 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
         setParticipations(official);
         setCachedStandings(tournamentId, official);
         setIsProvisional(false);
+        if (!tournamentType && official[0]?.tournamentType) {
+          setResolvedType(official[0].tournamentType);
+        }
+        if (!season && official[0]?.season) {
+          setResolvedSeason(official[0].season);
+        }
       } else if (status === 'finished') {
         // 2. Jika turnamen finished tapi belum ada participations, hitung klasemen sementara
         const [players, matches, tourneySnap] = await Promise.all([
@@ -91,6 +104,10 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
           getDoc(doc(db, 'tournaments', tournamentId))
         ]);
         const tourneyData = tourneySnap.exists() ? (tourneySnap.data() as Tournament) : null;
+        if (tourneyData) {
+          setResolvedType(tourneyData.type);
+          setResolvedSeason(tourneyData.season);
+        }
         const swissStandings = calculateTournamentStandings(
           players,
           filterSwissMatches(matches),
@@ -213,7 +230,7 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
         <div className="flex items-center gap-2">
           <Trophy size={18} className="text-accent flex-shrink-0" />
           <div>
-            <h3 className="text-body font-semibold text-dark-text flex items-center gap-1.5">
+            <h3 className="text-body font-semibold text-dark-text flex items-center gap-1.5 flex-wrap">
               <span>Klasemen Akhir</span>
               {isProvisional && (
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-status-yellow/15 text-status-yellow border border-status-yellow/30 font-normal">
@@ -221,6 +238,12 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
                 </span>
               )}
             </h3>
+            <LeagueSeasonBadge
+              tournamentType={tournamentType || resolvedType}
+              season={season || resolvedSeason}
+              compact
+              className="mt-1"
+            />
             <p className="text-[11px] text-dark-muted">
               {totalCount} peserta &bull; {format}
             </p>

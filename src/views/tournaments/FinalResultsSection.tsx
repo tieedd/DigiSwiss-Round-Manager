@@ -21,6 +21,12 @@ import {
 import { exportStandingsToImage } from '../../utils/canvasExport';
 import { DeckColorDots } from '../../components/common/DeckColorDots';
 import { DeckRegistrationModal } from './DeckRegistrationModal';
+import { LeagueSeasonBadge } from '../../components/tournaments/LeagueSeasonBadge';
+import {
+  buildTournamentExportFileName,
+  formatSeasonLabel,
+  isLeagueTournament
+} from '../../utils/seasonLogic';
 import { useToast } from '../../context/ToastContext';
 import { saveFileNative, copyTextNative } from '../../services/nativeBridge';
 import {
@@ -106,11 +112,17 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
     }
   };
 
+  const isLeague = isLeagueTournament(tournament);
+  const seasonLabel = formatSeasonLabel(tournament.season);
+
   // Ekspor CSV
   const handleExportCsv = async () => {
     if (participations.length === 0) return;
-    const csvContent = generateStandingsCsv(tournament.name, participations);
-    const fileName = `Hasil-${tournament.name.replace(/\s+/g, '_')}.csv`;
+    const csvContent = generateStandingsCsv(tournament.name, participations, {
+      seasonLabel,
+      isLeague
+    });
+    const fileName = buildTournamentExportFileName(tournament, 'csv');
     const res = await saveFileNative(fileName, 'text/csv', csvContent);
     if (res.ok) {
       showToastSuccess('Ekspor berhasil', `File ${res.fileName} tersimpan di folder Unduhan.`);
@@ -128,7 +140,9 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
       format: tournament.format,
       participations,
       organizerName: tournament.organizerName,
-      location: tournament.location
+      location: tournament.location,
+      seasonLabel,
+      isLeague
     });
     const copyRes = await copyTextNative(textContent);
     if (copyRes.ok) {
@@ -137,7 +151,7 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
       showToastSuccess('Ekspor berhasil', 'Teks ringkasan berhasil disalin.');
     } else {
       // Fallback download .txt
-      const fileName = `Hasil-${tournament.name.replace(/\s+/g, '_')}.txt`;
+      const fileName = buildTournamentExportFileName(tournament, 'txt');
       const res = await saveFileNative(fileName, 'text/plain', textContent);
       if (res.ok) {
         showToastSuccess('Ekspor berhasil', `File ${res.fileName} tersimpan di folder Unduhan.`);
@@ -156,10 +170,12 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
       format: tournament.format,
       participations,
       organizerName: tournament.organizerName,
-      location: tournament.location
+      location: tournament.location,
+      seasonLabel,
+      isLeague
     });
     if (!dataUrl) return;
-    const fileName = `Hasil-${tournament.name.replace(/\s+/g, '_')}.png`;
+    const fileName = buildTournamentExportFileName(tournament, 'png');
     const res = await saveFileNative(fileName, 'image/png', dataUrl);
     if (res.ok) {
       showToastSuccess('Ekspor berhasil', `File ${res.fileName} tersimpan di folder Unduhan.`);
@@ -223,7 +239,7 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
           <Card variant="surface-high" className="p-3.5 flex flex-col gap-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-dark-border pb-3">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Award className="text-accent" size={20} />
                   <h3 className="text-body font-bold text-dark-text">
                     Hasil Akhir Resmi Turnamen
@@ -232,6 +248,7 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
                     Finalized
                   </span>
                 </div>
+                <LeagueSeasonBadge tournament={tournament} compact className="mt-1" />
                 <p className="text-caption text-dark-muted mt-0.5">
                   Hasil resmi tercatat di riwayat partisipasi pemain.
                 </p>

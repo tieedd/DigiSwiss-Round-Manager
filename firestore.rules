@@ -142,15 +142,30 @@ service cloud.firestore {
         allow read: if isAuthenticated() && isCurrentUserActive();
 
         // Pendaftaran:
-        // A. Pemain mendaftar dirinya sendiri saat status turnamen 'registration' (pid == request.auth.uid, status awal 'waiting', manual false)
-        // B. Organizer pemilik turnamen atau Admin mendaftarkan peserta (manual atau tambah dari histori) (status == 'accepted')
+        // A. Turnamen Reguler: Pemain mendaftar dirinya sendiri saat status turnamen 'registration' (pid == request.auth.uid, status awal 'waiting', manual false)
+        // B. Turnamen Liga: Pemain mendaftar dirinya sendiri dengan kode undangan valid & aktif -> langsung status 'accepted'
+        // C. Organizer pemilik turnamen atau Admin mendaftarkan peserta (manual atau tambah dari histori) (status == 'accepted')
         allow create: if isCurrentUserActive() && (
           (
+            get(/databases/$(database)/documents/tournaments/$(tid)).data.get('type', 'regular') != 'league' &&
             pid == request.auth.uid &&
             get(/databases/$(database)/documents/tournaments/$(tid)).data.status == 'registration' &&
             request.resource.data.uid == request.auth.uid &&
             request.resource.data.manual == false &&
             request.resource.data.status == 'waiting'
+          ) ||
+          (
+            get(/databases/$(database)/documents/tournaments/$(tid)).data.get('type', 'regular') == 'league' &&
+            pid == request.auth.uid &&
+            get(/databases/$(database)/documents/tournaments/$(tid)).data.status == 'registration' &&
+            request.resource.data.uid == request.auth.uid &&
+            request.resource.data.manual == false &&
+            request.resource.data.status == 'accepted' &&
+            ('inviteCode' in request.resource.data) &&
+            request.resource.data.inviteCode is string &&
+            exists(/databases/$(database)/documents/leagueInvites/$(request.resource.data.inviteCode)) &&
+            get(/databases/$(database)/documents/leagueInvites/$(request.resource.data.inviteCode)).data.active == true &&
+            get(/databases/$(database)/documents/leagueInvites/$(request.resource.data.inviteCode)).data.tournamentId == tid
           ) ||
           (
             (get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid || isAdmin()) &&
@@ -171,6 +186,87 @@ service cloud.firestore {
         // Pembatalan pendaftaran / Penghapusan peserta:
         // A. Pemain membatalkan pendaftaran miliknya sendiri selama turnamen masih 'registration'
         // B. Organizer pemilik turnamen atau Admin boleh menghapus peserta
+        allow delete: if isCurrentUserActive() && (
+          (
+            pid == request.auth.uid &&
+            get(/databases/$(database)/documents/tournaments/$(tid)).data.status == 'registration'
+          ) ||
+          get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid ||
+          isAdmin()
+        );
+      }
+
+      // Sub-koleksi Deck Privat Liga: tournaments/{tid}/decks/{pid}
+      match /decks/{pid} {
+        allow read: if isCurrentUserActive() && (
+          pid == request.auth.uid ||
+          get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid ||
+          isAdmin() ||
+          (
+            resource != null &&
+            ('revealedTo' in resource.data) &&
+            resource.data.revealedTo is list &&
+            request.auth.uid in resource.data.revealedTo
+          )
+        );
+
+        allow create: if isCurrentUserActive() &&
+          request.resource.data.decks is list &&
+          request.resource.data.decks.size() == 2 &&
+          request.resource.data.decks[0].name is string &&
+          request.resource.data.decks[0].name.size() >= 1 &&
+          request.resource.data.decks[0].name.size() <= 40 &&
+          request.resource.data.decks[0].colors is list &&
+          request.resource.data.decks[0].colors.size() >= 1 &&
+          request.resource.data.decks[0].colors.size() <= 7 &&
+          request.resource.data.decks[0].colors.hasOnly(['Merah', 'Biru', 'Kuning', 'Hijau', 'Hitam', 'Ungu', 'Putih']) &&
+          request.resource.data.decks[1].name is string &&
+          request.resource.data.decks[1].name.size() >= 1 &&
+          request.resource.data.decks[1].name.size() <= 40 &&
+          request.resource.data.decks[1].colors is list &&
+          request.resource.data.decks[1].colors.size() >= 1 &&
+          request.resource.data.decks[1].colors.size() <= 7 &&
+          request.resource.data.decks[1].colors.hasOnly(['Merah', 'Biru', 'Kuning', 'Hijau', 'Hitam', 'Ungu', 'Putih']) &&
+          request.resource.data.revealedTo is list &&
+          (
+            (
+              pid == request.auth.uid &&
+              get(/databases/$(database)/documents/tournaments/$(tid)).data.status == 'registration' &&
+              exists(/databases/$(database)/documents/tournaments/$(tid)/players/$(pid)) &&
+              request.resource.data.revealedTo.size() == 0
+            ) ||
+            get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid ||
+            isAdmin()
+          );
+
+        allow update: if isCurrentUserActive() &&
+          request.resource.data.decks is list &&
+          request.resource.data.decks.size() == 2 &&
+          request.resource.data.decks[0].name is string &&
+          request.resource.data.decks[0].name.size() >= 1 &&
+          request.resource.data.decks[0].name.size() <= 40 &&
+          request.resource.data.decks[0].colors is list &&
+          request.resource.data.decks[0].colors.size() >= 1 &&
+          request.resource.data.decks[0].colors.size() <= 7 &&
+          request.resource.data.decks[0].colors.hasOnly(['Merah', 'Biru', 'Kuning', 'Hijau', 'Hitam', 'Ungu', 'Putih']) &&
+          request.resource.data.decks[1].name is string &&
+          request.resource.data.decks[1].name.size() >= 1 &&
+          request.resource.data.decks[1].name.size() <= 40 &&
+          request.resource.data.decks[1].colors is list &&
+          request.resource.data.decks[1].colors.size() >= 1 &&
+          request.resource.data.decks[1].colors.size() <= 7 &&
+          request.resource.data.decks[1].colors.hasOnly(['Merah', 'Biru', 'Kuning', 'Hijau', 'Hitam', 'Ungu', 'Putih']) &&
+          request.resource.data.revealedTo is list &&
+          (
+            (
+              pid == request.auth.uid &&
+              get(/databases/$(database)/documents/tournaments/$(tid)).data.status == 'registration' &&
+              request.resource.data.revealedTo == resource.data.get('revealedTo', [])
+            ) ||
+            get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid ||
+            isAdmin()
+          );
+
         allow delete: if isCurrentUserActive() && (
           (
             pid == request.auth.uid &&
@@ -262,6 +358,40 @@ service cloud.firestore {
           isAdmin()
         );
       }
+    }
+
+    // 4b. Koleksi Undangan Turnamen Liga: leagueInvites/{code}
+    match /leagueInvites/{code} {
+      allow get: if isCurrentUserActive();
+
+      allow list: if isCurrentUserActive() && (
+        resource.data.organizerId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow create: if isOrganizer() &&
+        code.matches('^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$') &&
+        request.resource.data.active is bool &&
+        request.resource.data.tournamentId is string &&
+        request.resource.data.organizerId is string &&
+        exists(/databases/$(database)/documents/tournaments/$(request.resource.data.tournamentId)) &&
+        request.resource.data.organizerId == get(/databases/$(database)/documents/tournaments/$(request.resource.data.tournamentId)).data.organizerId &&
+        (
+          get(/databases/$(database)/documents/tournaments/$(request.resource.data.tournamentId)).data.organizerId == request.auth.uid ||
+          isAdmin()
+        );
+
+      allow update: if isCurrentUserActive() &&
+        (resource.data.organizerId == request.auth.uid || isAdmin()) &&
+        request.resource.data.organizerId == resource.data.organizerId &&
+        request.resource.data.tournamentId == resource.data.tournamentId &&
+        request.resource.data.active is bool &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'tournamentName', 'seasonLabel', 'updatedAt']);
+
+      allow delete: if isCurrentUserActive() && (
+        resource.data.organizerId == request.auth.uid ||
+        isAdmin()
+      );
     }
 
     // 5. Koleksi Partisipasi & Statistik: participations/{participationId}

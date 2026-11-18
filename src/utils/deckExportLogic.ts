@@ -1,3 +1,5 @@
+import { formatSeasonLabel } from './seasonLogic.ts';
+
 export type DeckColor =
   | 'Merah'
   | 'Biru'
@@ -13,6 +15,8 @@ export interface Participation {
   tournamentName: string;
   date: string;
   format: string;
+  tournamentType?: 'regular' | 'league';
+  season?: { number: number; month: number; year: number };
   playerId: string;
   uid: string | null;
   organizerId: string;
@@ -198,14 +202,26 @@ export function calculateDeckFillProgress(participations: Participation[]): {
   };
 }
 
+export interface GenerateStandingsCsvOptions {
+  seasonLabel?: string | null;
+  isLeague?: boolean;
+}
+
 /**
  * Menghasilkan konten string CSV untuk ekspor hasil akhir
  */
 export function generateStandingsCsv(
   tournamentName: string,
-  participations: Participation[]
+  participations: Participation[],
+  options?: GenerateStandingsCsvOptions
 ): string {
   const hasTopCut = participations.some((p) => Boolean(p.topCutResult));
+  const resolvedSeason =
+    options?.seasonLabel || formatSeasonLabel(participations[0]?.season);
+  const resolvedLeague =
+    options?.isLeague ??
+    (participations[0]?.tournamentType === 'league' || Boolean(resolvedSeason));
+
   const headers = [
     'Peringkat',
     'Nama Pemain',
@@ -229,6 +245,15 @@ export function generateStandingsCsv(
     return `"${str}"`;
   };
 
+  const metadataRows = resolvedSeason
+    ? [
+        `${escapeCsv('Turnamen')},${escapeCsv(tournamentName)}`,
+        `${escapeCsv('Jenis')},${escapeCsv(resolvedLeague ? 'Turnamen Liga' : 'Turnamen Reguler')}`,
+        `${escapeCsv('Season')},${escapeCsv(resolvedSeason)}`,
+        ''
+      ]
+    : [];
+
   const rows = participations.map((p) => {
     const cols = [
       escapeCsv(p.rank),
@@ -251,7 +276,7 @@ export function generateStandingsCsv(
     return cols;
   });
 
-  return [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+  return [...metadataRows, headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
 }
 
 export interface GenerateStandingsTextOptions {
@@ -261,6 +286,8 @@ export interface GenerateStandingsTextOptions {
   participations: Participation[];
   organizerName?: string;
   location?: string;
+  seasonLabel?: string | null;
+  isLeague?: boolean;
 }
 
 /**
@@ -280,6 +307,8 @@ export function generateStandingsText(
   let parts: Participation[] = [];
   let orgName: string | undefined;
   let locName: string | undefined;
+  let seasonLabel: string | null | undefined;
+  let isLeague = false;
 
   if (Array.isArray(nameOrOptions)) {
     // Dipanggil sebagai generateStandingsText(participations)
@@ -288,6 +317,8 @@ export function generateStandingsText(
       tournamentName = parts[0].tournamentName || 'Turnamen';
       dateStr = parts[0].date || '-';
       formatStr = parts[0].format || '-';
+      seasonLabel = formatSeasonLabel(parts[0].season);
+      isLeague = parts[0].tournamentType === 'league' || Boolean(seasonLabel);
     }
   } else if (typeof nameOrOptions === 'object' && nameOrOptions !== null) {
     tournamentName = nameOrOptions.tournamentName;
@@ -296,6 +327,11 @@ export function generateStandingsText(
     parts = nameOrOptions.participations || [];
     orgName = nameOrOptions.organizerName;
     locName = nameOrOptions.location;
+    seasonLabel =
+      nameOrOptions.seasonLabel ?? formatSeasonLabel(parts[0]?.season);
+    isLeague =
+      nameOrOptions.isLeague ??
+      (parts[0]?.tournamentType === 'league' || Boolean(seasonLabel));
   } else {
     tournamentName = nameOrOptions || '';
     dateStr = tournamentDate || '';
@@ -303,11 +339,18 @@ export function generateStandingsText(
     parts = participations || [];
     orgName = organizerName;
     locName = location;
+    seasonLabel = formatSeasonLabel(parts[0]?.season);
+    isLeague = parts[0]?.tournamentType === 'league' || Boolean(seasonLabel);
   }
 
   const lines: string[] = [];
   lines.push(`=======================================================`);
   lines.push(`HASIL AKHIR TURNAMEN: ${tournamentName.toUpperCase()}`);
+  if (seasonLabel || isLeague) {
+    lines.push(
+      `Jenis: ${isLeague ? 'Turnamen Liga' : 'Turnamen Reguler'}${seasonLabel ? ` | ${seasonLabel}` : ''}`
+    );
+  }
   lines.push(`Tanggal: ${dateStr} | Format: ${formatStr}`);
   lines.push(
     `Organizer: ${orgName && orgName.trim() ? orgName.trim() : '-'} | Lokasi: ${locName && locName.trim() ? locName.trim() : '-'}`

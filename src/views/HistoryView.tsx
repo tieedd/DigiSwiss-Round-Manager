@@ -15,9 +15,16 @@ import { PlayerMatchDetailsModal } from './history/PlayerMatchDetailsModal';
 import { TournamentDetailModal } from './tournaments/TournamentDetailModal';
 import { DeckRegistrationModal } from './tournaments/DeckRegistrationModal';
 import { DeckColorDots } from '../components/common/DeckColorDots';
+import { LeagueSeasonBadge } from '../components/tournaments/LeagueSeasonBadge';
+import { TournamentTypeFilterBar } from '../components/tournaments/TournamentTypeFilterBar';
 import { countUnfilledDecks } from '../utils/finalStandingsLogic';
 import { filterParticipationsByExistingTournaments } from '../utils/cascadeDeleteLogic';
 import { checkExistingTournaments } from '../services/tournamentCleanupService';
+import {
+  filterTournamentsByType,
+  isLeagueTournament,
+  TournamentTypeFilter
+} from '../utils/seasonLogic';
 import {
   History,
   Search,
@@ -50,6 +57,7 @@ export const HistoryView: React.FC = () => {
   // Filter & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState<TournamentTypeFilter>('all');
   const [currentPage, setCurrentPage] = useState(1);
 
   // Modals
@@ -132,7 +140,8 @@ export const HistoryView: React.FC = () => {
 
   // Filter & Paginasi untuk Organizer & Admin
   const filteredTournaments = useMemo(() => {
-    return tournaments.filter((t) => {
+    const byType = filterTournamentsByType(tournaments, typeFilter);
+    return byType.filter((t) => {
       const matchSearch =
         searchQuery === '' ||
         t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -143,12 +152,12 @@ export const HistoryView: React.FC = () => {
 
       return matchSearch && matchDate;
     });
-  }, [tournaments, searchQuery, dateFilter]);
+  }, [tournaments, typeFilter, searchQuery, dateFilter]);
 
   // Reset ke halaman 1 jika filter berubah
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, dateFilter]);
+  }, [searchQuery, dateFilter, typeFilter]);
 
   const totalItems = role === 'player' ? filteredParticipations.length : filteredTournaments.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
@@ -321,6 +330,19 @@ export const HistoryView: React.FC = () => {
         </div>
       </Card>
 
+      {/* Filter Jenis Turnamen untuk Organizer/Admin */}
+      {(isOrganizer || isAdmin) && tournaments.length > 0 && (
+        <TournamentTypeFilterBar
+          value={typeFilter}
+          onChange={setTypeFilter}
+          counts={{
+            all: tournaments.length,
+            league: tournaments.filter((t) => isLeagueTournament(t)).length,
+            regular: tournaments.filter((t) => !isLeagueTournament(t)).length,
+          }}
+        />
+      )}
+
       {/* Error Banner */}
       {errorMsg && (
         <div className="p-3 rounded-card bg-status-red/10 border border-status-red/30 text-status-red text-caption flex items-center gap-2">
@@ -403,6 +425,12 @@ export const HistoryView: React.FC = () => {
                             </span>
                           )}
                         </div>
+                        <LeagueSeasonBadge
+                          tournamentType={p.tournamentType}
+                          season={p.season}
+                          compact
+                          className="mt-1"
+                        />
                         <span className="text-caption text-dark-muted flex items-center gap-1.5 mt-0.5">
                           <Calendar size={12} />
                           <span>{p.date}</span>
@@ -491,7 +519,7 @@ export const HistoryView: React.FC = () => {
                 onClick={() => handleOpenTournamentDetails(t)}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-body font-semibold text-dark-text">
                         {t.name}
@@ -503,6 +531,7 @@ export const HistoryView: React.FC = () => {
                         #{t.joinCode}
                       </span>
                     </div>
+                    <LeagueSeasonBadge tournament={t} compact className="mt-1" />
                     <span className="text-caption text-dark-muted flex items-center gap-1.5 mt-0.5">
                       <Calendar size={12} />
                       <span>{t.date}</span>

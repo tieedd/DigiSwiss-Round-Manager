@@ -30,6 +30,8 @@ import {
   filterSwissMatches
 } from '../utils/topCutLogic';
 import { getSessionTournament, setSessionTournament } from '../utils/sessionStore';
+import { LeagueSeasonBadge } from '../components/tournaments/LeagueSeasonBadge';
+import { formatSeasonLabel, isLeagueTournament } from '../utils/seasonLogic';
 
 export const StandingsView: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
@@ -207,18 +209,24 @@ export const StandingsView: React.FC = () => {
               }}
               className="w-full bg-dark-surface border border-dark-border rounded-btn px-3 py-2 text-caption text-dark-text focus:outline-none focus:border-accent"
             >
-              {tournaments.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.status === 'running' ? 'Sedang Berjalan' : t.status === 'finished' ? 'Selesai' : 'Pendaftaran'}) - #{t.joinCode}
-                </option>
-              ))}
+              {tournaments.map((t) => {
+                const sLabel = isLeagueTournament(t) ? formatSeasonLabel(t.season) : null;
+                return (
+                  <option key={t.id} value={t.id}>
+                    {isLeagueTournament(t) ? '[LIGA] ' : ''}
+                    {t.name}
+                    {sLabel ? ` - ${sLabel}` : ''} (
+                    {t.status === 'running' ? 'Sedang Berjalan' : t.status === 'finished' ? 'Selesai' : 'Pendaftaran'}) - #{t.joinCode}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
           {selectedTournament && (
             <Card variant="surface-high" className="flex flex-col gap-1.5 p-3">
               <div className="flex items-start justify-between gap-2">
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-body font-semibold text-dark-text">
                       {selectedTournament.name}
@@ -227,6 +235,7 @@ export const StandingsView: React.FC = () => {
                       {selectedTournament.format}
                     </span>
                   </div>
+                  <LeagueSeasonBadge tournament={selectedTournament} compact className="mt-1" />
                   <span className="text-caption text-dark-muted mt-0.5 block">
                     Penyelenggara: {selectedTournament.organizerName} • Kode: #{selectedTournament.joinCode}
                   </span>
