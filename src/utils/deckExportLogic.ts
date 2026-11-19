@@ -307,7 +307,43 @@ export function generateStandingsCsv(
     return cols;
   });
 
-  return [...metadataRows, headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+  const section1HeaderRow = resolvedLeague
+    ? [`${escapeCsv('Peringkat Akhir')}`]
+    : [];
+
+  const swissSectionRows: string[] = [];
+  if (resolvedLeague) {
+    const swissSorted = [...participations].sort(
+      (a, b) => (a.swissRank ?? a.rank) - (b.swissRank ?? b.rank) || a.rank - b.rank
+    );
+    swissSectionRows.push('');
+    swissSectionRows.push(`${escapeCsv('Klasemen Swiss (sebelum Top Cut)')}`);
+    swissSectionRows.push(
+      ['Peringkat Swiss', 'Nama Pemain', 'Poin', 'W-L', 'OMW%']
+        .map((h) => escapeCsv(h))
+        .join(',')
+    );
+    swissSorted.forEach((p) => {
+      const swissRankVal = p.swissRank ?? p.rank;
+      swissSectionRows.push(
+        [
+          escapeCsv(swissRankVal),
+          escapeCsv(p.name),
+          escapeCsv(p.points),
+          escapeCsv(`${p.wins}-${p.losses}`),
+          escapeCsv(`${p.omw}%`)
+        ].join(',')
+      );
+    });
+  }
+
+  return [
+    ...metadataRows,
+    ...section1HeaderRow,
+    headers.join(','),
+    ...rows.map((r) => r.join(',')),
+    ...swissSectionRows
+  ].join('\r\n');
 }
 
 export interface GenerateStandingsTextOptions {
@@ -389,6 +425,11 @@ export function generateStandingsText(
   lines.push(`=======================================================`);
   lines.push(``);
 
+  if (isLeague) {
+    lines.push(`--- PERINGKAT AKHIR ---`);
+    lines.push(``);
+  }
+
   for (const p of parts) {
     const medal = p.rank === 1 ? '🥇' : p.rank === 2 ? '🥈' : p.rank === 3 ? '🥉' : `#${p.rank}`;
     const topCutTag = p.topCutResult ? ` [${p.topCutResult}]` : '';
@@ -414,6 +455,21 @@ export function generateStandingsText(
       `   Tie-breakers -> OMW: ${p.omw}% | GW: ${p.gw}% | OGW: ${p.ogw}%`
     );
     lines.push(`-------------------------------------------------------`);
+  }
+
+  if (isLeague && parts.length > 0) {
+    const swissSorted = [...parts].sort(
+      (a, b) => (a.swissRank ?? a.rank) - (b.swissRank ?? b.rank) || a.rank - b.rank
+    );
+    lines.push(``);
+    lines.push(`--- KLASEMEN SWISS (SEBELUM TOP CUT) ---`);
+    lines.push(``);
+    for (const p of swissSorted) {
+      const sRank = p.swissRank ?? p.rank;
+      lines.push(
+        `#${sRank} ${p.name.padEnd(20)} | Poin: ${String(p.points).padStart(2)} | W-L: ${p.wins}-${p.losses} | OMW: ${p.omw}%`
+      );
+    }
   }
 
   lines.push(``);

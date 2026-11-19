@@ -107,22 +107,40 @@ export function exportStandingsToImage(
   }
 
   const hasSeasonBanner = Boolean(seasonLabel || isLeague);
-  const totalRows = Math.min(parts.length, 32);
+  const totalRows = Math.min(parts.length, isLeague ? 64 : 32);
   const hasTwoDeckRows =
     isLeague ||
     parts.slice(0, totalRows).some((p) => Array.isArray(p.decks) && p.decks.length > 0);
   const width = 1000;
   const rowHeight = hasTwoDeckRows ? 56 : 44;
-  const headerHeight = hasSeasonBanner ? 215 : 185;
+  const section1LabelHeight = isLeague ? 28 : 0;
+  const headerHeight = (hasSeasonBanner ? 215 : 185) + section1LabelHeight;
   const padding = 30;
+
+  // Bagian 2 untuk Turnamen Liga: Klasemen Swiss (sebelum Top Cut)
+  const swissRowHeight = 38;
+  const swissSectionHeight =
+    isLeague && totalRows > 0 ? 68 + totalRows * swissRowHeight : 0;
 
   // Ambil hanya warna deck yang ada di tabel hasil
   const usedColors = getUsedDeckColors(parts, totalRows);
   const legendHeight = usedColors.length > 0 ? 32 : 0;
-  const height = headerHeight + totalRows * rowHeight + padding * 2 + legendHeight + 40;
+  const height =
+    headerHeight +
+    totalRows * rowHeight +
+    swissSectionHeight +
+    padding * 2 +
+    legendHeight +
+    40;
 
-  canvas.width = width;
-  canvas.height = height;
+  if (isLeague) {
+    canvas.width = width * 2;
+    canvas.height = height * 2;
+    ctx.scale(2, 2);
+  } else {
+    canvas.width = width;
+    canvas.height = height;
+  }
 
   // Background
   ctx.fillStyle = '#0f172a'; // slate-900 (tetap palet gelap)
@@ -180,8 +198,15 @@ export function exportStandingsToImage(
     }
   }
 
+  // Section 1 heading (untuk Turnamen Liga)
+  const tableY = (hasSeasonBanner ? 176 : 150) + section1LabelHeight;
+  if (isLeague) {
+    ctx.font = 'bold 13px monospace';
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillText('PERINGKAT AKHIR', padding, tableY - 10);
+  }
+
   // Table Header Background
-  const tableY = hasSeasonBanner ? 176 : 150;
   ctx.fillStyle = '#1e293b'; // slate-800
   ctx.fillRect(padding, tableY, width - padding * 2, 36);
 
@@ -370,6 +395,66 @@ export function exportStandingsToImage(
 
     currentY += rowHeight;
   });
+
+  // Bagian 2 untuk Turnamen Liga: Klasemen Swiss (sebelum Top Cut)
+  if (isLeague && totalRows > 0) {
+    const swissSorted = [...parts]
+      .slice(0, totalRows)
+      .sort((a, b) => (a.swissRank ?? a.rank) - (b.swissRank ?? b.rank) || a.rank - b.rank);
+
+    const swissTitleY = currentY + 26;
+    ctx.font = 'bold 13px monospace';
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText('KLASEMEN SWISS (SEBELUM TOP CUT)', padding, swissTitleY);
+
+    const swissTableY = swissTitleY + 10;
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(padding, swissTableY, width - padding * 2, 32);
+
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = 'bold 12px monospace';
+    ctx.fillText('SWISS #', padding + 15, swissTableY + 21);
+    ctx.fillText('NAMA PEMAIN', padding + 110, swissTableY + 21);
+    ctx.fillText('PTS', padding + 580, swissTableY + 21);
+    ctx.fillText('W - L', padding + 690, swissTableY + 21);
+    ctx.fillText('OMW%', padding + 810, swissTableY + 21);
+
+    currentY = swissTableY + 32;
+
+    swissSorted.forEach((p, idx) => {
+      const rowBg = idx % 2 === 0 ? '#131d31' : '#0f172a';
+      ctx.fillStyle = rowBg;
+      ctx.fillRect(padding, currentY, width - padding * 2, swissRowHeight);
+
+      const sRank = p.swissRank ?? p.rank;
+      const textY = currentY + 24;
+
+      ctx.font = 'bold 13px monospace';
+      ctx.fillStyle = sRank <= 3 ? '#fbbf24' : '#94a3b8';
+      ctx.fillText(`#${sRank}`, padding + 20, textY);
+
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillText(
+        truncateTextToWidth((str) => ctx.measureText(str).width, p.name, 445),
+        padding + 110,
+        textY
+      );
+
+      ctx.font = 'bold 13px monospace';
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillText(String(p.points), padding + 585, textY);
+
+      ctx.font = '13px monospace';
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillText(`${p.wins} - ${p.losses}`, padding + 695, textY);
+
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillText(`${p.omw}%`, padding + 815, textY);
+
+      currentY += swissRowHeight;
+    });
+  }
 
   // Legenda warna deck di atas footer (hanya jika ada warna yang dipakai)
   if (usedColors.length > 0) {

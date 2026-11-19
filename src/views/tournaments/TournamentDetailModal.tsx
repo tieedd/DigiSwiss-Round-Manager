@@ -1078,15 +1078,17 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
               season={tournament.season}
               highlightUid={currentUser?.uid}
             />
-            <Button
-              variant="secondary"
-              fullWidth
-              className="!min-h-[36px] !text-caption"
-              onClick={handleCopyStandingsText}
-              icon={copiedStandings ? <Check size={14} className="text-status-green" /> : <Copy size={14} />}
-            >
-              {copiedStandings ? 'Hasil Berhasil Disalin!' : 'Salin Hasil'}
-            </Button>
+            {(!isLeague || Boolean(tournament.finalized)) && (
+              <Button
+                variant="secondary"
+                fullWidth
+                className="!min-h-[36px] !text-caption"
+                onClick={handleCopyStandingsText}
+                icon={copiedStandings ? <Check size={14} className="text-status-green" /> : <Copy size={14} />}
+              >
+                {copiedStandings ? 'Hasil Berhasil Disalin!' : 'Salin Hasil'}
+              </Button>
+            )}
           </div>
         )}
 

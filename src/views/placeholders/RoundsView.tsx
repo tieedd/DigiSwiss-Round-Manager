@@ -66,6 +66,25 @@ import {
 import { LeagueMatchGamesModal } from '../../components/rounds/LeagueMatchGamesModal';
 import { MatchGamesBreakdown } from '../../components/rounds/MatchGamesBreakdown';
 import { isLeaguePerGameMatch } from '../../utils/matchGamesLogic';
+import { useToast } from '../../context/ToastContext';
+import { saveFileNative, copyTextNative } from '../../services/nativeBridge';
+import {
+  buildLeagueRoundExportFileName,
+  buildLeagueRoundPairingExportData,
+  buildLeagueRoundStandingsExportData,
+  buildLeagueTopCutBracketExportData,
+  buildWaitingMatchesList,
+  formatWaitingMatchesReminderText,
+  generateLeagueRoundPairingText,
+  generateLeagueRoundStandingCsv,
+  generateLeagueRoundStandingText,
+  generateLeagueTopCutBracketText
+} from '../../utils/roundExportLogic';
+import {
+  exportLeagueRoundPairingToImage,
+  exportLeagueRoundStandingToImage,
+  exportLeagueTopCutBracketToImage
+} from '../../utils/canvasRoundExport';
 import {
   Timer,
   Play,
@@ -78,13 +97,19 @@ import {
   ChevronRight,
   History,
   ShieldAlert,
-  RotateCcw,
   Lock,
-  Clock
+  Clock,
+  Image as ImageIcon,
+  FileText,
+  FileSpreadsheet,
+  Copy,
+  Check,
+  Download
 } from 'lucide-react';
 
 export const RoundsView: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
+  const { success: showToastSuccess, error: showToastError } = useToast();
   const isOrganizer = userProfile?.role === 'organizer' || userProfile?.role === 'admin';
   const isAdmin = userProfile?.role === 'admin';
 
@@ -119,6 +144,13 @@ export const RoundsView: React.FC = () => {
   // Modals
   const [scoreModalMatch, setScoreModalMatch] = useState<TournamentMatch | null>(null);
   const [swapModalOpen, setSwapModalOpen] = useState(false);
+
+  // Ekspor Per Ronde Liga & Daftar Menunggu
+  const [roundExportTarget, setRoundExportTarget] = useState<
+    'standing' | 'pairing' | 'bracket' | null
+  >(null);
+  const [exportingRound, setExportingRound] = useState(false);
+  const [copiedWaitingReminder, setCopiedWaitingReminder] = useState(false);
 
   // 1. Muat turnamen milik organizer
   const fetchTournaments = async () => {
@@ -593,6 +625,205 @@ export const RoundsView: React.FC = () => {
     }
   }, [topCutConfirmSize, tournamentPlayers, allMatches, selectedTournament?.format]);
 
+  const isLeague = isLeagueTournament(selectedTournament);
+  const isActiveTopCutRound = Boolean(isTopCutPhase && activeRound > totalRounds);
+  const showLeagueRoundExports = Boolean(
+    isOrganizer &&
+      isLeague &&
+      selectedTournament &&
+      rounds.length > 0 &&
+      selectedTournament.status !== 'registration'
+  );
+
+  const waitingMatches = React.useMemo(
+    () => buildWaitingMatchesList(matches),
+    [matches]
+  );
+
+  const showWaitingMatchesCard = Boolean(
+    isOrganizer &&
+      isLeague &&
+      selectedTournament?.status === 'running' &&
+      activeRound === currentTourneyRound &&
+      waitingMatches.length > 0
+  );
+
+  const handleCopyWaitingReminder = async () => {
+    if (!selectedTournament || waitingMatches.length === 0) return;
+    const text = formatWaitingMatchesReminderText({
+      tournamentName: selectedTournament.name,
+      seasonLabel: formatSeasonLabel(selectedTournament.season),
+      roundLabel: activeRoundLabel,
+      items: waitingMatches
+    });
+    const res = await copyTextNative(text);
+    if (res.ok) {
+      setCopiedWaitingReminder(true);
+      setTimeout(() => setCopiedWaitingReminder(false), 2000);
+      showToastSuccess(
+        'Pengingat disalin',
+        `${waitingMatches.length} pertandingan menunggu siap ditempel.`
+      );
+    } else {
+      showToastError('Gagal menyalin daftar pengingat.');
+    }
+  };
+
+  const handleRunRoundExport = async (formatChoice: 'png' | 'text' | 'csv') => {
+    if (!selectedTournament || !roundExportTarget || exportingRound) return;
+    setExportingRound(true);
+
+    try {
+      if (roundExportTarget === 'standing') {
+        const data = buildLeagueRoundStandingsExportData(
+          selectedTournament,
+          tournamentPlayers,
+          allMatches,
+          activeRound
+        );
+        const scopeLabel = `Ronde-${activeRound}`;
+
+        if (formatChoice === 'png') {
+          const dataUrl = exportLeagueRoundStandingToImage(data);
+          if (!dataUrl) throw new Error('Gagal merender gambar standing.');
+          const fileName = buildLeagueRoundExportFileName(
+            selectedTournament,
+            scopeLabel,
+            'Standing',
+            'png'
+          );
+          const res = await saveFileNative(fileName, 'image/png', dataUrl);
+          if (res.ok) {
+            showToastSuccess('Ekspor berhasil', `File ${res.fileName} tersimpan.`);
+          } else {
+            showToastError('Ekspor gagal', res.message || 'Gagal menyimpan PNG.');
+          }
+        } else if (formatChoice === 'csv') {
+          const csv = generateLeagueRoundStandingCsv(data);
+          const fileName = buildLeagueRoundExportFileName(
+            selectedTournament,
+            scopeLabel,
+            'Standing',
+            'csv'
+          );
+          const res = await saveFileNative(fileName, 'text/csv', csv);
+          if (res.ok) {
+            showToastSuccess('Ekspor berhasil', `File ${res.fileName} tersimpan.`);
+          } else {
+            showToastError('Ekspor gagal', res.message || 'Gagal menyimpan CSV.');
+          }
+        } else {
+          const text = generateLeagueRoundStandingText(data);
+          const copyRes = await copyTextNative(text);
+          if (copyRes.ok) {
+            showToastSuccess('Ekspor berhasil', 'Teks standing berhasil disalin.');
+          } else {
+            const fileName = buildLeagueRoundExportFileName(
+              selectedTournament,
+              scopeLabel,
+              'Standing',
+              'txt'
+            );
+            const saveRes = await saveFileNative(fileName, 'text/plain', text);
+            if (saveRes.ok) {
+              showToastSuccess('Ekspor berhasil', `File ${saveRes.fileName} tersimpan.`);
+            } else {
+              showToastError('Ekspor gagal', 'Gagal menyalin atau menyimpan teks.');
+            }
+          }
+        }
+      } else if (roundExportTarget === 'pairing') {
+        const data = buildLeagueRoundPairingExportData(
+          selectedTournament,
+          activeRound,
+          matches
+        );
+        const scopeLabel = `Ronde-${activeRound}`;
+
+        if (formatChoice === 'png') {
+          const dataUrl = exportLeagueRoundPairingToImage(data);
+          if (!dataUrl) throw new Error('Gagal merender gambar pairing.');
+          const fileName = buildLeagueRoundExportFileName(
+            selectedTournament,
+            scopeLabel,
+            'Pairing',
+            'png'
+          );
+          const res = await saveFileNative(fileName, 'image/png', dataUrl);
+          if (res.ok) {
+            showToastSuccess('Ekspor berhasil', `File ${res.fileName} tersimpan.`);
+          } else {
+            showToastError('Ekspor gagal', res.message || 'Gagal menyimpan PNG.');
+          }
+        } else {
+          const text = generateLeagueRoundPairingText(data);
+          const copyRes = await copyTextNative(text);
+          if (copyRes.ok) {
+            showToastSuccess('Ekspor berhasil', 'Teks pairing berhasil disalin.');
+          } else {
+            const fileName = buildLeagueRoundExportFileName(
+              selectedTournament,
+              scopeLabel,
+              'Pairing',
+              'txt'
+            );
+            const saveRes = await saveFileNative(fileName, 'text/plain', text);
+            if (saveRes.ok) {
+              showToastSuccess('Ekspor berhasil', `File ${saveRes.fileName} tersimpan.`);
+            } else {
+              showToastError('Ekspor gagal', 'Gagal menyalin atau menyimpan teks.');
+            }
+          }
+        }
+      } else if (roundExportTarget === 'bracket') {
+        const data = buildLeagueTopCutBracketExportData(selectedTournament, allMatches);
+        const scopeLabel = `Top-${data.topCutSize}`;
+
+        if (formatChoice === 'png') {
+          const dataUrl = exportLeagueTopCutBracketToImage(data);
+          if (!dataUrl) throw new Error('Gagal merender gambar bracket.');
+          const fileName = buildLeagueRoundExportFileName(
+            selectedTournament,
+            scopeLabel,
+            'Bracket',
+            'png'
+          );
+          const res = await saveFileNative(fileName, 'image/png', dataUrl);
+          if (res.ok) {
+            showToastSuccess('Ekspor berhasil', `File ${res.fileName} tersimpan.`);
+          } else {
+            showToastError('Ekspor gagal', res.message || 'Gagal menyimpan PNG.');
+          }
+        } else {
+          const text = generateLeagueTopCutBracketText(data);
+          const copyRes = await copyTextNative(text);
+          if (copyRes.ok) {
+            showToastSuccess('Ekspor berhasil', 'Teks bracket berhasil disalin.');
+          } else {
+            const fileName = buildLeagueRoundExportFileName(
+              selectedTournament,
+              scopeLabel,
+              'Bracket',
+              'txt'
+            );
+            const saveRes = await saveFileNative(fileName, 'text/plain', text);
+            if (saveRes.ok) {
+              showToastSuccess('Ekspor berhasil', `File ${saveRes.fileName} tersimpan.`);
+            } else {
+              showToastError('Ekspor gagal', 'Gagal menyalin atau menyimpan teks.');
+            }
+          }
+        }
+      }
+
+      setRoundExportTarget(null);
+    } catch (err: any) {
+      showToastError('Ekspor gagal', err?.message || 'Terjadi kesalahan saat mengekspor.');
+    } finally {
+      setExportingRound(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       {/* Header Halaman */}
@@ -780,6 +1011,101 @@ export const RoundsView: React.FC = () => {
                   </button>
                 )}
               </div>
+
+              {/* Tombol Ekspor Per Ronde (khusus Organizer/Admin & Turnamen Liga) */}
+              {showLeagueRoundExports && (
+                <div className="flex items-center justify-between gap-2 flex-wrap px-2.5 py-2 rounded-card bg-dark-surface border border-dark-border">
+                  <span className="text-[11px] font-medium text-dark-muted flex items-center gap-1.5">
+                    <Download size={13} className="text-accent" />
+                    <span>Ekspor {activeRoundLabel}:</span>
+                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {!isActiveTopCutRound ? (
+                      <>
+                        <Button
+                          variant="secondary"
+                          className="!min-h-[32px] !px-2.5 !text-[11px]"
+                          onClick={() => setRoundExportTarget('standing')}
+                          icon={<FileSpreadsheet size={13} className="text-emerald-400" />}
+                        >
+                          Standing Saat Ini
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          className="!min-h-[32px] !px-2.5 !text-[11px]"
+                          onClick={() => setRoundExportTarget('pairing')}
+                          icon={<Swords size={13} className="text-sky-400" />}
+                        >
+                          Pairing Ronde {activeRound}
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        className="!min-h-[32px] !px-2.5 !text-[11px]"
+                        onClick={() => setRoundExportTarget('bracket')}
+                        icon={<Trophy size={13} className="text-amber-400" />}
+                      >
+                        Bracket
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Daftar Menunggu (Organizer, Ronde Aktif, ukuran ringkas) */}
+              {showWaitingMatchesCard && (
+                <Card variant="surface" className="p-2.5 border-status-yellow/30 bg-status-yellow/5 flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-caption font-semibold text-status-yellow">
+                      <Clock size={14} />
+                      <span>Menunggu {waitingMatches.length} pertandingan</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCopyWaitingReminder}
+                      className="min-h-[28px] px-2.5 rounded-btn text-[11px] font-medium flex items-center gap-1 bg-dark-surface-high hover:bg-dark-surface border border-dark-border text-dark-text transition-colors"
+                    >
+                      {copiedWaitingReminder ? (
+                        <>
+                          <Check size={12} className="text-status-green" />
+                          <span>Tersalin!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={12} className="text-accent" />
+                          <span>Salin Pengingat</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-1 max-h-36 overflow-y-auto pr-0.5">
+                    {waitingMatches.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between gap-2 text-[11px] px-2 py-1 rounded bg-dark-bg/50 border border-dark-border/60"
+                      >
+                        <span className="truncate text-dark-text">
+                          <strong className="font-mono text-accent">Meja {item.table}</strong>
+                          {' • '}
+                          {item.p1Name} vs {item.p2Name}
+                        </span>
+                        <span
+                          className={`flex-shrink-0 font-mono text-[10px] px-1.5 py-0.5 rounded ${
+                            item.status === 'disputed'
+                              ? 'bg-status-red/15 text-status-red'
+                              : item.status === 'awaiting'
+                              ? 'bg-status-yellow/15 text-status-yellow'
+                              : 'bg-dark-surface-high text-dark-muted'
+                          }`}
+                        >
+                          {item.statusLabel}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
 
               {/* Bilah Aksi Ronde: Tombol Buat Pairing Ronde 1 (Awal Turnamen) */}
               {canCreateRound1 && isOrganizer && (
@@ -1342,6 +1668,66 @@ export const RoundsView: React.FC = () => {
               Akhiri Sekarang
             </Button>
           </div>
+        </div>
+      </BottomSheet>
+
+      {/* BottomSheet Pilih Format Ekspor Per Ronde Liga */}
+      <BottomSheet
+        isOpen={roundExportTarget !== null}
+        onClose={() => !exportingRound && setRoundExportTarget(null)}
+        title={
+          roundExportTarget === 'standing'
+            ? `Ekspor Standing Saat Ini (Ronde ${activeRound})`
+            : roundExportTarget === 'pairing'
+            ? `Ekspor Pairing Ronde ${activeRound}`
+            : `Ekspor Bracket Top ${topCutSize || 4}`
+        }
+      >
+        <div className="flex flex-col gap-2.5 py-2 pb-6">
+          <p className="text-caption text-dark-muted">
+            {roundExportTarget === 'standing'
+              ? 'Pilih format ekspor klasemen Swiss sementara/terkini Turnamen Liga.'
+              : roundExportTarget === 'pairing'
+              ? isAllMatchesConfirmed
+                ? 'Semua pertandingan ronde ini sudah terkonfirmasi; skor & pemenang akan ikut ditampilkan.'
+                : 'Masih ada pertandingan yang belum terkonfirmasi; skor & pemenang disembunyikan pada ekspor.'
+              : 'Ekspor bagan Top Cut Liga (skor per babak hanya tampil jika semua match babak tersebut terkonfirmasi).'}
+          </p>
+
+          <Button
+            variant="secondary"
+            fullWidth
+            className="!justify-start !min-h-[44px]"
+            disabled={exportingRound}
+            onClick={() => handleRunRoundExport('png')}
+            icon={<ImageIcon size={16} className="text-amber-400" />}
+          >
+            Gambar (PNG)
+          </Button>
+
+          <Button
+            variant="secondary"
+            fullWidth
+            className="!justify-start !min-h-[44px]"
+            disabled={exportingRound}
+            onClick={() => handleRunRoundExport('text')}
+            icon={<FileText size={16} className="text-sky-400" />}
+          >
+            Teks Ringkasan (Salin)
+          </Button>
+
+          {roundExportTarget === 'standing' && (
+            <Button
+              variant="secondary"
+              fullWidth
+              className="!justify-start !min-h-[44px]"
+              disabled={exportingRound}
+              onClick={() => handleRunRoundExport('csv')}
+              icon={<FileSpreadsheet size={16} className="text-emerald-400" />}
+            >
+              Spreadsheet (CSV)
+            </Button>
+          )}
         </div>
       </BottomSheet>
     </div>
