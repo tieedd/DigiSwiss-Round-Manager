@@ -12,6 +12,7 @@ import { Button } from '../../components/common/Button';
 import {
   finalizeTournamentResults,
   getTournamentParticipations,
+  recalculateLeagueFinalRecords,
   syncLeagueParticipationsDecksFromRegistration,
   updateParticipationLeagueDecksIfExists
 } from '../../services/participationService';
@@ -33,6 +34,10 @@ import {
   isLeagueTournament
 } from '../../utils/seasonLogic';
 import { hasValidParticipationTwoDecks } from '../../utils/leagueFinalDecksLogic';
+import {
+  formatFinalRecordBreakdown,
+  needsLeagueFinalRecordRecalc
+} from '../../utils/finalRecordLogic';
 import { useToast } from '../../context/ToastContext';
 import { saveFileNative, copyTextNative } from '../../services/nativeBridge';
 import {
@@ -139,41 +144,73 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
     }
   };
 
-  const handleConfirmSyncLeagueDecks = async () => {
+  const handleConfirmSyncLeagueData = async () => {
     if (!currentUser || syncLoading) return;
     setSyncLoading(true);
     try {
-      const result = await syncLeagueParticipationsDecksFromRegistration(
-        tournament,
-        participations,
-        {
-          uid: currentUser.uid,
-          name: userProfile?.displayName || userProfile?.username || 'Organizer'
-        }
-      );
+      const actor = {
+        uid: currentUser.uid,
+        name: userProfile?.displayName || userProfile?.username || 'Organizer'
+      };
+      const doDeckSync = leagueParticipationsNeedingSync.length > 0;
+      const doRecordRecalc = needsRecordRecalc;
+
+      let syncedCount = 0;
+      let missingPlayers: string[] = [];
+      let recalculatedCount = 0;
+
+      if (doDeckSync) {
+        const deckRes = await syncLeagueParticipationsDecksFromRegistration(
+          tournament,
+          participations,
+          actor
+        );
+        syncedCount = deckRes.syncedCount;
+        missingPlayers = deckRes.missingPlayers;
+      }
+
+      if (doRecordRecalc) {
+        const recalcRes = await recalculateLeagueFinalRecords(
+          tournament,
+          participations,
+          actor,
+          matches,
+          players
+        );
+        recalculatedCount = recalcRes.updatedCount;
+      }
+
       setSyncConfirmOpen(false);
       await fetchParticipations();
       onTournamentUpdated?.();
 
-      if (result.syncedCount > 0) {
+      const partsSummary: string[] = [];
+      if (recalculatedCount > 0) {
+        partsSummary.push(`${recalculatedCount} rekor final (Swiss + Top Cut) dihitung ulang`);
+      }
+      if (syncedCount > 0) {
+        partsSummary.push(`${syncedCount} partisipasi diperbarui dengan 2 deck pendaftaran`);
+      }
+
+      if (partsSummary.length > 0) {
         const extra =
-          result.missingPlayers.length > 0
-            ? ` (${result.missingPlayers.length} peserta belum punya 2 deck di pendaftaran: ${result.missingPlayers.join(', ')})`
+          missingPlayers.length > 0
+            ? ` (${missingPlayers.length} peserta belum punya 2 deck di pendaftaran: ${missingPlayers.join(', ')})`
             : '';
         showToastSuccess(
-          'Sinkronisasi berhasil',
-          `${result.syncedCount} partisipasi diperbarui dengan 2 deck pendaftaran.${extra}`
+          doRecordRecalc && !doDeckSync ? 'Rekor final diperbarui' : 'Sinkronisasi berhasil',
+          `${partsSummary.join(' dan ')}.${extra}`
         );
-      } else if (result.missingPlayers.length > 0) {
+      } else if (missingPlayers.length > 0) {
         showToastError(
           'Tidak ada data deck baru',
-          `Peserta berikut belum mengisi 2 deck di pendaftaran: ${result.missingPlayers.join(', ')}`
+          `Peserta berikut belum mengisi 2 deck di pendaftaran: ${missingPlayers.join(', ')}`
         );
       } else {
-        showToastSuccess('Sudah sinkron', 'Semua partisipasi liga sudah memiliki 2 deck.');
+        showToastSuccess('Sudah sinkron', 'Data hasil akhir liga sudah sesuai.');
       }
     } catch (err: any) {
-      showToastError('Sinkronisasi gagal', err?.message || 'Gagal menyinkronkan 2 deck liga.');
+      showToastError('Pembaruan gagal', err?.message || 'Gagal memperbarui data hasil akhir liga.');
     } finally {
       setSyncLoading(false);
     }
@@ -258,6 +295,9 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
   const leagueParticipationsNeedingSync = isLeague
     ? participations.filter((p) => !hasValidParticipationTwoDecks(p))
     : [];
+  const needsDeckSync = isLeague && leagueParticipationsNeedingSync.length > 0;
+  const needsRecordRecalc = needsLeagueFinalRecordRecalc(tournament, participations);
+  const showLeagueMaintenanceAction = isLeague && canManageLeague && (needsDeckSync || needsRecordRecalc);
 
   return (
     <div className="flex flex-col gap-4 mt-2">
@@ -339,29 +379,44 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
                 </div>
               )}
 
-              {/* Tombol Sinkronisasi 2 Deck Liga untuk data yang terlanjur finalized */}
-              {isLeague && canManageLeague && leagueParticipationsNeedingSync.length > 0 && (
+              {/* Tombol Sinkronisasi 2 Deck Liga & Hitung Ulang Rekor Final untuk data lama */}
+              {showLeagueMaintenanceAction && (
                 <Button
                   variant="secondary"
                   className="!min-h-[36px] !px-3 !text-caption border-amber-400/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
                   onClick={() => setSyncConfirmOpen(true)}
                   icon={<RefreshCw size={14} />}
                 >
-                  Sinkronkan Deck dari Pendaftaran
+                  {needsDeckSync && needsRecordRecalc
+                    ? 'Sinkronkan Deck & Hitung Ulang Rekor'
+                    : needsRecordRecalc
+                    ? 'Hitung Ulang Rekor Final'
+                    : 'Sinkronkan Deck dari Pendaftaran'}
                 </Button>
               )}
             </div>
 
             {isLeague &&
               (finalizeMissingDeckPlayers.length > 0 ||
-                leagueParticipationsNeedingSync.length > 0) && (
+                leagueParticipationsNeedingSync.length > 0 ||
+                needsRecordRecalc) && (
                 <div className="p-2.5 rounded-btn bg-status-yellow/10 border border-status-yellow/30 text-[11px] text-status-yellow flex items-start gap-2">
                   <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-                  <span>
-                    {finalizeMissingDeckPlayers.length > 0
-                      ? `Peserta tanpa data 2 deck saat finalisasi: ${finalizeMissingDeckPlayers.join(', ')}.`
-                      : `${leagueParticipationsNeedingSync.length} peserta belum memiliki 2 deck pada hasil akhir.`}
-                  </span>
+                  <div className="flex flex-col gap-0.5">
+                    {(finalizeMissingDeckPlayers.length > 0 ||
+                      leagueParticipationsNeedingSync.length > 0) && (
+                      <span>
+                        {finalizeMissingDeckPlayers.length > 0
+                          ? `Peserta tanpa data 2 deck saat finalisasi: ${finalizeMissingDeckPlayers.join(', ')}.`
+                          : `${leagueParticipationsNeedingSync.length} peserta belum memiliki 2 deck pada hasil akhir.`}
+                      </span>
+                    )}
+                    {needsRecordRecalc && (
+                      <span>
+                        Rekor babak Top Cut belum terhitung pada hasil akhir lama. Organizer dapat menekan "Hitung Ulang Rekor Final" untuk memperbarui total W-L dan poin (Swiss + Top Cut).
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -469,6 +524,14 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
                             Poin: <strong className="text-accent">{p.points}</strong> • Match: {p.wins}W - {p.losses}L • OMW: {p.omw}%
                             {p.swissRank !== undefined && tournament.topCut ? ` • Swiss #${p.swissRank}` : ''}
                           </span>
+                          {(() => {
+                            const breakdown = formatFinalRecordBreakdown(p);
+                            return breakdown ? (
+                              <span className="text-[11px] text-dark-muted/85 font-mono block mt-0.5">
+                                {breakdown}
+                              </span>
+                            ) : null;
+                          })()}
                         </div>
                       </div>
 
@@ -586,17 +649,31 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
         />
       )}
 
-      {/* ConfirmSheet Sinkronisasi Deck Liga dari Pendaftaran */}
+      {/* ConfirmSheet Sinkronisasi Deck & Hitung Ulang Rekor Final Liga */}
       <ConfirmSheet
         isOpen={syncConfirmOpen}
-        title="Sinkronkan 2 Deck Liga?"
-        message={`Salin data 2 deck peserta dari pendaftaran turnamen ke ${leagueParticipationsNeedingSync.length} hasil partisipasi yang belum memiliki 2 deck?`}
-        confirmLabel="Ya, Sinkronkan"
+        title={
+          needsDeckSync && needsRecordRecalc
+            ? 'Sinkronkan Deck & Hitung Ulang Rekor?'
+            : needsRecordRecalc
+            ? 'Hitung Ulang Rekor Final Liga?'
+            : 'Sinkronkan 2 Deck Liga?'
+        }
+        message={
+          needsDeckSync && needsRecordRecalc
+            ? `Hitung ulang total rekor (Swiss + Top Cut) dari seluruh pertandingan dan salin 2 deck pendaftaran ke ${leagueParticipationsNeedingSync.length} partisipasi yang belum terisi?`
+            : needsRecordRecalc
+            ? `Hitung ulang total W-L dan poin (Swiss + Top Cut) untuk ${participations.length} partisipasi berdasarkan seluruh pertandingan yang terkonfirmasi? Peringkat akhir, tie-breaker Swiss, dan deck tetap dipertahankan.`
+            : `Salin data 2 deck peserta dari pendaftaran turnamen ke ${leagueParticipationsNeedingSync.length} hasil partisipasi yang belum memiliki 2 deck?`
+        }
+        confirmLabel={
+          needsRecordRecalc && !needsDeckSync ? 'Ya, Hitung Ulang' : 'Ya, Perbarui'
+        }
         cancelLabel="Batal"
         variant="primary"
         isLoading={syncLoading}
         zIndexClass="z-[60]"
-        onConfirm={handleConfirmSyncLeagueDecks}
+        onConfirm={handleConfirmSyncLeagueData}
         onCancel={() => {
           if (!syncLoading) setSyncConfirmOpen(false);
         }}

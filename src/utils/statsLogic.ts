@@ -22,6 +22,12 @@ export interface Participation {
   topCutResult?: 'Juara' | 'Runner-up' | 'Semifinal' | 'Perempat Final';
   wins: number;
   losses: number;
+  swissWins?: number;
+  swissLosses?: number;
+  swissPoints?: number;
+  topCutWins?: number;
+  topCutLosses?: number;
+  topCutPoints?: number;
   gamesWon?: number;
   gamesLost?: number;
   points?: number;

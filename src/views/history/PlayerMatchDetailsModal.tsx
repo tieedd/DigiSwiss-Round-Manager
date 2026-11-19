@@ -10,6 +10,7 @@ import { LeagueDecksChips } from '../../components/tournaments/LeagueDecksChips'
 import { FinalStandingsCard } from './FinalStandingsCard';
 import { MatchGamesBreakdown } from '../../components/rounds/MatchGamesBreakdown';
 import { isLeagueParticipation } from '../../utils/leagueFinalDecksLogic';
+import { formatFinalRecordBreakdown } from '../../utils/finalRecordLogic';
 import { useVisibleViewportHeight } from '../../utils/useVisibleViewportHeight';
 import {
   X,
@@ -134,9 +135,17 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
                 <span className="text-body font-bold text-dark-text block">
                   Peringkat #{participation.rank}
                 </span>
-                <span className="text-caption text-dark-muted font-mono">
+                <span className="text-caption text-dark-muted font-mono block">
                   Total Poin: <strong className="text-accent">{participation.points}</strong> • Match: {participation.wins}W - {participation.losses}L
                 </span>
+                {(() => {
+                  const breakdown = formatFinalRecordBreakdown(participation);
+                  return breakdown ? (
+                    <span className="text-[11px] text-dark-muted/85 font-mono block mt-0.5">
+                      {breakdown}
+                    </span>
+                  ) : null;
+                })()}
               </div>
             </div>
 

@@ -22,6 +22,11 @@ import {
   filterSwissMatches
 } from '../../utils/topCutLogic';
 import {
+  calculateTopCutRecordsByPlayer,
+  formatFinalRecordBreakdown,
+  mergeSwissAndTopCutRecord
+} from '../../utils/finalRecordLogic';
+import {
   buildFinalStandingsRows,
   FinalStandingsRowItem,
   getCachedStandings,
@@ -123,8 +128,19 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
             )
           : swissStandings.map((s) => ({ ...s, swissRank: s.rank, topCutResult: undefined }));
 
+        const includeTopCutRecord =
+          tourneyData?.type === 'league' && Boolean(tourneyData?.topCut);
+        const topCutRecordsMap = includeTopCutRecord
+          ? calculateTopCutRecordsByPlayer(matches, format)
+          : new Map();
+
         const provisionalList: Participation[] = calculated.map((s) => {
           const original = players.find((p) => p.id === s.playerId);
+          const mergedRecord = mergeSwissAndTopCutRecord(
+            { wins: s.matchWins, losses: s.matchLosses, points: s.points },
+            topCutRecordsMap.get(s.playerId),
+            includeTopCutRecord
+          );
           return {
             id: `${tournamentId}_${s.playerId}`,
             tournamentId,
@@ -138,11 +154,17 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
             rank: s.rank,
             swissRank: s.swissRank,
             ...(s.topCutResult ? { topCutResult: s.topCutResult } : {}),
-            wins: s.matchWins,
-            losses: s.matchLosses,
+            wins: mergedRecord.wins,
+            losses: mergedRecord.losses,
+            ...(typeof mergedRecord.swissWins === 'number' ? { swissWins: mergedRecord.swissWins } : {}),
+            ...(typeof mergedRecord.swissLosses === 'number' ? { swissLosses: mergedRecord.swissLosses } : {}),
+            ...(typeof mergedRecord.swissPoints === 'number' ? { swissPoints: mergedRecord.swissPoints } : {}),
+            ...(typeof mergedRecord.topCutWins === 'number' ? { topCutWins: mergedRecord.topCutWins } : {}),
+            ...(typeof mergedRecord.topCutLosses === 'number' ? { topCutLosses: mergedRecord.topCutLosses } : {}),
+            ...(typeof mergedRecord.topCutPoints === 'number' ? { topCutPoints: mergedRecord.topCutPoints } : {}),
             gamesWon: s.gamesWon,
             gamesLost: s.gamesLost,
-            points: s.points,
+            points: mergedRecord.points,
             omw: s.omw,
             gw: s.gw,
             ogw: s.ogw,
@@ -359,10 +381,18 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
               </div>
 
               {/* Baris Bawah: W-L dan Tiebreaker */}
-              <div className="pl-8 flex items-center justify-between text-[10px] font-mono text-dark-muted pt-0.5 border-t border-dark-border/40">
-                <span>
-                  {row.wins}W-{row.losses}L
-                </span>
+              <div className="pl-8 flex items-center justify-between gap-2 text-[10px] font-mono text-dark-muted pt-0.5 border-t border-dark-border/40">
+                <div className="flex flex-col">
+                  <span>
+                    {row.wins}W-{row.losses}L
+                  </span>
+                  {(() => {
+                    const breakdown = formatFinalRecordBreakdown(row);
+                    return breakdown ? (
+                      <span className="text-[9.5px] text-dark-muted/80">{breakdown}</span>
+                    ) : null;
+                  })()}
+                </div>
                 <span className="truncate">
                   OMW {row.omw.toFixed(1)}% &bull; GW {row.gw.toFixed(1)}% &bull; OGW {row.ogw.toFixed(1)}%
                 </span>

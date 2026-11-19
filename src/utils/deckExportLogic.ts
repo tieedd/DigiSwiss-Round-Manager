@@ -1,4 +1,5 @@
 import { formatSeasonLabel } from './seasonLogic.ts';
+import { getSwissStandingRecord } from './finalRecordLogic.ts';
 
 export type DeckColor =
   | 'Merah'
@@ -26,6 +27,12 @@ export interface Participation {
   topCutResult?: 'Juara' | 'Runner-up' | 'Semifinal' | 'Perempat Final';
   wins: number;
   losses: number;
+  swissWins?: number;
+  swissLosses?: number;
+  swissPoints?: number;
+  topCutWins?: number;
+  topCutLosses?: number;
+  topCutPoints?: number;
   gamesWon: number;
   gamesLost: number;
   points: number;
@@ -325,12 +332,13 @@ export function generateStandingsCsv(
     );
     swissSorted.forEach((p) => {
       const swissRankVal = p.swissRank ?? p.rank;
+      const swissRec = getSwissStandingRecord(p);
       swissSectionRows.push(
         [
           escapeCsv(swissRankVal),
           escapeCsv(p.name),
-          escapeCsv(p.points),
-          escapeCsv(`${p.wins}-${p.losses}`),
+          escapeCsv(swissRec.points),
+          escapeCsv(`${swissRec.wins}-${swissRec.losses}`),
           escapeCsv(`${p.omw}%`)
         ].join(',')
       );
@@ -466,8 +474,9 @@ export function generateStandingsText(
     lines.push(``);
     for (const p of swissSorted) {
       const sRank = p.swissRank ?? p.rank;
+      const swissRec = getSwissStandingRecord(p);
       lines.push(
-        `#${sRank} ${p.name.padEnd(20)} | Poin: ${String(p.points).padStart(2)} | W-L: ${p.wins}-${p.losses} | OMW: ${p.omw}%`
+        `#${sRank} ${p.name.padEnd(20)} | Poin: ${String(swissRec.points).padStart(2)} | W-L: ${swissRec.wins}-${swissRec.losses} | OMW: ${p.omw}%`
       );
     }
   }

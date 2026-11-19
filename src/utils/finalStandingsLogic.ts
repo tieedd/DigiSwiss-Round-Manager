@@ -10,6 +10,12 @@ export interface FinalStandingsRowItem {
   uid: string | null;
   wins: number;
   losses: number;
+  swissWins?: number;
+  swissLosses?: number;
+  swissPoints?: number;
+  topCutWins?: number;
+  topCutLosses?: number;
+  topCutPoints?: number;
   points: number;
   omw: number;
   gw: number;
@@ -50,6 +56,12 @@ export function buildFinalStandingsRows(
       uid: p.uid || null,
       wins: p.wins || 0,
       losses: p.losses || 0,
+      ...(typeof p.swissWins === 'number' ? { swissWins: p.swissWins } : {}),
+      ...(typeof p.swissLosses === 'number' ? { swissLosses: p.swissLosses } : {}),
+      ...(typeof p.swissPoints === 'number' ? { swissPoints: p.swissPoints } : {}),
+      ...(typeof p.topCutWins === 'number' ? { topCutWins: p.topCutWins } : {}),
+      ...(typeof p.topCutLosses === 'number' ? { topCutLosses: p.topCutLosses } : {}),
+      ...(typeof p.topCutPoints === 'number' ? { topCutPoints: p.topCutPoints } : {}),
       points: p.points || 0,
       omw: p.omw || 0,
       gw: p.gw || 0,

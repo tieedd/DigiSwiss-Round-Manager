@@ -172,6 +172,12 @@ export interface Participation {
   topCutResult?: TopCutResultLabel;
   wins: number;
   losses: number;
+  swissWins?: number;
+  swissLosses?: number;
+  swissPoints?: number;
+  topCutWins?: number;
+  topCutLosses?: number;
+  topCutPoints?: number;
   gamesWon: number;
   gamesLost: number;
   points: number;

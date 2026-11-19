@@ -6,6 +6,7 @@ import {
   getUsedDeckColors,
   truncateTextToWidth
 } from './deckExportLogic.ts';
+import { getSwissStandingRecord } from './finalRecordLogic.ts';
 
 export interface ExportStandingsImageOptions {
   tournamentName: string;
@@ -415,9 +416,10 @@ export function exportStandingsToImage(
     ctx.font = 'bold 12px monospace';
     ctx.fillText('SWISS #', padding + 15, swissTableY + 21);
     ctx.fillText('NAMA PEMAIN', padding + 110, swissTableY + 21);
-    ctx.fillText('PTS', padding + 580, swissTableY + 21);
+    ctx.fillText('PTS', padding + 620, swissTableY + 21);
     ctx.fillText('W - L', padding + 690, swissTableY + 21);
-    ctx.fillText('OMW%', padding + 810, swissTableY + 21);
+    ctx.fillText('OMW%', padding + 780, swissTableY + 21);
+    ctx.fillText('GW%', padding + 860, swissTableY + 21);
 
     currentY = swissTableY + 32;
 
@@ -427,6 +429,7 @@ export function exportStandingsToImage(
       ctx.fillRect(padding, currentY, width - padding * 2, swissRowHeight);
 
       const sRank = p.swissRank ?? p.rank;
+      const swissRec = getSwissStandingRecord(p);
       const textY = currentY + 24;
 
       ctx.font = 'bold 13px monospace';
@@ -436,21 +439,23 @@ export function exportStandingsToImage(
       ctx.font = 'bold 13px sans-serif';
       ctx.fillStyle = '#f8fafc';
       ctx.fillText(
-        truncateTextToWidth((str) => ctx.measureText(str).width, p.name, 445),
+        truncateTextToWidth((str) => ctx.measureText(str).width, p.name, 490),
         padding + 110,
         textY
       );
 
       ctx.font = 'bold 13px monospace';
       ctx.fillStyle = '#f59e0b';
-      ctx.fillText(String(p.points), padding + 585, textY);
+      ctx.fillText(String(swissRec.points), padding + 625, textY);
 
       ctx.font = '13px monospace';
       ctx.fillStyle = '#e2e8f0';
-      ctx.fillText(`${p.wins} - ${p.losses}`, padding + 695, textY);
+      ctx.fillText(`${swissRec.wins} - ${swissRec.losses}`, padding + 695, textY);
 
       ctx.fillStyle = '#cbd5e1';
-      ctx.fillText(`${p.omw}%`, padding + 815, textY);
+      ctx.fillText(`${p.omw}%`, padding + 785, textY);
+
+      ctx.fillText(`${p.gw}%`, padding + 865, textY);
 
       currentY += swissRowHeight;
     });

@@ -35,7 +35,14 @@ import {
 } from '../utils/leagueFinalDecksLogic';
 import { filterParticipationsByExistingTournaments } from '../utils/cascadeDeleteLogic';
 import { invalidateStandingsCache } from '../utils/finalStandingsLogic';
+import {
+  buildRecalculatedFinalRecordsPlan,
+  calculateTopCutRecordsByPlayer,
+  mergeSwissAndTopCutRecord
+} from '../utils/finalRecordLogic';
 import { chunkBatchItems } from '../utils/tournamentEditLogic';
+import { getAllTournamentMatches } from './roundService';
+import { getTournamentPlayers } from './tournamentService';
 import { checkExistingTournaments } from './tournamentCleanupService';
 
 /**
@@ -78,6 +85,10 @@ export async function finalizeTournamentResults(
       }));
 
   const isLeague = isLeagueTournament(tournament);
+  const includeTopCutRecord = isLeague && Boolean(tournament.topCut);
+  const topCutRecordsMap = includeTopCutRecord
+    ? calculateTopCutRecordsByPlayer(matches, tournament.format)
+    : new Map();
 
   // Untuk Turnamen Liga, baca seluruh 2 deck dari subkoleksi decks sebagai sumber kebenaran
   let assignedLeagueDecksMap = new Map<string, [LeagueDeckEntry, LeagueDeckEntry]>();
@@ -111,6 +122,11 @@ export async function finalizeTournamentResults(
     const partDocRef = doc(db, 'participations', participationId);
     const existing = existingMap.get(s.playerId);
     const assignedLeagueDecks = isLeague ? assignedLeagueDecksMap.get(s.playerId) : undefined;
+    const mergedRecord = mergeSwissAndTopCutRecord(
+      { wins: s.matchWins, losses: s.matchLosses, points: s.points },
+      topCutRecordsMap.get(s.playerId),
+      includeTopCutRecord
+    );
 
     const partData: Participation = {
       id: participationId,
@@ -131,11 +147,17 @@ export async function finalizeTournamentResults(
       rank: s.rank,
       ...(s.swissRank !== undefined ? { swissRank: s.swissRank } : {}),
       ...(s.topCutResult ? { topCutResult: s.topCutResult } : {}),
-      wins: s.matchWins,
-      losses: s.matchLosses,
+      wins: mergedRecord.wins,
+      losses: mergedRecord.losses,
+      ...(typeof mergedRecord.swissWins === 'number' ? { swissWins: mergedRecord.swissWins } : {}),
+      ...(typeof mergedRecord.swissLosses === 'number' ? { swissLosses: mergedRecord.swissLosses } : {}),
+      ...(typeof mergedRecord.swissPoints === 'number' ? { swissPoints: mergedRecord.swissPoints } : {}),
+      ...(typeof mergedRecord.topCutWins === 'number' ? { topCutWins: mergedRecord.topCutWins } : {}),
+      ...(typeof mergedRecord.topCutLosses === 'number' ? { topCutLosses: mergedRecord.topCutLosses } : {}),
+      ...(typeof mergedRecord.topCutPoints === 'number' ? { topCutPoints: mergedRecord.topCutPoints } : {}),
       gamesWon: s.gamesWon,
       gamesLost: s.gamesLost,
-      points: s.points,
+      points: mergedRecord.points,
       omw: s.omw,
       gw: s.gw,
       ogw: s.ogw,
@@ -427,5 +449,75 @@ export async function updateParticipationLeagueDecksIfExists(
   });
   invalidateStandingsCache(tournamentId);
   return true;
+}
+
+/**
+ * Menghitung ulang rekor final (total Swiss + Top Cut beserta rinciannya) untuk
+ * Turnamen Liga bertop-cut yang terlanjur difinalisasi dengan rekor Swiss saja.
+ * Hanya mengubah field rekor/poin lewat writeBatch (per 400) dan mempertahankan rank,
+ * topCutResult, metrik Swiss murni, serta deck yang sudah tersimpan.
+ */
+export async function recalculateLeagueFinalRecords(
+  tournament: Tournament,
+  participations: Participation[],
+  actor: { uid: string; name: string },
+  preloadedMatches?: TournamentMatch[],
+  preloadedPlayers?: TournamentPlayer[]
+): Promise<{ updatedCount: number }> {
+  if (!tournament?.id || !isLeagueTournament(tournament) || !tournament.topCut) {
+    return { updatedCount: 0 };
+  }
+
+  const [resolvedPlayers, resolvedMatches] = await Promise.all([
+    preloadedPlayers && preloadedPlayers.length > 0
+      ? Promise.resolve(preloadedPlayers)
+      : getTournamentPlayers(tournament.id),
+    preloadedMatches && preloadedMatches.length > 0
+      ? Promise.resolve(preloadedMatches)
+      : getAllTournamentMatches(tournament.id, false)
+  ]);
+
+  const plan = buildRecalculatedFinalRecordsPlan(
+    tournament,
+    resolvedPlayers,
+    resolvedMatches,
+    participations
+  );
+
+  if (plan.length === 0) {
+    return { updatedCount: 0 };
+  }
+
+  const now = Date.now();
+  const chunks = chunkBatchItems(plan, 400);
+  for (const chunk of chunks) {
+    const batch = writeBatch(db);
+    chunk.forEach((item) => {
+      const partRef = doc(db, 'participations', item.participationId);
+      batch.update(partRef, {
+        ...item.patch,
+        updatedAt: now
+      });
+    });
+    await batch.commit();
+  }
+
+  invalidateStandingsCache(tournament.id);
+
+  try {
+    await recordAuditLog(
+      actor.uid,
+      actor.name,
+      'RECORD_RECALCULATED_FINAL',
+      `Turnamen Liga ${tournament.name} (${tournament.id})`,
+      'Rekor final lama (tanpa rincian Swiss/Top Cut)',
+      `${plan.length} partisipasi dihitung ulang total rekor Swiss + Top Cut`,
+      tournament.id
+    );
+  } catch (auditErr) {
+    console.warn('Gagal mencatat audit log RECORD_RECALCULATED_FINAL (non-blocking):', auditErr);
+  }
+
+  return { updatedCount: plan.length };
 }
 
