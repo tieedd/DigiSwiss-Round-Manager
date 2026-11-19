@@ -193,9 +193,10 @@ File APK debug akan dihasilkan pada direktori:
 - **Penyesuaian Aksesibilitas & Kontras:** Pada mode terang (`data-theme="light"`), warna teks aksen dan status otomatis disesuaikan ke tone yang lebih gelap (misal `#C25E00`, `#15803D`) untuk menjamin rasio kontras teks terhadap latar belakang $\ge 4.5:1$.
 - **Sinkronisasi Sistem Operasi & Android Native:** Mengikuti preferensi bawaan sistem (`prefers-color-scheme`) pada peluncuran pertama dan tersimpan di `localStorage`. Di lingkungan Android, `NativeBridge` secara dinamis mengatur ikon status bar dan navigation bar (`isAppearanceLightStatusBars`, `isAppearanceLightNavigationBars`).
 
-### 3. Ekspor Gambar & Teks (Organizer & Lokasi)
+### 3. Ekspor Gambar & Teks (Organizer, Lokasi & Tema Aktif)
 - Format ekspor kartu gambar (PNG) dan teks ringkasan menyertakan informasi **Organizer** dan **Lokasi turnamen**.
-- Kanvas ekspor mengukur dimensi teks secara presisi (`measureText`) dan memotong teks panjang secara proporsional dengan elipsis (`…`) agar pas dalam batas kartu 1000px tanpa terpotong.
+- Seluruh ekspor gambar PNG (Hasil Akhir, Standing Saat Ini, Pairing Ronde, dan Bracket Top Cut) secara otomatis mengikuti tema aplikasi yang sedang aktif (gelap atau terang) dengan kontras WCAG AA ($\ge 4.5:1$).
+- Kanvas ekspor mengukur dimensi teks secara presisi (`measureText`) dan memotong teks panjang secara proporsional dengan elipsis (`…`) agar pas dalam batas kartu tanpa terpotong.
 
 ### 4. Server reset password (Google Apps Script)
 - **Fungsi:** Menangani permintaan reset password dengan PIN (`resetWithPin`), penukaran kode reset darurat (`resetWithCode`), dan pembuatan kode reset oleh Admin (`createResetCode`) secara aman di sisi server tanpa menyimpan kunci privat di klien. Koleksi internal `resetGuards` dan `resetCodes` ditolak total pada `firestore.rules`.

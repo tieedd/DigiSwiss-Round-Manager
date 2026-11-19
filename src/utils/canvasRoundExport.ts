@@ -10,6 +10,8 @@ import type {
   LeagueRoundStandingsExportData,
   LeagueTopCutBracketExportData
 } from './roundExportLogic.ts';
+import { getExportPalette, type ExportPalette } from './exportTheme.ts';
+import { getCurrentTheme, type AppTheme } from './themeLogic.ts';
 
 function createRetinaCanvas(
   logicalWidth: number,
@@ -53,6 +55,7 @@ function drawLeagueHeader(
   width: number,
   height: number,
   padding: number,
+  palette: ExportPalette,
   options: {
     title: string;
     seasonLabel: string | null;
@@ -63,19 +66,19 @@ function drawLeagueHeader(
     stageAccentColor?: string;
   }
 ): number {
-  // Background gelap konsisten dengan canvasExport.ts
-  ctx.fillStyle = '#0f172a';
+  // Background mengikuti tema aktif aplikasi (konsisten dengan canvasExport.ts)
+  ctx.fillStyle = palette.pageBg;
   ctx.fillRect(0, 0, width, height);
 
   // Decorative amber top bar
   const grad = ctx.createLinearGradient(0, 0, width, 0);
-  grad.addColorStop(0, '#f59e0b');
-  grad.addColorStop(1, '#d97706');
+  grad.addColorStop(0, palette.headerBarFrom);
+  grad.addColorStop(1, palette.headerBarTo);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, width, 8);
 
   // Title
-  ctx.fillStyle = '#f8fafc';
+  ctx.fillStyle = palette.titleText;
   ctx.font = 'bold 24px sans-serif';
   const titleText = truncateTextToWidth(
     (s) => ctx.measureText(s).width,
@@ -89,16 +92,16 @@ function drawLeagueHeader(
   ctx.font = 'bold 12px monospace';
   const ligaText = 'LIGA';
   const ligaW = ctx.measureText(ligaText).width + 16;
-  ctx.fillStyle = '#f59e0b';
+  ctx.fillStyle = palette.badgeBg;
   drawRoundedRect(ctx, cursorX, 62, ligaW, 22, 4);
   ctx.fill();
-  ctx.fillStyle = '#0f172a';
+  ctx.fillStyle = palette.badgeText;
   ctx.fillText(ligaText, cursorX + 8, 77);
   cursorX += ligaW + 10;
 
   if (options.seasonLabel) {
     ctx.font = 'bold 14px monospace';
-    ctx.fillStyle = '#fbbf24';
+    ctx.fillStyle = palette.seasonText;
     ctx.fillText(options.seasonLabel, cursorX, 78);
     cursorX += ctx.measureText(options.seasonLabel).width + 12;
   }
@@ -107,22 +110,22 @@ function drawLeagueHeader(
   ctx.font = 'bold 12px monospace';
   const stageText = options.stageLabel;
   const stageW = ctx.measureText(stageText).width + 18;
-  ctx.fillStyle = 'rgba(56, 189, 248, 0.14)';
+  ctx.fillStyle = palette.stagePillBg;
   drawRoundedRect(ctx, cursorX, 62, stageW, 22, 4);
   ctx.fill();
-  ctx.strokeStyle = options.stageAccentColor || '#38bdf8';
+  ctx.strokeStyle = options.stageAccentColor || palette.deckNameText;
   ctx.lineWidth = 1;
   ctx.stroke();
-  ctx.fillStyle = options.stageAccentColor || '#38bdf8';
+  ctx.fillStyle = options.stageAccentColor || palette.deckNameText;
   ctx.fillText(stageText, cursorX + 9, 77);
 
   // Date & Organizer/Location
-  ctx.fillStyle = '#94a3b8';
+  ctx.fillStyle = palette.mutedText;
   ctx.font = '13px sans-serif';
   ctx.fillText(`Tanggal: ${options.date || '-'}`, padding, 108);
 
   ctx.font = 'bold 14px sans-serif';
-  ctx.fillStyle = '#e2e8f0';
+  ctx.fillStyle = palette.strongText;
   const orgLocLine = formatOrganizerLocationLine(
     options.organizerName,
     options.location,
@@ -142,9 +145,10 @@ function drawSingleDeckLine(
   dotCenterY: number,
   bgFill: string,
   maxWidth: number,
+  palette: ExportPalette,
   fontSize = 11,
   dotRadius = 4.5,
-  textColor = '#38bdf8'
+  textColor = palette.deckNameText
 ) {
   ctx.font = `${fontSize}px sans-serif`;
   const colors = (deck.colors || []).filter((c) =>
@@ -170,7 +174,7 @@ function drawSingleDeckLine(
     const labelW = ctx.measureText(label).width;
     let dotX = startX + labelW + gap + dotRadius;
     for (const c of colors) {
-      const hex = DECK_COLOR_HEX[c] || '#94A3B8';
+      const hex = DECK_COLOR_HEX[c] || palette.mutedText;
       ctx.beginPath();
       ctx.arc(dotX, dotCenterY, dotRadius + 1.2, 0, Math.PI * 2);
       ctx.fillStyle = bgFill;
@@ -183,11 +187,11 @@ function drawSingleDeckLine(
 
       if (c === 'Hitam') {
         ctx.lineWidth = 1;
-        ctx.strokeStyle = '#94A3B8';
+        ctx.strokeStyle = palette.deckDotOutline.Hitam;
         ctx.stroke();
       } else if (c === 'Putih') {
         ctx.lineWidth = 1;
-        ctx.strokeStyle = '#CBD5E1';
+        ctx.strokeStyle = palette.deckDotOutline.Putih;
         ctx.stroke();
       }
 
@@ -213,11 +217,12 @@ function drawLegendAndFooter(
   usedColors: DeckColor[],
   legendY: number,
   canvasHeight: number,
-  padding: number
+  padding: number,
+  palette: ExportPalette
 ) {
   if (usedColors.length > 0) {
     ctx.font = 'bold 11px sans-serif';
-    ctx.fillStyle = '#94a3b8';
+    ctx.fillStyle = palette.mutedText;
     const labelText = 'Warna deck:';
     ctx.fillText(labelText, padding, legendY);
 
@@ -225,7 +230,7 @@ function drawLegendAndFooter(
     const dotR = 5;
 
     for (const color of usedColors) {
-      const hex = DECK_COLOR_HEX[color] || '#94A3B8';
+      const hex = DECK_COLOR_HEX[color] || palette.mutedText;
       ctx.beginPath();
       ctx.arc(legendX + dotR, legendY - 4, dotR, 0, Math.PI * 2);
       ctx.fillStyle = hex;
@@ -233,22 +238,22 @@ function drawLegendAndFooter(
 
       if (color === 'Hitam') {
         ctx.lineWidth = 1;
-        ctx.strokeStyle = '#94A3B8';
+        ctx.strokeStyle = palette.deckDotOutline.Hitam;
         ctx.stroke();
       } else if (color === 'Putih') {
         ctx.lineWidth = 1;
-        ctx.strokeStyle = '#CBD5E1';
+        ctx.strokeStyle = palette.deckDotOutline.Putih;
         ctx.stroke();
       }
 
       ctx.font = '11px sans-serif';
-      ctx.fillStyle = '#cbd5e1';
+      ctx.fillStyle = palette.legendText;
       ctx.fillText(color, legendX + dotR * 2 + 5, legendY);
       legendX += dotR * 2 + 5 + ctx.measureText(color).width + 14;
     }
   }
 
-  ctx.fillStyle = '#64748b';
+  ctx.fillStyle = palette.footerText;
   ctx.font = '11px sans-serif';
   ctx.fillText(
     `Digenerate oleh DigiSwiss-Round • ${new Date().toLocaleDateString('id-ID')}`,
@@ -261,8 +266,10 @@ function drawLegendAndFooter(
  * Ekspor PNG Standing Saat Ini untuk Turnamen Liga (resolusi 2x, tinggi dinamis aman untuk 64+ pemain).
  */
 export function exportLeagueRoundStandingToImage(
-  data: LeagueRoundStandingsExportData
+  data: LeagueRoundStandingsExportData,
+  theme?: AppTheme
 ): string | null {
+  const palette = getExportPalette(theme ?? getCurrentTheme());
   const width = 960;
   const padding = 30;
   const headerBottom = 154;
@@ -276,21 +283,21 @@ export function exportLeagueRoundStandingToImage(
   if (!created) return null;
   const { canvas, ctx } = created;
 
-  const tableY = drawLeagueHeader(ctx, width, height, padding, {
+  const tableY = drawLeagueHeader(ctx, width, height, padding, palette, {
     title: `STANDING LIGA: ${data.tournamentName.toUpperCase()}`,
     seasonLabel: data.seasonLabel,
     stageLabel: data.roundTitle,
     date: data.date,
     organizerName: data.organizerName,
     location: data.location,
-    stageAccentColor: data.isAllConfirmed ? '#34d399' : '#fbbf24',
+    stageAccentColor: data.isAllConfirmed ? palette.successText : palette.seasonText,
   });
 
   // Table header
-  ctx.fillStyle = '#1e293b';
+  ctx.fillStyle = palette.tableHeaderBg;
   ctx.fillRect(padding, tableY, width - padding * 2, tableHeaderH);
 
-  ctx.fillStyle = '#cbd5e1';
+  ctx.fillStyle = palette.tableHeaderText;
   ctx.font = 'bold 12px monospace';
   ctx.fillText('RANK', padding + 14, tableY + 23);
   ctx.fillText('NAMA PEMAIN', padding + 88, tableY + 23);
@@ -301,21 +308,25 @@ export function exportLeagueRoundStandingToImage(
   let currentY = tableY + tableHeaderH;
 
   if (data.rows.length === 0) {
-    ctx.fillStyle = '#131d31';
+    ctx.fillStyle = palette.rowBgEven;
     ctx.fillRect(padding, currentY, width - padding * 2, rowH);
-    ctx.fillStyle = '#94a3b8';
+    ctx.fillStyle = palette.mutedText;
     ctx.font = '13px sans-serif';
     ctx.fillText('Belum ada data peserta.', padding + 18, currentY + 26);
     currentY += rowH;
   } else {
     data.rows.forEach((row, idx) => {
-      const rowBg = idx % 2 === 0 ? '#131d31' : '#0f172a';
+      const rowBg = idx % 2 === 0 ? palette.rowBgEven : palette.rowBgOdd;
       ctx.fillStyle = rowBg;
       ctx.fillRect(padding, currentY, width - padding * 2, rowH);
 
       if (row.rank <= 3) {
         ctx.fillStyle =
-          row.rank === 1 ? '#eab308' : row.rank === 2 ? '#94a3b8' : '#cd7f32';
+          row.rank === 1
+            ? palette.rankGoldBar
+            : row.rank === 2
+            ? palette.rankSilver
+            : palette.rankBronze;
         ctx.fillRect(padding, currentY, 4, rowH);
       }
 
@@ -323,14 +334,18 @@ export function exportLeagueRoundStandingToImage(
 
       ctx.font = 'bold 14px monospace';
       ctx.fillStyle =
-        row.rank === 1 ? '#facc15' : row.rank <= 3 ? '#e2e8f0' : '#94a3b8';
+        row.rank === 1
+          ? palette.rankGold
+          : row.rank <= 3
+          ? palette.rankSilverText
+          : palette.mutedText;
       ctx.fillText(String(row.rank), padding + 20, textY);
 
       const displayName = row.isDropped
         ? `${row.playerName} (Drop)`
         : row.playerName;
       ctx.font = 'bold 14px sans-serif';
-      ctx.fillStyle = row.isDropped ? '#94a3b8' : '#f8fafc';
+      ctx.fillStyle = row.isDropped ? palette.mutedText : palette.titleText;
       ctx.fillText(
         truncateTextToWidth(
           (s) => ctx.measureText(s).width,
@@ -342,21 +357,21 @@ export function exportLeagueRoundStandingToImage(
       );
 
       ctx.font = 'bold 14px monospace';
-      ctx.fillStyle = '#f59e0b';
+      ctx.fillStyle = palette.accentText;
       ctx.fillText(String(row.points), padding + 566, textY);
 
       ctx.font = '13px monospace';
-      ctx.fillStyle = '#e2e8f0';
+      ctx.fillStyle = palette.strongText;
       ctx.fillText(`${row.matchWins} - ${row.matchLosses}`, padding + 662, textY);
 
-      ctx.fillStyle = '#cbd5e1';
+      ctx.fillStyle = palette.secondaryText;
       ctx.fillText(`${row.omw}%`, padding + 792, textY);
 
       currentY += rowH;
     });
   }
 
-  drawLegendAndFooter(ctx, [], currentY + 18, height, padding);
+  drawLegendAndFooter(ctx, [], currentY + 18, height, padding, palette);
   return canvas.toDataURL('image/png');
 }
 
@@ -365,8 +380,10 @@ export function exportLeagueRoundStandingToImage(
  * Skor dan sorotan pemenang HANYA dirender ketika data.showScores === true.
  */
 export function exportLeagueRoundPairingToImage(
-  data: LeagueRoundPairingExportData
+  data: LeagueRoundPairingExportData,
+  theme?: AppTheme
 ): string | null {
+  const palette = getExportPalette(theme ?? getCurrentTheme());
   const width = 1040;
   const padding = 30;
   const headerBottom = 154;
@@ -391,7 +408,7 @@ export function exportLeagueRoundPairingToImage(
   if (!created) return null;
   const { canvas, ctx } = created;
 
-  const tableY = drawLeagueHeader(ctx, width, height, padding, {
+  const tableY = drawLeagueHeader(ctx, width, height, padding, palette, {
     title: `PAIRING LIGA: ${data.tournamentName.toUpperCase()}`,
     seasonLabel: data.seasonLabel,
     stageLabel: data.showScores
@@ -400,7 +417,7 @@ export function exportLeagueRoundPairingToImage(
     date: data.date,
     organizerName: data.organizerName,
     location: data.location,
-    stageAccentColor: data.showScores ? '#34d399' : '#38bdf8',
+    stageAccentColor: data.showScores ? palette.successText : palette.deckNameText,
   });
 
   // Table header
@@ -410,9 +427,9 @@ export function exportLeagueRoundPairingToImage(
   const colP2X = padding + 586;
   const playerColW = 390;
 
-  ctx.fillStyle = '#1e293b';
+  ctx.fillStyle = palette.tableHeaderBg;
   ctx.fillRect(padding, tableY, width - padding * 2, tableHeaderH);
-  ctx.fillStyle = '#cbd5e1';
+  ctx.fillStyle = palette.tableHeaderText;
   ctx.font = 'bold 12px monospace';
   ctx.fillText('MEJA', colMejaX, tableY + 23);
   ctx.fillText('PEMAIN 1', colP1X, tableY + 23);
@@ -422,20 +439,20 @@ export function exportLeagueRoundPairingToImage(
   let currentY = tableY + tableHeaderH;
 
   if (data.rows.length === 0) {
-    ctx.fillStyle = '#131d31';
+    ctx.fillStyle = palette.rowBgEven;
     ctx.fillRect(padding, currentY, width - padding * 2, rowH);
-    ctx.fillStyle = '#94a3b8';
+    ctx.fillStyle = palette.mutedText;
     ctx.font = '13px sans-serif';
     ctx.fillText('Belum ada data meja pertandingan.', padding + 18, currentY + 28);
     currentY += rowH;
   } else {
     data.rows.forEach((row, idx) => {
-      const rowBg = idx % 2 === 0 ? '#131d31' : '#0f172a';
+      const rowBg = idx % 2 === 0 ? palette.rowBgEven : palette.rowBgOdd;
       ctx.fillStyle = rowBg;
       ctx.fillRect(padding, currentY, width - padding * 2, rowH);
 
       // Divider tipis antar baris
-      ctx.fillStyle = '#1e293b';
+      ctx.fillStyle = palette.rowDivider;
       ctx.fillRect(padding, currentY + rowH - 1, width - padding * 2, 1);
 
       const p1IsWinner = data.showScores && row.winner === 'p1';
@@ -445,16 +462,16 @@ export function exportLeagueRoundPairingToImage(
 
       // Meja label
       ctx.font = 'bold 13px monospace';
-      ctx.fillStyle = '#f59e0b';
+      ctx.fillStyle = palette.accentText;
       ctx.fillText(row.tableLabel, colMejaX, nameBaseline);
 
       // Pemain 1
       ctx.font = 'bold 14px sans-serif';
       ctx.fillStyle = p1IsWinner
-        ? '#facc15'
+        ? palette.winnerText
         : p2IsWinner
-        ? '#94a3b8'
-        : '#f8fafc';
+        ? palette.loserText
+        : palette.titleText;
       const p1Label = p1IsWinner ? `★ ${row.p1Name}` : row.p1Name;
       ctx.fillText(
         truncateTextToWidth((s) => ctx.measureText(s).width, p1Label, playerColW),
@@ -471,7 +488,8 @@ export function exportLeagueRoundPairingToImage(
             currentY + 43,
             currentY + 39,
             rowBg,
-            playerColW
+            playerColW,
+            palette
           );
         }
         if (row.p1Decks[1]) {
@@ -482,7 +500,8 @@ export function exportLeagueRoundPairingToImage(
             currentY + 61,
             currentY + 57,
             rowBg,
-            playerColW
+            playerColW,
+            palette
           );
         }
       }
@@ -491,28 +510,28 @@ export function exportLeagueRoundPairingToImage(
       ctx.font = 'bold 14px monospace';
       if (data.showScores) {
         if (row.isBye) {
-          ctx.fillStyle = '#34d399';
+          ctx.fillStyle = palette.successText;
           ctx.fillText('WIN', colCenterX - 12, nameBaseline);
         } else {
-          ctx.fillStyle = '#f59e0b';
+          ctx.fillStyle = palette.accentText;
           const scoreStr = `${row.p1Score} - ${row.p2Score}`;
           const scoreW = ctx.measureText(scoreStr).width;
           ctx.fillText(scoreStr, colCenterX - scoreW / 2 + 4, nameBaseline);
         }
       } else {
-        ctx.fillStyle = '#64748b';
+        ctx.fillStyle = palette.footerText;
         ctx.fillText('VS', colCenterX - 6, nameBaseline);
       }
 
       // Pemain 2 / BYE
       ctx.font = row.isBye ? 'italic 14px sans-serif' : 'bold 14px sans-serif';
       ctx.fillStyle = row.isBye
-        ? '#94a3b8'
+        ? palette.mutedText
         : p2IsWinner
-        ? '#facc15'
+        ? palette.winnerText
         : p1IsWinner
-        ? '#94a3b8'
-        : '#f8fafc';
+        ? palette.loserText
+        : palette.titleText;
       const p2Label = p2IsWinner ? `★ ${row.p2Name}` : row.p2Name;
       ctx.fillText(
         truncateTextToWidth((s) => ctx.measureText(s).width, p2Label, playerColW),
@@ -529,7 +548,8 @@ export function exportLeagueRoundPairingToImage(
             currentY + 43,
             currentY + 39,
             rowBg,
-            playerColW
+            playerColW,
+            palette
           );
         }
         if (row.p2Decks[1]) {
@@ -540,7 +560,8 @@ export function exportLeagueRoundPairingToImage(
             currentY + 61,
             currentY + 57,
             rowBg,
-            playerColW
+            playerColW,
+            palette
           );
         }
       }
@@ -549,7 +570,7 @@ export function exportLeagueRoundPairingToImage(
     });
   }
 
-  drawLegendAndFooter(ctx, usedColors, currentY + 18, height, padding);
+  drawLegendAndFooter(ctx, usedColors, currentY + 18, height, padding, palette);
   return canvas.toDataURL('image/png');
 }
 
@@ -559,8 +580,10 @@ export function exportLeagueRoundPairingToImage(
  * skor & pemenang per babak hanya tampil bila SELURUH pertandingan babak tersebut confirmed.
  */
 export function exportLeagueTopCutBracketToImage(
-  data: LeagueTopCutBracketExportData
+  data: LeagueTopCutBracketExportData,
+  theme?: AppTheme
 ): string | null {
+  const palette = getExportPalette(theme ?? getCurrentTheme());
   const stageCount = Math.max(1, data.stages.length);
   const width = stageCount >= 3 ? 1200 : 960;
   const padding = 30;
@@ -599,22 +622,22 @@ export function exportLeagueTopCutBracketToImage(
   if (!created) return null;
   const { canvas, ctx } = created;
 
-  let cursorY = drawLeagueHeader(ctx, width, height, padding, {
+  let cursorY = drawLeagueHeader(ctx, width, height, padding, palette, {
     title: `BRACKET TOP ${data.topCutSize}: ${data.tournamentName.toUpperCase()}`,
     seasonLabel: data.seasonLabel,
     stageLabel: data.roundLabel,
     date: data.date,
     organizerName: data.organizerName,
     location: data.location,
-    stageAccentColor: data.champion ? '#facc15' : '#f59e0b',
+    stageAccentColor: data.champion ? palette.winnerText : palette.accentText,
   });
 
   // Banner Juara jika Final sudah selesai
   if (data.champion) {
-    ctx.fillStyle = 'rgba(250, 204, 21, 0.14)';
+    ctx.fillStyle = palette.championBannerBg;
     drawRoundedRect(ctx, padding, cursorY, width - padding * 2, 42, 8);
     ctx.fill();
-    ctx.strokeStyle = '#facc15';
+    ctx.strokeStyle = palette.championBannerBorder;
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
@@ -626,7 +649,7 @@ export function exportLeagueTopCutBracketToImage(
         ? ` • ${data.champion.decks.map((d) => d.name).join(' & ')}`
         : '';
     ctx.font = 'bold 15px sans-serif';
-    ctx.fillStyle = '#facc15';
+    ctx.fillStyle = palette.championBannerText;
     const champText = truncateTextToWidth(
       (s) => ctx.measureText(s).width,
       `JUARA TOP ${data.topCutSize}: ${seedStr}${data.champion.name}${decksStr}`,
@@ -643,12 +666,12 @@ export function exportLeagueTopCutBracketToImage(
     const colX = padding + stageIdx * (colWidth + colGap);
 
     // Stage Header
-    ctx.fillStyle = '#1e293b';
+    ctx.fillStyle = palette.sectionHeaderBg;
     drawRoundedRect(ctx, colX, stageTopY, colWidth, 26, 5);
     ctx.fill();
 
     ctx.font = 'bold 12px monospace';
-    ctx.fillStyle = stage.isFinal ? '#facc15' : '#f59e0b';
+    ctx.fillStyle = stage.isFinal ? palette.winnerText : palette.accentText;
     ctx.fillText(stage.label.toUpperCase(), colX + 10, stageTopY + 17);
 
     const slotTopBase = stageTopY + stageTitleH;
@@ -660,22 +683,22 @@ export function exportLeagueTopCutBracketToImage(
       const cardY = slotTopBase + slotIdx * slotBlockH + (slotBlockH - cardH) / 2;
 
       if (slot.isPlaceholder) {
-        ctx.fillStyle = '#111c33';
+        ctx.fillStyle = palette.emptySlotBg;
         drawRoundedRect(ctx, colX, cardY, colWidth, cardH, 8);
         ctx.fill();
         ctx.save();
         ctx.setLineDash([5, 4]);
-        ctx.strokeStyle = '#334155';
+        ctx.strokeStyle = palette.emptySlotBorder;
         ctx.lineWidth = 1;
         ctx.stroke();
         ctx.restore();
 
         ctx.font = 'bold 11px monospace';
-        ctx.fillStyle = '#64748b';
+        ctx.fillStyle = palette.emptySlotText;
         ctx.fillText(slot.tableLabel, colX + 12, cardY + 22);
 
         ctx.font = '12px sans-serif';
-        ctx.fillStyle = '#64748b';
+        ctx.fillStyle = palette.emptySlotText;
         ctx.fillText('Slot Kosong', colX + 12, cardY + 62);
         ctx.font = '11px sans-serif';
         ctx.fillText('Menunggu babak sebelumnya', colX + 12, cardY + 80);
@@ -683,27 +706,27 @@ export function exportLeagueTopCutBracketToImage(
       }
 
       // Match card
-      const cardBg = stage.isFinal ? '#17233a' : '#131d31';
+      const cardBg = stage.isFinal ? palette.cardFinalBg : palette.cardBg;
       ctx.fillStyle = cardBg;
       drawRoundedRect(ctx, colX, cardY, colWidth, cardH, 8);
       ctx.fill();
-      ctx.strokeStyle = stage.isFinal ? 'rgba(250, 204, 21, 0.45)' : '#293548';
+      ctx.strokeStyle = stage.isFinal ? palette.cardFinalBorder : palette.cardBorder;
       ctx.lineWidth = 1;
       ctx.stroke();
 
       // Top mini-bar
       ctx.font = 'bold 10px monospace';
-      ctx.fillStyle = '#94a3b8';
+      ctx.fillStyle = palette.mutedText;
       ctx.fillText(slot.tableLabel, colX + 10, cardY + 16);
 
       if (stage.showScores) {
         const statusLabel = stage.isFinal ? 'FINAL SELESAI' : 'SELESAI';
         const stW = ctx.measureText(statusLabel).width;
-        ctx.fillStyle = stage.isFinal ? '#facc15' : '#34d399';
+        ctx.fillStyle = stage.isFinal ? palette.winnerText : palette.successText;
         ctx.fillText(statusLabel, colX + colWidth - stW - 10, cardY + 16);
       }
 
-      ctx.fillStyle = '#1e293b';
+      ctx.fillStyle = palette.rowDivider;
       ctx.fillRect(colX + 8, cardY + 22, colWidth - 16, 1);
 
       const drawPlayerRow = (
@@ -717,7 +740,7 @@ export function exportLeagueTopCutBracketToImage(
       ) => {
         const rowH = 44;
         if (isWinner) {
-          ctx.fillStyle = 'rgba(245, 158, 11, 0.14)';
+          ctx.fillStyle = palette.winnerRowBg;
           drawRoundedRect(ctx, colX + 6, rowTopY, colWidth - 12, rowH, 5);
           ctx.fill();
         }
@@ -727,7 +750,7 @@ export function exportLeagueTopCutBracketToImage(
 
         if (seed !== null) {
           ctx.font = 'bold 11px monospace';
-          ctx.fillStyle = '#f59e0b';
+          ctx.fillStyle = palette.accentText;
           const seedTag = `#${seed}`;
           ctx.fillText(seedTag, textX, rowTopY + 16);
           textX += ctx.measureText(seedTag).width + 6;
@@ -739,10 +762,10 @@ export function exportLeagueTopCutBracketToImage(
         );
         ctx.font = isWinner ? 'bold 12px sans-serif' : '600 12px sans-serif';
         ctx.fillStyle = isWinner
-          ? '#facc15'
+          ? palette.winnerText
           : isLoser
-          ? '#94a3b8'
-          : '#f8fafc';
+          ? palette.loserText
+          : palette.titleText;
         ctx.fillText(
           truncateTextToWidth((s) => ctx.measureText(s).width, name, maxNameW),
           textX,
@@ -752,7 +775,7 @@ export function exportLeagueTopCutBracketToImage(
         // Score only if stage.showScores
         if (stage.showScores && score !== null) {
           ctx.font = 'bold 13px monospace';
-          ctx.fillStyle = isWinner ? '#facc15' : '#94a3b8';
+          ctx.fillStyle = isWinner ? palette.winnerText : palette.loserText;
           const scoreStr = String(score);
           const sw = ctx.measureText(scoreStr).width;
           ctx.fillText(scoreStr, colX + colWidth - 14 - sw, rowTopY + 17);
@@ -768,8 +791,9 @@ export function exportLeagueTopCutBracketToImage(
               colX + 12,
               rowTopY + 34,
               rowTopY + 30,
-              cardBg,
+              isWinner ? palette.winnerRowBg : cardBg,
               deckAreaW,
+              palette,
               10,
               3.8
             );
@@ -781,8 +805,9 @@ export function exportLeagueTopCutBracketToImage(
               colX + 12,
               rowTopY + 34,
               rowTopY + 30,
-              cardBg,
+              isWinner ? palette.winnerRowBg : cardBg,
               halfW,
+              palette,
               10,
               3.5
             );
@@ -792,8 +817,9 @@ export function exportLeagueTopCutBracketToImage(
               colX + 12 + halfW + 8,
               rowTopY + 34,
               rowTopY + 30,
-              cardBg,
+              isWinner ? palette.winnerRowBg : cardBg,
               halfW,
+              palette,
               10,
               3.5
             );
@@ -826,6 +852,6 @@ export function exportLeagueTopCutBracketToImage(
   });
 
   const bottomContentY = stageTopY + stageTitleH + bracketBodyH;
-  drawLegendAndFooter(ctx, usedColors, bottomContentY + 20, height, padding);
+  drawLegendAndFooter(ctx, usedColors, bottomContentY + 20, height, padding, palette);
   return canvas.toDataURL('image/png');
 }
