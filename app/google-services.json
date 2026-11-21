@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "144706889337",
+    "project_id": "digiswiss-round",
+    "storage_bucket": "digiswiss-round.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:144706889337:android:b40076e96e40c73ef196a8",
+        "android_client_info": {
+          "package_name": "com.digiswiss.round"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAp7jfnT9Cwdi8FtW0BF9F2PQl4Df6iT_8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
