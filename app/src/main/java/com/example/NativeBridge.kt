@@ -17,10 +17,13 @@ import android.provider.Settings
 import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.mlkit.common.MlKitException
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -39,7 +42,8 @@ import kotlin.math.max
 class NativeBridge(
   private val activity: Activity,
   private val webView: WebView,
-  private val onPickQrImage: () -> Unit = {}
+  private val onPickQrImage: () -> Unit = {},
+  private val onRequestNotificationPermission: () -> Unit = {}
 ) {
   var lastDownloadId: Long = -1L
   var lastDownloadedFileName: String = ""
@@ -722,6 +726,150 @@ class NativeBridge(
       result.put("message", e.message ?: "Gagal membagikan gambar")
       return result.toString()
     }
+  }
+
+  private fun computeNotificationPermissionJson(): JSONObject {
+    val detail = JSONObject()
+    detail.put("type", "notification-permission")
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      val granted = ContextCompat.checkSelfPermission(
+        activity,
+        android.Manifest.permission.POST_NOTIFICATIONS
+      ) == PackageManager.PERMISSION_GRANTED
+      val state = if (granted) {
+        "granted"
+      } else {
+        val rationale = ActivityCompat.shouldShowRequestPermissionRationale(
+          activity,
+          android.Manifest.permission.POST_NOTIFICATIONS
+        )
+        val askedBefore = PushRuntimeState.wasPermissionAsked(activity)
+        when {
+          !askedBefore -> "prompt"
+          rationale -> "denied"
+          else -> "permanently_denied"
+        }
+      }
+      detail.put("state", state)
+      detail.put("granted", granted)
+      detail.put("canRequest", !granted && state != "permanently_denied")
+    } else {
+      val enabled = NotificationManagerCompat.from(activity).areNotificationsEnabled()
+      detail.put("state", if (enabled) "granted" else "denied")
+      detail.put("granted", enabled)
+      detail.put("canRequest", false)
+    }
+    return detail
+  }
+
+  @JavascriptInterface
+  fun getNotificationPermissionState() {
+    activity.runOnUiThread {
+      try {
+        dispatchNativeEvent("notification-permission", computeNotificationPermissionJson())
+      } catch (e: Exception) {
+        val detail = JSONObject().apply {
+          put("type", "notification-permission")
+          put("state", "denied")
+          put("granted", false)
+          put("canRequest", false)
+          put("error", e.message ?: "failed")
+        }
+        dispatchNativeEvent("notification-permission", detail)
+      }
+    }
+  }
+
+  @JavascriptInterface
+  fun requestNotificationPermission() {
+    activity.runOnUiThread {
+      try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+          val granted = ContextCompat.checkSelfPermission(
+            activity,
+            android.Manifest.permission.POST_NOTIFICATIONS
+          ) == PackageManager.PERMISSION_GRANTED
+          if (granted) {
+            dispatchNativeEvent("notification-permission", computeNotificationPermissionJson())
+          } else {
+            PushRuntimeState.markPermissionAsked(activity)
+            onRequestNotificationPermission()
+          }
+        } else {
+          dispatchNativeEvent("notification-permission", computeNotificationPermissionJson())
+        }
+      } catch (e: Exception) {
+        val detail = JSONObject().apply {
+          put("type", "notification-permission")
+          put("state", "denied")
+          put("granted", false)
+          put("canRequest", false)
+          put("error", e.message ?: "failed")
+        }
+        dispatchNativeEvent("notification-permission", detail)
+      }
+    }
+  }
+
+  fun onNotificationPermissionResult(granted: Boolean) {
+    val detail = computeNotificationPermissionJson().apply {
+      put("granted", granted)
+      if (granted) {
+        put("state", "granted")
+        put("canRequest", false)
+      }
+    }
+    dispatchNativeEvent("notification-permission", detail)
+  }
+
+  @JavascriptInterface
+  fun getFcmToken() {
+    try {
+      FirebaseMessaging.getInstance().token
+        .addOnSuccessListener { token ->
+          val clean = token?.trim().orEmpty()
+          if (clean.isNotEmpty()) {
+            PushRuntimeState.saveFcmToken(activity.applicationContext, clean)
+            val detail = JSONObject().apply {
+              put("type", "fcm-token")
+              put("ok", true)
+              put("token", clean)
+            }
+            dispatchNativeEvent("fcm-token", detail)
+          } else {
+            dispatchCachedOrFailedToken("Token kosong")
+          }
+        }
+        .addOnFailureListener { e ->
+          dispatchCachedOrFailedToken(e.message ?: "Gagal mengambil token FCM")
+        }
+    } catch (e: Exception) {
+      dispatchCachedOrFailedToken(e.message ?: "FCM tidak tersedia")
+    }
+  }
+
+  private fun dispatchCachedOrFailedToken(errorMessage: String) {
+    val cached = PushRuntimeState.getSavedFcmToken(activity.applicationContext)
+    if (cached.isNotEmpty()) {
+      val detail = JSONObject().apply {
+        put("type", "fcm-token")
+        put("ok", true)
+        put("token", cached)
+      }
+      dispatchNativeEvent("fcm-token", detail)
+      return
+    }
+    val detail = JSONObject().apply {
+      put("type", "fcm-token")
+      put("ok", false)
+      put("error", errorMessage)
+    }
+    dispatchNativeEvent("fcm-token", detail)
+  }
+
+  @JavascriptInterface
+  fun markPushWebReady() {
+    PushRuntimeState.markWebReadyAndFlush()
   }
 
   companion object {

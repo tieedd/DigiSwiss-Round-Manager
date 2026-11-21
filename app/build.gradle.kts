@@ -107,6 +107,7 @@ dependencies {
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.play.services.code.scanner)
   implementation(libs.mlkit.barcode.scanning)
+  implementation(libs.firebase.messaging)
   // implementation(libs.play.services.location)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

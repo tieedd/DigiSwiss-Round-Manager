@@ -17,6 +17,15 @@ import { useToast } from '../context/ToastContext';
 import { useUpdate } from '../context/UpdateContext';
 import { changeUserPin, resetUserPinWithPassword, verifyUserPin } from '../services/pinService';
 import { isWeakPin, isPinFormatValid } from '../utils/pinSecurityLogic';
+import { NotificationPrefs } from '../types';
+import { normalizeNotifPrefs } from '../utils/pushLogic';
+import { registerDeviceToken, updateUserNotifPrefs } from '../services/pushService';
+import {
+  getFcmTokenNative,
+  getNotificationPermissionStateNative,
+  isPushNotificationSupportedNative,
+  requestNotificationPermissionNative,
+} from '../services/nativeBridge';
 import {
   User,
   Shield,
@@ -31,7 +40,9 @@ import {
   Sun,
   Lock,
   AlertCircle,
-  RotateCcw
+  RotateCcw,
+  Bell,
+  BellOff
 } from 'lucide-react';
 
 export const ProfileView: React.FC = () => {
@@ -92,6 +103,71 @@ export const ProfileView: React.FC = () => {
   const [nameError, setNameError] = useState('');
   const [nameLoading, setNameLoading] = useState(false);
   const [nameSuccess, setNameSuccess] = useState('');
+
+  // Preferensi Notifikasi
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs>(() =>
+    normalizeNotifPrefs(userProfile?.notifPrefs)
+  );
+  const [savingNotifKey, setSavingNotifKey] = useState<string | null>(null);
+  const [nativeNotifSupported] = useState<boolean>(() => isPushNotificationSupportedNative());
+  const [nativeNotifGranted, setNativeNotifGranted] = useState<boolean | null>(null);
+  const [nativeNotifCanRequest, setNativeNotifCanRequest] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    setNotifPrefs(normalizeNotifPrefs(userProfile?.notifPrefs));
+  }, [userProfile?.notifPrefs]);
+
+  React.useEffect(() => {
+    if (!nativeNotifSupported) return;
+    let active = true;
+    getNotificationPermissionStateNative().then((status) => {
+      if (!active) return;
+      setNativeNotifGranted(status.granted);
+      setNativeNotifCanRequest(status.canRequest);
+    });
+    return () => {
+      active = false;
+    };
+  }, [nativeNotifSupported]);
+
+  const handleToggleNotifPref = async (key: keyof NotificationPrefs) => {
+    if (!currentUser || savingNotifKey) return;
+    const prev = notifPrefs;
+    const next: NotificationPrefs = {
+      ...prev,
+      [key]: !prev[key],
+    };
+    setNotifPrefs(next);
+    setSavingNotifKey(key);
+    try {
+      await updateUserNotifPrefs(currentUser.uid, next);
+      await refreshProfile();
+    } catch {
+      setNotifPrefs(prev);
+      toast.error('Notifikasi', 'Gagal menyimpan preferensi notifikasi.');
+    } finally {
+      setSavingNotifKey(null);
+    }
+  };
+
+  const handleEnableDeviceNotifications = async () => {
+    if (!currentUser) return;
+    const res = await requestNotificationPermissionNative();
+    setNativeNotifGranted(res.granted);
+    setNativeNotifCanRequest(res.canRequest);
+    if (res.granted) {
+      const tokenRes = await getFcmTokenNative();
+      if (tokenRes.ok && tokenRes.token) {
+        await registerDeviceToken(currentUser.uid, tokenRes.token);
+      }
+      toast.success('Notifikasi Aktif', 'Perangkat siap menerima notifikasi turnamen.');
+    } else if (!res.canRequest) {
+      toast.info(
+        'Izin Notifikasi Ditolak',
+        'Aktifkan izin notifikasi melalui Pengaturan Aplikasi Android.'
+      );
+    }
+  };
 
   const getRoleLabel = (role?: string) => {
     switch (role) {
@@ -376,6 +452,136 @@ export const ProfileView: React.FC = () => {
             </div>
           </div>
           <ThemeToggle />
+        </Card>
+      </div>
+
+      {/* Pengaturan Notifikasi */}
+      <div className="flex flex-col gap-2">
+        <h4 className="text-body font-semibold text-dark-text px-1">
+          Notifikasi
+        </h4>
+
+        {nativeNotifSupported && nativeNotifGranted === false && (
+          <Card variant="surface" className="p-3.5 border-amber-400/30 bg-amber-500/5 flex items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5 min-w-0">
+              <BellOff size={18} className="text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <span className="text-body font-medium text-dark-text block">
+                  Izin Notifikasi Perangkat Nonaktif
+                </span>
+                <span className="text-caption text-dark-muted block">
+                  {nativeNotifCanRequest
+                    ? 'Izinkan notifikasi agar tidak ketinggalan ronde dan skor.'
+                    : 'Aktifkan izin notifikasi di Pengaturan Aplikasi Android.'}
+                </span>
+              </div>
+            </div>
+            {nativeNotifCanRequest && (
+              <Button
+                variant="primary"
+                className="!min-h-[36px] !px-3 !text-caption flex-shrink-0"
+                onClick={handleEnableDeviceNotifications}
+              >
+                Izinkan
+              </Button>
+            )}
+          </Card>
+        )}
+
+        <Card variant="surface" className="p-3.5 flex flex-col gap-3">
+          {/* Toggle Utama */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-btn bg-dark-surface-high flex items-center justify-center text-accent flex-shrink-0">
+                <Bell size={18} className="stroke-[1.5]" />
+              </div>
+              <div className="min-w-0">
+                <span className="text-body font-medium text-dark-text block">
+                  Aktifkan Notifikasi
+                </span>
+                <span className="text-caption text-dark-muted block">
+                  Kontrol utama seluruh pemberitahuan push
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={notifPrefs.enabled}
+              aria-label="Aktifkan Notifikasi"
+              disabled={savingNotifKey !== null}
+              onClick={() => handleToggleNotifPref('enabled')}
+              className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors ${
+                notifPrefs.enabled
+                  ? 'bg-accent border-accent'
+                  : 'bg-dark-surface-high border-dark-border'
+              } ${savingNotifKey ? 'opacity-60' : ''}`}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                  notifPrefs.enabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className={`border-t border-dark-border pt-3 flex flex-col gap-2.5 ${!notifPrefs.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
+            {[
+              {
+                key: 'announcements' as const,
+                label: 'Pengumuman Turnamen',
+                desc: 'Info atau pengumuman baru dari organizer',
+              },
+              {
+                key: 'rounds' as const,
+                label: 'Ronde Baru Dimulai',
+                desc: 'Info lawan & nomor meja saat pairing dibuat',
+              },
+              {
+                key: 'scores' as const,
+                label: 'Skor & Konfirmasi',
+                desc: 'Laporan skor menunggu konfirmasi & sengketa',
+              },
+              {
+                key: 'registration' as const,
+                label: 'Status Pendaftaran',
+                desc: 'Pendaftaran diterima atau ditolak dari waiting list',
+              },
+            ].map((item) => {
+              const checked = notifPrefs[item.key];
+              return (
+                <div key={item.key} className="flex items-center justify-between gap-3 py-0.5">
+                  <div className="min-w-0">
+                    <span className="text-caption font-medium text-dark-text block">
+                      {item.label}
+                    </span>
+                    <span className="text-[11px] text-dark-muted block">
+                      {item.desc}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={checked}
+                    aria-label={item.label}
+                    disabled={!notifPrefs.enabled || savingNotifKey !== null}
+                    onClick={() => handleToggleNotifPref(item.key)}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors ${
+                      checked
+                        ? 'bg-accent border-accent'
+                        : 'bg-dark-surface-high border-dark-border'
+                    } ${savingNotifKey ? 'opacity-60' : ''}`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        checked ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </Card>
       </div>
 

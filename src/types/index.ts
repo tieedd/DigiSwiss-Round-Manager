@@ -1,11 +1,44 @@
 export type UserRole = 'admin' | 'organizer' | 'player';
 
+export interface NotificationPrefs {
+  enabled: boolean;
+  announcements: boolean;
+  rounds: boolean;
+  scores: boolean;
+  registration: boolean;
+}
+
+export type PushEventType =
+  | 'announcement'
+  | 'round_started'
+  | 'score_pending'
+  | 'score_disputed'
+  | 'registration_status';
+
+export interface NotifyPushInput {
+  type: PushEventType;
+  tournamentId: string;
+  announcementId?: string;
+  roundNumber?: number;
+  matchId?: string;
+  playerId?: string;
+  playerIds?: string[];
+}
+
+export interface UserDeviceDoc {
+  token: string;
+  platform: 'android';
+  updatedAt: number;
+  appVersion?: string;
+}
+
 export interface UserProfile {
   username: string;
   displayName: string;
   role: UserRole;
   active: boolean;
   mustChangePassword?: boolean;
+  notifPrefs?: NotificationPrefs;
   createdAt: number;
   lastLoginAt?: number;
 }

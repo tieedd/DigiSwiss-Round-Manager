@@ -39,6 +39,7 @@ import {
   syncLeagueInvitesMetadata
 } from './leagueInviteService';
 import { getAllTournamentLeagueDecks } from './leagueDeckService';
+import { notifyPush } from './pushService';
 
 export interface CreateTournamentParams {
   name: string;
@@ -376,6 +377,13 @@ export async function updatePlayerStatus(
 ): Promise<void> {
   const playerRef = doc(db, 'tournaments', tid, 'players', pid);
   await updateDoc(playerRef, { status });
+  if (status === 'accepted' || status === 'rejected') {
+    notifyPush({
+      type: 'registration_status',
+      tournamentId: tid,
+      playerId: pid,
+    });
+  }
 }
 
 /**
@@ -394,6 +402,17 @@ export async function acceptAllWaitingPlayers(
   });
 
   await batch.commit();
+
+  const uidPlayerIds = waitingPlayers
+    .filter((p) => Boolean(p.uid))
+    .map((p) => p.id);
+  if (uidPlayerIds.length > 0) {
+    notifyPush({
+      type: 'registration_status',
+      tournamentId: tid,
+      playerIds: uidPlayerIds,
+    });
+  }
 }
 
 /**

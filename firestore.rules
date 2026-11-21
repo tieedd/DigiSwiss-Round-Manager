@@ -68,6 +68,27 @@ service cloud.firestore {
         );
     }
 
+    function isValidNotifPrefs(prefs) {
+      return prefs is map &&
+        prefs.keys().hasOnly(['enabled', 'announcements', 'rounds', 'scores', 'registration']) &&
+        (!('enabled' in prefs) || prefs.enabled is bool) &&
+        (!('announcements' in prefs) || prefs.announcements is bool) &&
+        (!('rounds' in prefs) || prefs.rounds is bool) &&
+        (!('scores' in prefs) || prefs.scores is bool) &&
+        (!('registration' in prefs) || prefs.registration is bool);
+    }
+
+    function isValidDeviceDoc(data) {
+      return data.keys().hasOnly(['token', 'platform', 'updatedAt', 'appVersion']) &&
+        data.keys().hasAll(['token', 'platform', 'updatedAt']) &&
+        data.token is string &&
+        data.token.size() >= 1 &&
+        data.token.size() <= 4096 &&
+        data.platform == 'android' &&
+        data.updatedAt is int &&
+        (!('appVersion' in data) || (data.appVersion is string && data.appVersion.size() <= 64));
+    }
+
     // 1. Koleksi Pengguna: users/{uid}
     match /users/{uid} {
       allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
@@ -100,7 +121,8 @@ service cloud.firestore {
           request.auth.uid == uid &&
           request.resource.data.role == resource.data.role &&
           request.resource.data.username == resource.data.username &&
-          request.resource.data.active == resource.data.active
+          request.resource.data.active == resource.data.active &&
+          (!('notifPrefs' in request.resource.data) || isValidNotifPrefs(request.resource.data.notifPrefs))
         )
         ||
         // Admin memperbarui akun pengguna lain (bukan admin utama)
@@ -123,6 +145,14 @@ service cloud.firestore {
       );
 
       allow delete: if false;
+
+      // Sub-koleksi Perangkat Notifikasi FCM: users/{uid}/devices/{deviceId}
+      match /devices/{deviceId} {
+        allow read, delete: if isCurrentUserActive() && request.auth.uid == uid;
+        allow create, update: if isCurrentUserActive() &&
+          request.auth.uid == uid &&
+          isValidDeviceDoc(request.resource.data);
+      }
     }
 
     // 2. Metadata Sistem: meta/bootstrap

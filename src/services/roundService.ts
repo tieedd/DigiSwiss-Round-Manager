@@ -45,6 +45,7 @@ import {
 } from '../utils/topCutLogic';
 import { getTournamentPlayers } from './tournamentService';
 import { getAllTournamentLeagueDecks } from './leagueDeckService';
+import { notifyPush } from './pushService';
 import { isLeagueTournament, isTopCutMandatoryForTournament } from '../utils/seasonLogic';
 import {
   attachLeagueDecksToPairingDrafts,
@@ -280,6 +281,12 @@ export async function createRoundPairing(
   // Eksekusi batch
   await batch.commit();
 
+  notifyPush({
+    type: 'round_started',
+    tournamentId,
+    roundNumber: targetRoundNumber,
+  });
+
   return {
     round: roundData,
     matches: createdMatches,
@@ -417,6 +424,11 @@ export async function reportMatchScoreByPlayer(
       reportedBy: reporterUid,
       updatedAt: Date.now(),
     });
+    notifyPush({
+      type: 'score_pending',
+      tournamentId,
+      matchId,
+    });
     return;
   }
 
@@ -430,6 +442,11 @@ export async function reportMatchScoreByPlayer(
     status: 'awaiting',
     reportedBy: reporterUid,
     updatedAt: Date.now(),
+  });
+  notifyPush({
+    type: 'score_pending',
+    tournamentId,
+    matchId,
   });
 }
 
@@ -448,6 +465,13 @@ export async function respondToReportedScore(
     status: newStatus,
     updatedAt: Date.now(),
   });
+  if (!approve) {
+    notifyPush({
+      type: 'score_disputed',
+      tournamentId,
+      matchId,
+    });
+  }
 }
 
 /**
@@ -754,6 +778,12 @@ export async function startTopCutPhase(
 
   await batch.commit();
 
+  notifyPush({
+    type: 'round_started',
+    tournamentId,
+    roundNumber: targetRoundNumber,
+  });
+
   // Catat log audit
   try {
     const firstLabel = getRoundDisplayLabel(targetRoundNumber, totalSwissRounds, topCutSize);
@@ -886,6 +916,12 @@ export async function createNextTopCutRound(
   });
 
   await batch.commit();
+
+  notifyPush({
+    type: 'round_started',
+    tournamentId,
+    roundNumber: targetRoundNumber,
+  });
 
   // Catat log audit
   try {

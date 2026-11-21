@@ -15,6 +15,7 @@ import {
   validateAnnouncementMessage,
 } from '../utils/announcementLogic';
 import { recordAuditLog } from './authService';
+import { notifyPush } from './pushService';
 
 /**
  * Berlangganan daftar pengumuman turnamen secara real-time (terbaru di atas).
@@ -85,6 +86,12 @@ export async function createTournamentAnnouncement(
     validation.trimmed,
     tournamentId
   );
+
+  notifyPush({
+    type: 'announcement',
+    tournamentId,
+    announcementId: newRef.id,
+  });
 
   return payload;
 }

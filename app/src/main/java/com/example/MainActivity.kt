@@ -1,5 +1,6 @@
 package com.example
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.DownloadManager
 import android.content.BroadcastReceiver
@@ -33,6 +34,7 @@ import org.json.JSONObject
 class MainActivity : ComponentActivity() {
   private var nativeBridge: NativeBridge? = null
   private lateinit var pickQrImageLauncher: ActivityResultLauncher<PickVisualMediaRequest>
+  private lateinit var requestNotificationPermissionLauncher: ActivityResultLauncher<String>
 
   private val downloadReceiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
@@ -76,11 +78,18 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
+    PushRuntimeState.ensureNotificationChannel(this)
 
     pickQrImageLauncher = registerForActivityResult(
       ActivityResultContracts.PickVisualMedia()
     ) { uri ->
       nativeBridge?.onQrImagePicked(uri)
+    }
+
+    requestNotificationPermissionLauncher = registerForActivityResult(
+      ActivityResultContracts.RequestPermission()
+    ) { granted ->
+      nativeBridge?.onNotificationPermissionResult(granted)
     }
 
     val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
@@ -90,6 +99,8 @@ class MainActivity : ComponentActivity() {
       registerReceiver(downloadReceiver, filter)
     }
 
+    handleNotificationIntent(intent)
+
     setContent {
       Surface(
         modifier = Modifier.fillMaxSize(),
@@ -98,22 +109,67 @@ class MainActivity : ComponentActivity() {
         DigiSwissWebView(
           onBridgeCreated = { bridge ->
             nativeBridge = bridge
+            PushRuntimeState.attachBridge(bridge)
           },
           onPickQrImage = {
             pickQrImageLauncher.launch(
               PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
             )
+          },
+          onRequestNotificationPermission = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+              requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
           }
         )
       }
     }
   }
 
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    handleNotificationIntent(intent)
+  }
+
+  override fun onResume() {
+    super.onResume()
+    PushRuntimeState.isAppInForeground = true
+  }
+
+  override fun onPause() {
+    PushRuntimeState.isAppInForeground = false
+    super.onPause()
+  }
+
   override fun onDestroy() {
+    PushRuntimeState.isAppInForeground = false
+    PushRuntimeState.detachBridge(nativeBridge)
     super.onDestroy()
     try {
       unregisterReceiver(downloadReceiver)
     } catch (_: Exception) {}
+  }
+
+  private fun handleNotificationIntent(targetIntent: Intent?) {
+    if (targetIntent == null) return
+    val tournamentId = targetIntent.getStringExtra(PushRuntimeState.EXTRA_TOURNAMENT_ID)?.trim().orEmpty()
+    if (tournamentId.isEmpty()) return
+
+    val pushType = targetIntent.getStringExtra(PushRuntimeState.EXTRA_PUSH_TYPE)?.trim().orEmpty()
+    val matchId = targetIntent.getStringExtra(PushRuntimeState.EXTRA_MATCH_ID)?.trim().orEmpty()
+
+    targetIntent.removeExtra(PushRuntimeState.EXTRA_TOURNAMENT_ID)
+    targetIntent.removeExtra(PushRuntimeState.EXTRA_PUSH_TYPE)
+    targetIntent.removeExtra(PushRuntimeState.EXTRA_MATCH_ID)
+
+    val detail = JSONObject().apply {
+      put("type", "notification-opened")
+      put("tournamentId", tournamentId)
+      if (pushType.isNotEmpty()) put("pushType", pushType)
+      if (matchId.isNotEmpty()) put("matchId", matchId)
+    }
+    PushRuntimeState.enqueueOrDispatchOpenedNotification(detail)
   }
 }
 
@@ -122,7 +178,8 @@ class MainActivity : ComponentActivity() {
 fun DigiSwissWebView(
   modifier: Modifier = Modifier,
   onBridgeCreated: (NativeBridge) -> Unit = {},
-  onPickQrImage: () -> Unit = {}
+  onPickQrImage: () -> Unit = {},
+  onRequestNotificationPermission: () -> Unit = {}
 ) {
   AndroidView(
     modifier = modifier.fillMaxSize(),
@@ -147,7 +204,12 @@ fun DigiSwissWebView(
           cacheMode = WebSettings.LOAD_DEFAULT
         }
 
-        val bridge = NativeBridge(activity, this, onPickQrImage)
+        val bridge = NativeBridge(
+          activity = activity,
+          webView = this,
+          onPickQrImage = onPickQrImage,
+          onRequestNotificationPermission = onRequestNotificationPermission
+        )
         addJavascriptInterface(bridge, "AndroidBridge")
         onBridgeCreated(bridge)
 

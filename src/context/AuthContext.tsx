@@ -5,6 +5,7 @@ import { auth, db } from '../firebaseConfig';
 import { UserProfile } from '../types';
 import { checkBootstrapExists } from '../services/bootstrapService';
 import { getClockOffset } from '../services/authService';
+import { unregisterCurrentDevice } from '../services/pushService';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -59,6 +60,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = useCallback(async () => {
     try {
+      const uid = auth.currentUser?.uid;
+      if (uid) {
+        await unregisterCurrentDevice(uid);
+      }
       await signOut(auth);
       setCurrentUser(null);
       setUserProfile(null);

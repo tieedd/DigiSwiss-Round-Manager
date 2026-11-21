@@ -22,6 +22,10 @@ declare global {
       scanQrCode?(requestId: string): void;
       pickQrImage?(requestId: string): void;
       shareImage?(fileName: string, base64Png: string, caption: string): string;
+      getFcmToken?(): void;
+      getNotificationPermissionState?(): void;
+      requestNotificationPermission?(): void;
+      markPushWebReady?(): void;
     };
   }
 }
@@ -34,7 +38,12 @@ export type NativeEventType =
   | 'ota-download-progress'
   | 'ota-download-complete'
   | 'ota-download-failed'
-  | 'qr-result';
+  | 'qr-result'
+  | 'fcm-token'
+  | 'fcm-token-refreshed'
+  | 'notification-permission'
+  | 'push-received'
+  | 'notification-opened';
 
 export interface NativeEventDetail {
   type: NativeEventType;
@@ -50,6 +59,15 @@ export interface NativeEventDetail {
   requestId?: string;
   text?: string;
   error?: string;
+  token?: string;
+  state?: 'granted' | 'prompt' | 'denied' | 'permanently_denied';
+  granted?: boolean;
+  canRequest?: boolean;
+  title?: string;
+  body?: string;
+  pushType?: string;
+  tournamentId?: string;
+  matchId?: string;
 }
 
 /**
@@ -603,6 +621,172 @@ export async function shareImageNative(
     };
   }
 }
+
+export interface NotificationPermissionStatus {
+  state: 'granted' | 'prompt' | 'denied' | 'permanently_denied';
+  granted: boolean;
+  canRequest: boolean;
+}
+
+export function isPushNotificationSupportedNative(): boolean {
+  return (
+    isNativeBridgeAvailable() &&
+    typeof window.AndroidBridge?.getFcmToken === 'function' &&
+    typeof window.AndroidBridge?.getNotificationPermissionState === 'function'
+  );
+}
+
+export function markPushWebReadyNative(): void {
+  if (
+    isNativeBridgeAvailable() &&
+    typeof window.AndroidBridge?.markPushWebReady === 'function'
+  ) {
+    try {
+      window.AndroidBridge.markPushWebReady();
+    } catch {
+      // Abaikan jika bridge belum siap
+    }
+  }
+}
+
+export function getNotificationPermissionStateNative(): Promise<NotificationPermissionStatus> {
+  if (
+    !isNativeBridgeAvailable() ||
+    typeof window.AndroidBridge?.getNotificationPermissionState !== 'function'
+  ) {
+    return Promise.resolve({ state: 'denied', granted: false, canRequest: false });
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let removeListener: () => void = () => {};
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      removeListener();
+      resolve({ state: 'denied', granted: false, canRequest: false });
+    }, 5000);
+
+    removeListener = addNativeEventListener((detail) => {
+      if (settled) return;
+      if (detail.type === 'notification-permission') {
+        settled = true;
+        clearTimeout(timer);
+        removeListener();
+        resolve({
+          state: detail.state || (detail.granted ? 'granted' : 'denied'),
+          granted: Boolean(detail.granted),
+          canRequest: Boolean(detail.canRequest),
+        });
+      }
+    });
+
+    try {
+      window.AndroidBridge!.getNotificationPermissionState!();
+    } catch {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        removeListener();
+        resolve({ state: 'denied', granted: false, canRequest: false });
+      }
+    }
+  });
+}
+
+export function requestNotificationPermissionNative(): Promise<NotificationPermissionStatus> {
+  if (
+    !isNativeBridgeAvailable() ||
+    typeof window.AndroidBridge?.requestNotificationPermission !== 'function'
+  ) {
+    return Promise.resolve({ state: 'denied', granted: false, canRequest: false });
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let removeListener: () => void = () => {};
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      removeListener();
+      resolve({ state: 'denied', granted: false, canRequest: false });
+    }, 60_000);
+
+    removeListener = addNativeEventListener((detail) => {
+      if (settled) return;
+      if (detail.type === 'notification-permission') {
+        settled = true;
+        clearTimeout(timer);
+        removeListener();
+        resolve({
+          state: detail.state || (detail.granted ? 'granted' : 'denied'),
+          granted: Boolean(detail.granted),
+          canRequest: Boolean(detail.canRequest),
+        });
+      }
+    });
+
+    try {
+      window.AndroidBridge!.requestNotificationPermission!();
+    } catch {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        removeListener();
+        resolve({ state: 'denied', granted: false, canRequest: false });
+      }
+    }
+  });
+}
+
+export function getFcmTokenNative(): Promise<{ ok: boolean; token?: string; error?: string }> {
+  if (
+    !isNativeBridgeAvailable() ||
+    typeof window.AndroidBridge?.getFcmToken !== 'function'
+  ) {
+    return Promise.resolve({ ok: false, error: 'unsupported' });
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let removeListener: () => void = () => {};
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      removeListener();
+      resolve({ ok: false, error: 'timeout' });
+    }, 10_000);
+
+    removeListener = addNativeEventListener((detail) => {
+      if (settled) return;
+      if (detail.type === 'fcm-token') {
+        settled = true;
+        clearTimeout(timer);
+        removeListener();
+        if (detail.ok && detail.token) {
+          resolve({ ok: true, token: detail.token });
+        } else {
+          resolve({ ok: false, error: detail.error || 'failed' });
+        }
+      }
+    });
+
+    try {
+      window.AndroidBridge!.getFcmToken!();
+    } catch {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        removeListener();
+        resolve({ ok: false, error: 'failed' });
+      }
+    }
+  });
+}
+
 
 
 
