@@ -427,8 +427,8 @@ test('TOP CUT: filterSwissMatches & filterTopCutMatches serta ekspor CSV/Teks', 
   assert.ok(
     csv.includes('Peringkat,Nama Pemain,Tipe Peserta,Nama Deck,Warna Deck,Total Poin,Match W,Match L,Game Win,Game Lose,OMW%,GW%,OGW%,Hasil Top Cut')
   );
-  assert.ok(csv.includes('"1","Budi","Akun Terdaftar","Jesmon","Merah","6","2","1","4","2","66.7%","60%","55%","Juara"'));
-  assert.ok(csv.includes('"2","Siti","Akun Terdaftar","MirageGaogamon","Biru","9","3","0","6","1","55.5%","85%","50%","Runner-up"'));
+  assert.ok(csv.includes('"1","Budi","Akun Terdaftar","Jesmon","Merah","6","2","1","4","2","66.70%","60.00%","55.00%","Juara"'));
+  assert.ok(csv.includes('"2","Siti","Akun Terdaftar","MirageGaogamon","Biru","9","3","0","6","1","55.50%","85.00%","50.00%","Runner-up"'));
 
   const text = generateStandingsText(parts);
   assert.ok(text.includes('🥇 Budi                 [Juara] | Poin:  6 | W-L: 2-1'));

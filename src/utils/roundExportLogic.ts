@@ -16,6 +16,10 @@ import {
 } from './topCutLogic.ts';
 import { formatSeasonLabel } from './seasonLogic.ts';
 import { formatDeckColorsEmoji } from './deckExportLogic.ts';
+import {
+  formatIndonesianFullDate,
+  formatPercent2Decimals,
+} from './exportFormatLogic.ts';
 
 export type RoundExportKind = 'Standing' | 'Pairing' | 'Bracket';
 export type RoundExportFileExtension = 'png' | 'txt' | 'csv';
@@ -276,7 +280,7 @@ export function generateLeagueRoundStandingText(
   }
   lines.push(`Keterangan: ${data.roundTitle}`);
   lines.push(
-    `Tanggal: ${data.date} | Organizer: ${data.organizerName || '-'} | Lokasi: ${data.location || '-'}`
+    `Tanggal: ${formatIndonesianFullDate(data.date)} | Organizer: ${data.organizerName || '-'} | Lokasi: ${data.location || '-'}`
   );
   lines.push('=======================================================');
   lines.push('');
@@ -287,7 +291,7 @@ export function generateLeagueRoundStandingText(
     for (const row of data.rows) {
       const dropSuffix = row.isDropped ? ' (Drop)' : '';
       lines.push(
-        `#${row.rank} ${row.playerName}${dropSuffix} | Poin: ${row.points} | W-L: ${row.matchWins}-${row.matchLosses} | OMW: ${row.omw}%`
+        `#${row.rank} ${row.playerName}${dropSuffix} | Poin: ${row.points} | W-L: ${row.matchWins}-${row.matchLosses} | OMW: ${formatPercent2Decimals(row.omw)}`
       );
     }
   }
@@ -302,7 +306,7 @@ export function generateLeagueRoundStandingCsv(
     `${escapeCsvCell('Turnamen')},${escapeCsvCell(data.tournamentName)}`,
     `${escapeCsvCell('Jenis')},${escapeCsvCell('Turnamen Liga')}`,
     `${escapeCsvCell('Season')},${escapeCsvCell(data.seasonLabel || '-')}`,
-    `${escapeCsvCell('Tanggal')},${escapeCsvCell(data.date)}`,
+    `${escapeCsvCell('Tanggal')},${escapeCsvCell(formatIndonesianFullDate(data.date))}`,
     `${escapeCsvCell('Organizer')},${escapeCsvCell(data.organizerName || '-')}`,
     `${escapeCsvCell('Lokasi')},${escapeCsvCell(data.location || '-')}`,
     `${escapeCsvCell('Keterangan')},${escapeCsvCell(data.roundTitle)}`,
@@ -320,7 +324,7 @@ export function generateLeagueRoundStandingCsv(
       row.isDropped ? 'Drop' : 'Aktif',
       row.points,
       `${row.matchWins}-${row.matchLosses}`,
-      `${row.omw}%`,
+      formatPercent2Decimals(row.omw),
     ]
       .map(escapeCsvCell)
       .join(',')
@@ -398,7 +402,7 @@ export function generateLeagueRoundPairingText(
     `Babak: ${data.roundLabel}${data.showScores ? ' (Hasil Resmi)' : ' (Sedang Berjalan)'}`
   );
   lines.push(
-    `Tanggal: ${data.date} | Organizer: ${data.organizerName || '-'} | Lokasi: ${data.location || '-'}`
+    `Tanggal: ${formatIndonesianFullDate(data.date)} | Organizer: ${data.organizerName || '-'} | Lokasi: ${data.location || '-'}`
   );
   lines.push('=======================================================');
   lines.push('');
@@ -584,7 +588,7 @@ export function generateLeagueTopCutBracketText(
     lines.push(`Season: ${data.seasonLabel}`);
   }
   lines.push(
-    `Tanggal: ${data.date} | Organizer: ${data.organizerName || '-'} | Lokasi: ${data.location || '-'}`
+    `Tanggal: ${formatIndonesianFullDate(data.date)} | Organizer: ${data.organizerName || '-'} | Lokasi: ${data.location || '-'}`
   );
   lines.push('=======================================================');
 

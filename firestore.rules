@@ -82,13 +82,15 @@ service cloud.firestore {
           request.resource.data.username.matches('^[a-z0-9._]{3,20}$')
         )
         ||
-        // Kasus B: Admin Utama Otomatis (Hanya dibuat SEKALI untuk username "admindss" dan hanya jika meta/bootstrap belum ada)
+        // Kasus B: Admin Utama (Hanya dibuat SEKALI untuk username "admindss" secara atomik/batch bersama meta/bootstrap)
         (
           request.resource.data.username == 'admindss' &&
           request.resource.data.role == 'admin' &&
           request.resource.data.active == true &&
-          request.resource.data.mustChangePassword == true &&
-          !exists(/databases/$(database)/documents/meta/bootstrap)
+          (!('mustChangePassword' in request.resource.data) || request.resource.data.mustChangePassword is bool) &&
+          !exists(/databases/$(database)/documents/meta/bootstrap) &&
+          existsAfter(/databases/$(database)/documents/meta/bootstrap) &&
+          getAfter(/databases/$(database)/documents/meta/bootstrap).data.initializedBy == uid
         )
       );
 
@@ -126,7 +128,13 @@ service cloud.firestore {
     // 2. Metadata Sistem: meta/bootstrap
     match /meta/bootstrap {
       allow read: if true;
-      allow create: if isAuthenticated() && !exists(/databases/$(database)/documents/meta/bootstrap);
+      allow create: if isAuthenticated() &&
+        !exists(/databases/$(database)/documents/meta/bootstrap) &&
+        request.resource.data.initializedBy == request.auth.uid &&
+        existsAfter(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == 'admindss' &&
+        getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+        getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true;
       allow update, delete: if false;
     }
 
@@ -432,6 +440,40 @@ service cloud.firestore {
         );
 
         // Penghapusan: Organizer pemilik atau Admin
+        allow delete: if isCurrentUserActive() && (
+          get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid ||
+          isAdmin()
+        );
+      }
+
+      // Sub-koleksi Pengumuman Organizer: tournaments/{tid}/announcements/{aid}
+      match /announcements/{aid} {
+        allow read: if isAuthenticated() && isCurrentUserActive();
+
+        allow create: if isCurrentUserActive() &&
+          (get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid || isAdmin()) &&
+          request.resource.data.keys().hasOnly(['id', 'message', 'authorId', 'authorName', 'createdAt', 'updatedAt']) &&
+          request.resource.data.id == aid &&
+          request.resource.data.authorId == request.auth.uid &&
+          request.resource.data.authorName is string &&
+          request.resource.data.authorName.size() >= 1 &&
+          request.resource.data.message is string &&
+          request.resource.data.message.size() >= 1 &&
+          request.resource.data.message.size() <= 500 &&
+          request.resource.data.createdAt is int &&
+          request.resource.data.updatedAt is int;
+
+        allow update: if isCurrentUserActive() &&
+          (get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid || isAdmin()) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['message', 'updatedAt']) &&
+          request.resource.data.id == resource.data.id &&
+          request.resource.data.authorId == resource.data.authorId &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.message is string &&
+          request.resource.data.message.size() >= 1 &&
+          request.resource.data.message.size() <= 500 &&
+          request.resource.data.updatedAt is int;
+
         allow delete: if isCurrentUserActive() && (
           get(/databases/$(database)/documents/tournaments/$(tid)).data.organizerId == request.auth.uid ||
           isAdmin()

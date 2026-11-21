@@ -18,6 +18,7 @@ import { DeckColorDots } from '../../components/common/DeckColorDots';
 import { TournamentFormSheet } from '../../components/tournaments/TournamentFormSheet';
 import { LeagueInviteQrCard } from '../../components/tournaments/LeagueInviteQrCard';
 import { LeagueInviteJoinSheet } from '../../components/tournaments/LeagueInviteJoinSheet';
+import { TournamentAnnouncementsSection } from '../../components/tournaments/TournamentAnnouncementsSection';
 import { LeagueDeckModal } from './LeagueDeckModal';
 import {
   createTournament,
@@ -151,6 +152,7 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
           location: tournament.location,
           seasonLabel,
           isLeague: isLeagueTournament(tournament),
+          hasTopCut: Boolean(tournament.topCut),
         });
         const res = await copyTextNative(text);
         if (res.ok) {
@@ -856,6 +858,22 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
               uid: currentUser.uid,
               name: userProfile?.displayName || userProfile?.username || 'Organizer',
             }}
+          />
+        )}
+
+        {/* Pengumuman Organizer (Tampil untuk Turnamen Liga sebelum maupun sesudah dimulai) */}
+        {isLeague && (
+          <TournamentAnnouncementsSection
+            tournamentId={tournament.id}
+            canManage={canManageTournament}
+            actor={
+              currentUser
+                ? {
+                    uid: currentUser.uid,
+                    name: userProfile?.displayName || userProfile?.username || 'Organizer',
+                  }
+                : null
+            }
           />
         )}
 

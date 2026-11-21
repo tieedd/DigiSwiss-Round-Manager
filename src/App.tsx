@@ -4,6 +4,7 @@ import { AppToastProvider } from './context/ToastContext';
 import { Header } from './components/common/Header';
 import { BottomNav, NavTabKey } from './components/common/BottomNav';
 import { LoginView } from './views/LoginView';
+import { AdminBootstrapSetupView } from './views/AdminBootstrapSetupView';
 import { ChangePasswordView } from './views/ChangePasswordView';
 import { CreatePinView } from './views/CreatePinView';
 import { TournamentsView } from './views/TournamentsView';
@@ -29,6 +30,7 @@ const MainAppContent: React.FC = () => {
     userProfile,
     hasPin,
     loading,
+    needsAdminBootstrap,
     adminInactivityWarning,
     adminInactivityCountdown,
     dismissAdminInactivityWarning,
@@ -75,8 +77,11 @@ const MainAppContent: React.FC = () => {
     );
   }
 
-  // 2. Jika tidak ada pengguna login, WAJIB tampil halaman Login
+  // 2. Jika belum bootstrap admin utama, tampilkan Setup Awal Admin; jika sudah, tampilkan Login
   if (!currentUser || !userProfile) {
+    if (needsAdminBootstrap) {
+      return <AdminBootstrapSetupView />;
+    }
     return <LoginView />;
   }
 

@@ -41,8 +41,11 @@ import {
   RefreshCw,
   Eye,
   AlertCircle,
-  Edit2
+  Edit2,
+  Award
 } from 'lucide-react';
+import { BottomSheet } from '../components/common/BottomSheet';
+import { LeagueCumulativeView } from './LeagueCumulativeView';
 
 const PAGE_SIZE = 6;
 
@@ -73,6 +76,7 @@ export const HistoryView: React.FC = () => {
   // Deck Registration Modal untuk Player
   const [deckModalOpen, setDeckModalOpen] = useState(false);
   const [deckTargetParticipation, setDeckTargetParticipation] = useState<Participation | null>(null);
+  const [isLeagueCumulativeOpen, setIsLeagueCumulativeOpen] = useState(false);
 
   // Peta Juara 1 untuk Organizer/Admin
   const [championsMap, setChampionsMap] = useState<Record<string, { name: string; deckName?: string }>>({});
@@ -252,13 +256,24 @@ export const HistoryView: React.FC = () => {
               : 'Peringkat akhir, skor, deck, dan riwayat ronde pertandingan'}
           </p>
         </div>
-        <Button
-          variant="secondary"
-          className="!min-h-[36px] !px-2.5 !text-caption"
-          onClick={fetchData}
-          icon={<RefreshCw size={15} className={loading ? 'animate-spin' : ''} />}
-          title="Segarkan"
-        />
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <Button
+            variant="secondary"
+            className="!min-h-[36px] !px-2.5 !text-caption"
+            onClick={() => setIsLeagueCumulativeOpen(true)}
+            icon={<Award size={15} className="text-amber-400" />}
+            title="Poin Liga Lintas Season"
+          >
+            Poin Liga
+          </Button>
+          <Button
+            variant="secondary"
+            className="!min-h-[36px] !px-2.5 !text-caption"
+            onClick={fetchData}
+            icon={<RefreshCw size={15} className={loading ? 'animate-spin' : ''} />}
+            title="Segarkan"
+          />
+        </div>
       </div>
 
       {/* Kartu "Deck belum diisi (N)" untuk Player */}
@@ -682,6 +697,20 @@ export const HistoryView: React.FC = () => {
           fetchData();
         }}
       />
+
+      {/* BottomSheet Poin Liga Lintas Season */}
+      <BottomSheet
+        isOpen={isLeagueCumulativeOpen}
+        onClose={() => setIsLeagueCumulativeOpen(false)}
+        title="Poin Liga Lintas Season"
+      >
+        <div className="py-1">
+          <LeagueCumulativeView
+            compact
+            initialOrganizerId={isOrganizer ? currentUser?.uid : undefined}
+          />
+        </div>
+      </BottomSheet>
     </div>
   );
 };

@@ -1,5 +1,10 @@
 import { formatSeasonLabel } from './seasonLogic.ts';
 import { getSwissStandingRecord } from './finalRecordLogic.ts';
+import {
+  formatIndonesianFullDate,
+  formatPercent2Decimals,
+  TOP_CUT_EXPORT_NOTE,
+} from './exportFormatLogic.ts';
 
 export type DeckColor =
   | 'Merah'
@@ -220,6 +225,7 @@ export function calculateDeckFillProgress(participations: Participation[]): {
 export interface GenerateStandingsCsvOptions {
   seasonLabel?: string | null;
   isLeague?: boolean;
+  hasTopCut?: boolean;
 }
 
 /**
@@ -230,7 +236,15 @@ export function generateStandingsCsv(
   participations: Participation[],
   options?: GenerateStandingsCsvOptions
 ): string {
-  const hasTopCut = participations.some((p) => Boolean(p.topCutResult));
+  const hasTopCutColumn = participations.some((p) => Boolean(p.topCutResult));
+  const hasTopCut =
+    options?.hasTopCut ??
+    (hasTopCutColumn ||
+      participations.some(
+        (p) =>
+          (typeof p.topCutWins === 'number' && p.topCutWins > 0) ||
+          (typeof p.topCutLosses === 'number' && p.topCutLosses > 0)
+      ));
   const resolvedSeason =
     options?.seasonLabel || formatSeasonLabel(participations[0]?.season);
   const resolvedLeague =
@@ -254,7 +268,7 @@ export function generateStandingsCsv(
     'OMW%',
     'GW%',
     'OGW%',
-    ...(hasTopCut ? ['Hasil Top Cut'] : [])
+    ...(hasTopCutColumn ? ['Hasil Top Cut'] : [])
   ];
 
   const escapeCsv = (val: string | number | undefined | null) => {
@@ -304,11 +318,11 @@ export function generateStandingsCsv(
       escapeCsv(p.losses),
       escapeCsv(p.gamesWon),
       escapeCsv(p.gamesLost),
-      escapeCsv(`${p.omw}%`),
-      escapeCsv(`${p.gw}%`),
-      escapeCsv(`${p.ogw}%`)
+      escapeCsv(formatPercent2Decimals(p.omw)),
+      escapeCsv(formatPercent2Decimals(p.gw)),
+      escapeCsv(formatPercent2Decimals(p.ogw))
     ];
-    if (hasTopCut) {
+    if (hasTopCutColumn) {
       cols.push(escapeCsv(p.topCutResult || '-'));
     }
     return cols;
@@ -339,17 +353,23 @@ export function generateStandingsCsv(
           escapeCsv(p.name),
           escapeCsv(swissRec.points),
           escapeCsv(`${swissRec.wins}-${swissRec.losses}`),
-          escapeCsv(`${p.omw}%`)
+          escapeCsv(formatPercent2Decimals(p.omw))
         ].join(',')
       );
     });
   }
+
+  const topCutNoteRow =
+    hasTopCut && participations.length > 0
+      ? [escapeCsv(`Catatan: ${TOP_CUT_EXPORT_NOTE}`)]
+      : [];
 
   return [
     ...metadataRows,
     ...section1HeaderRow,
     headers.join(','),
     ...rows.map((r) => r.join(',')),
+    ...topCutNoteRow,
     ...swissSectionRows
   ].join('\r\n');
 }
@@ -363,6 +383,7 @@ export interface GenerateStandingsTextOptions {
   location?: string;
   seasonLabel?: string | null;
   isLeague?: boolean;
+  hasTopCut?: boolean;
 }
 
 /**
@@ -384,6 +405,7 @@ export function generateStandingsText(
   let locName: string | undefined;
   let seasonLabel: string | null | undefined;
   let isLeague = false;
+  let explicitHasTopCut: boolean | undefined;
 
   if (Array.isArray(nameOrOptions)) {
     // Dipanggil sebagai generateStandingsText(participations)
@@ -407,6 +429,7 @@ export function generateStandingsText(
     isLeague =
       nameOrOptions.isLeague ??
       (parts[0]?.tournamentType === 'league' || Boolean(seasonLabel));
+    explicitHasTopCut = nameOrOptions.hasTopCut;
   } else {
     tournamentName = nameOrOptions || '';
     dateStr = tournamentDate || '';
@@ -418,6 +441,15 @@ export function generateStandingsText(
     isLeague = parts[0]?.tournamentType === 'league' || Boolean(seasonLabel);
   }
 
+  const hasTopCut =
+    explicitHasTopCut ??
+    parts.some(
+      (p) =>
+        Boolean(p.topCutResult) ||
+        (typeof p.topCutWins === 'number' && p.topCutWins > 0) ||
+        (typeof p.topCutLosses === 'number' && p.topCutLosses > 0)
+    );
+
   const lines: string[] = [];
   lines.push(`=======================================================`);
   lines.push(`HASIL AKHIR TURNAMEN: ${tournamentName.toUpperCase()}`);
@@ -426,7 +458,7 @@ export function generateStandingsText(
       `Jenis: ${isLeague ? 'Turnamen Liga' : 'Turnamen Reguler'}${seasonLabel ? ` | ${seasonLabel}` : ''}`
     );
   }
-  lines.push(`Tanggal: ${dateStr} | Format: ${formatStr}`);
+  lines.push(`Tanggal: ${formatIndonesianFullDate(dateStr)} | Format: ${formatStr}`);
   lines.push(
     `Organizer: ${orgName && orgName.trim() ? orgName.trim() : '-'} | Lokasi: ${locName && locName.trim() ? locName.trim() : '-'}`
   );
@@ -460,9 +492,13 @@ export function generateStandingsText(
       `${medal} ${p.name.padEnd(20)}${topCutTag} | Poin: ${String(p.points).padStart(2)} | W-L: ${p.wins}-${p.losses} | Deck: ${deckInfo}`
     );
     lines.push(
-      `   Tie-breakers -> OMW: ${p.omw}% | GW: ${p.gw}% | OGW: ${p.ogw}%`
+      `   Tie-breakers -> OMW: ${formatPercent2Decimals(p.omw)} | GW: ${formatPercent2Decimals(p.gw)} | OGW: ${formatPercent2Decimals(p.ogw)}`
     );
     lines.push(`-------------------------------------------------------`);
+  }
+
+  if (hasTopCut && parts.length > 0) {
+    lines.push(`Catatan: ${TOP_CUT_EXPORT_NOTE}`);
   }
 
   if (isLeague && parts.length > 0) {
@@ -476,13 +512,13 @@ export function generateStandingsText(
       const sRank = p.swissRank ?? p.rank;
       const swissRec = getSwissStandingRecord(p);
       lines.push(
-        `#${sRank} ${p.name.padEnd(20)} | Poin: ${String(swissRec.points).padStart(2)} | W-L: ${swissRec.wins}-${swissRec.losses} | OMW: ${p.omw}%`
+        `#${sRank} ${p.name.padEnd(20)} | Poin: ${String(swissRec.points).padStart(2)} | W-L: ${swissRec.wins}-${swissRec.losses} | OMW: ${formatPercent2Decimals(p.omw)}`
       );
     }
   }
 
   lines.push(``);
-  lines.push(`Digenerate oleh DigiSwiss-Round pada ${new Date().toLocaleString('id-ID')}`);
+  lines.push(`Digenerate oleh DigiSwiss-Round pada ${formatIndonesianFullDate(new Date())}`);
   return lines.join('\n');
 }
 

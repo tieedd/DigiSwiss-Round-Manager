@@ -1,163 +1,197 @@
 import { initializeApp, deleteApp, getApps, getApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  deleteUser,
+  signOut,
+} from 'firebase/auth';
 import { doc, getDoc, writeBatch, getFirestore } from 'firebase/firestore';
 import { firebaseConfig, db } from '../firebaseConfig';
 import { usernameToEmail } from '../utils/authHelpers';
+import { validateBootstrapAdminPassword } from '../utils/bootstrapLogic';
+import { loginUser } from './authService';
 
 export interface BootstrapError {
   message: string;
   code?: string;
 }
 
-// 1. Variabel tingkat modul: menyimpan promise bootstrap agar hanya berjalan SEKALI saja
-// (tidak terpanggil ganda oleh React StrictMode atau render ulang)
-let bootstrapPromise: Promise<boolean> | null = null;
+export interface BootstrapCheckResult {
+  initialized: boolean;
+  checkFailed?: boolean;
+  error?: BootstrapError | null;
+}
+
 let currentBootstrapError: BootstrapError | null = null;
+let bootstrapCheckPromise: Promise<BootstrapCheckResult> | null = null;
 
 export function getBootstrapError(): BootstrapError | null {
   return currentBootstrapError;
 }
 
 /**
- * Memeriksa dan mengeksekusi inisialisasi akun Admin Utama & meta/bootstrap.
- * Dilakukan SEKALI jika meta/bootstrap belum ada.
+ * Memeriksa apakah dokumen meta/bootstrap sudah ada di Firestore.
+ * Jika belum ada, aplikasi menampilkan layar "Setup Awal Admin".
  */
-export function initializeBootstrapAdmin(): Promise<boolean> {
-  // Jika sedang berjalan atau sudah selesai dengan sukses, kembalikan promise yang sama
-  if (bootstrapPromise) {
-    return bootstrapPromise;
+export async function checkBootstrapExists(forceRefresh = false): Promise<BootstrapCheckResult> {
+  if (bootstrapCheckPromise && !forceRefresh) {
+    return bootstrapCheckPromise;
   }
 
-  bootstrapPromise = (async () => {
+  bootstrapCheckPromise = (async () => {
     try {
-      // 1. Baca meta/bootstrap sebelum membuat akun. Jika sudah ada, jangan lakukan apa pun.
       const bootstrapRef = doc(db, 'meta', 'bootstrap');
       const bootstrapSnap = await getDoc(bootstrapRef);
-
-      if (bootstrapSnap.exists()) {
-        currentBootstrapError = null;
-        return false;
-      }
-    } catch (readErr: any) {
-      // Jika pembacaan awal mengembalikan error (misal offline/permission), catat
-      console.warn('Cek awal meta/bootstrap:', readErr);
-    }
-
-    // 2. Email admin dibuat dari fungsi usernameToEmail yang sama dengan Login
-    const adminEmail = usernameToEmail('admindss');
-    const adminInitialPass = 'dssadmin';
-
-    // Buat instance Firebase kedua dengan nama "bootstrap"
-    let secondaryApp;
-    try {
-      const existing = getApps().find(a => a.name === 'bootstrap');
-      secondaryApp = existing || initializeApp(firebaseConfig, 'bootstrap');
-    } catch (e) {
-      secondaryApp = getApp('bootstrap');
-    }
-
-    const secondaryAuth = getAuth(secondaryApp);
-    const secondaryDb = getFirestore(secondaryApp);
-
-    let adminUid: string;
-
-    try {
-      const cred = await createUserWithEmailAndPassword(secondaryAuth, adminEmail, adminInitialPass);
-      adminUid = cred.user.uid;
-    } catch (createErr: any) {
-      const errCode = createErr?.code || '';
-
-      if (errCode === 'auth/email-already-in-use') {
-        // 3. Coba signInWithEmailAndPassword di instance kedua dengan password awal
-        try {
-          const cred = await signInWithEmailAndPassword(secondaryAuth, adminEmail, adminInitialPass);
-          adminUid = cred.user.uid;
-        } catch (signInErr: any) {
-          // Gagal masuk dengan password awal
-          currentBootstrapError = {
-            message: 'Akun admin sudah ada tetapi data belum lengkap. Hapus akun admindss di Firebase Console lalu buka ulang aplikasi.',
-            code: signInErr?.code || errCode
-          };
-          try {
-            await signOut(secondaryAuth);
-            await deleteApp(secondaryApp);
-          } catch (_) {}
-          // Jangan tandai bootstrap selesai agar bisa diperbaiki
-          bootstrapPromise = null;
-          return false;
-        }
-      } else if (errCode === 'auth/weak-password') {
-        // 4. Jika createUser gagal dengan auth/weak-password
-        currentBootstrapError = {
-          message: 'Kebijakan password Firebase menolak password awal admin',
-          code: 'auth/weak-password'
-        };
-        try {
-          await deleteApp(secondaryApp);
-        } catch (_) {}
-        bootstrapPromise = null;
-        return false;
-      } else {
-        currentBootstrapError = {
-          message: createErr?.message || 'Gagal membuat akun admin',
-          code: errCode
-        };
-        try {
-          await deleteApp(secondaryApp);
-        } catch (_) {}
-        bootstrapPromise = null;
-        return false;
-      }
-    }
-
-    // 4. Tulis dokumen users/{uid} dan meta/bootstrap dalam SATU batch di instance kedua
-    const batch = writeBatch(secondaryDb);
-    const userDocRef = doc(secondaryDb, 'users', adminUid);
-    const bootstrapDocRef = doc(secondaryDb, 'meta', 'bootstrap');
-    const now = Date.now();
-
-    batch.set(userDocRef, {
-      username: 'admindss',
-      displayName: 'Admin DSS',
-      role: 'admin',
-      active: true,
-      mustChangePassword: true,
-      createdAt: now,
-      lastLoginAt: now,
-    });
-
-    batch.set(bootstrapDocRef, {
-      createdAt: now,
-      initializedBy: adminUid,
-      version: '1.0.0',
-    });
-
-    try {
-      await batch.commit();
       currentBootstrapError = null;
-    } catch (batchErr: any) {
-      const errCode = batchErr?.code || batchErr?.message || 'unknown';
-      currentBootstrapError = {
-        message: `Gagal menulis dokumen admin: ${errCode}`,
-        code: batchErr?.code || errCode
+      return {
+        initialized: bootstrapSnap.exists(),
+        checkFailed: false,
+        error: null,
       };
-      try {
-        await signOut(secondaryAuth);
-        await deleteApp(secondaryApp);
-      } catch (_) {}
-      // Jangan menandai bootstrap selesai
-      bootstrapPromise = null;
-      return false;
+    } catch (readErr: any) {
+      const errObj: BootstrapError = {
+        message: 'Gagal memeriksa status inisialisasi admin. Periksa koneksi internet Anda.',
+        code: readErr?.code || undefined,
+      };
+      currentBootstrapError = errObj;
+      bootstrapCheckPromise = null;
+      return {
+        initialized: true,
+        checkFailed: true,
+        error: errObj,
+      };
+    }
+  })();
+
+  return bootstrapCheckPromise;
+}
+
+/**
+ * Menjalankan setup awal admin utama (admindss) dengan password pilihan pengguna.
+ * Membuat akun Auth + batch atomik users/{uid} & meta/bootstrap, lalu masuk ke akun admindss
+ * agar pengguna langsung diarahkan ke pembuatan PIN 6 digit.
+ */
+export async function setupInitialAdmin(
+  password: string,
+  confirmPassword: string
+): Promise<void> {
+  const validation = validateBootstrapAdminPassword(password, confirmPassword);
+  if (!validation.valid) {
+    throw new Error(validation.error || 'Password tidak valid.');
+  }
+
+  // Pastikan meta/bootstrap belum ada sebelum membuat akun
+  const bootstrapRef = doc(db, 'meta', 'bootstrap');
+  const existingBootstrap = await getDoc(bootstrapRef);
+  if (existingBootstrap.exists()) {
+    bootstrapCheckPromise = Promise.resolve({ initialized: true, checkFailed: false, error: null });
+    currentBootstrapError = null;
+    throw new Error('Admin utama sudah diinisialisasi sebelumnya. Silakan masuk melalui halaman Login.');
+  }
+
+  const adminEmail = usernameToEmail('admindss');
+
+  let secondaryApp;
+  try {
+    const existing = getApps().find((a) => a.name === 'bootstrap');
+    secondaryApp = existing || initializeApp(firebaseConfig, 'bootstrap');
+  } catch {
+    secondaryApp = getApp('bootstrap');
+  }
+
+  const secondaryAuth = getAuth(secondaryApp);
+  const secondaryDb = getFirestore(secondaryApp);
+
+  let createdUser: import('firebase/auth').User | null = null;
+  let adminUid = '';
+
+  try {
+    const cred = await createUserWithEmailAndPassword(secondaryAuth, adminEmail, password);
+    createdUser = cred.user;
+    adminUid = cred.user.uid;
+  } catch (createErr: any) {
+    const errCode = createErr?.code || '';
+    try {
+      await deleteApp(secondaryApp);
+    } catch {
+      // Abaikan kegagalan cleanup secondary app
     }
 
-    // SignOut instance kedua dan hapus aplikasi sekunder
+    if (errCode === 'auth/email-already-in-use') {
+      const errObj: BootstrapError = {
+        message:
+          'Akun admin sudah ada di Firebase Auth tetapi dokumen meta/bootstrap belum lengkap. Hapus akun admindss di Firebase Console lalu muat ulang aplikasi.',
+        code: errCode,
+      };
+      currentBootstrapError = errObj;
+      throw new Error(errObj.message);
+    }
+
+    if (errCode === 'auth/weak-password') {
+      throw new Error('Kebijakan password Firebase menolak password tersebut. Gunakan kombinasi yang lebih kuat.');
+    }
+
+    throw new Error(createErr?.message || 'Gagal membuat akun admin utama.');
+  }
+
+  const batch = writeBatch(secondaryDb);
+  const userDocRef = doc(secondaryDb, 'users', adminUid);
+  const bootstrapDocRef = doc(secondaryDb, 'meta', 'bootstrap');
+  const now = Date.now();
+
+  batch.set(userDocRef, {
+    username: 'admindss',
+    displayName: 'Admin DSS',
+    role: 'admin',
+    active: true,
+    mustChangePassword: false,
+    createdAt: now,
+    lastLoginAt: now,
+  });
+
+  batch.set(bootstrapDocRef, {
+    createdAt: now,
+    initializedBy: adminUid,
+    version: '1.0.0',
+  });
+
+  try {
+    await batch.commit();
+    currentBootstrapError = null;
+  } catch (batchErr: any) {
+    // Bersihkan akun Auth yatim jika batch Firestore gagal
+    if (createdUser) {
+      try {
+        await deleteUser(createdUser);
+      } catch {
+        // Abaikan jika gagal menghapus user sekunder
+      }
+    }
     try {
       await signOut(secondaryAuth);
       await deleteApp(secondaryApp);
-    } catch (_) {}
+    } catch {
+      // Abaikan cleanup secondary app
+    }
 
-    return true;
-  })();
+    const errCode = batchErr?.code || batchErr?.message || 'unknown';
+    const errObj: BootstrapError = {
+      message: `Gagal menyimpan dokumen admin: ${errCode}`,
+      code: batchErr?.code || undefined,
+    };
+    currentBootstrapError = errObj;
+    throw new Error(errObj.message);
+  }
 
-  return bootstrapPromise;
+  try {
+    await signOut(secondaryAuth);
+    await deleteApp(secondaryApp);
+  } catch {
+    // Abaikan cleanup secondary app
+  }
+
+  bootstrapCheckPromise = Promise.resolve({ initialized: true, checkFailed: false, error: null });
+
+  // Login langsung di instance Auth utama agar AuthContext mengarahkan ke pembuatan PIN 6 digit
+  await loginUser('admindss', password);
 }

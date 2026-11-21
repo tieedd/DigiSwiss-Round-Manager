@@ -396,7 +396,7 @@ test('ROUND EXPORT 6: Hasil Akhir Liga memuat 2 bagian (Peringkat Akhir + Klasem
   // Pada Klasemen Swiss, Taichi (swissRank 1) muncul sebelum Yamato (swissRank 3)
   const swissSection = leagueText.split('--- KLASEMEN SWISS (SEBELUM TOP CUT) ---')[1];
   assert.ok(swissSection.indexOf('#1 Taichi') < swissSection.indexOf('#3 Yamato'));
-  assert.ok(swissSection.includes('OMW: 71.2%'));
+  assert.ok(swissSection.includes('OMW: 71.20%'));
 
   const leagueCsv = generateStandingsCsv('DCG Banjarmasin', leagueParticipations, {
     seasonLabel: 'SEASON 1 NOVEMBER 2026',

@@ -12,6 +12,10 @@ import type {
 } from './roundExportLogic.ts';
 import { getExportPalette, type ExportPalette } from './exportTheme.ts';
 import { getCurrentTheme, type AppTheme } from './themeLogic.ts';
+import {
+  formatIndonesianFullDate,
+  formatPercent2Decimals,
+} from './exportFormatLogic.ts';
 
 function createRetinaCanvas(
   logicalWidth: number,
@@ -122,7 +126,7 @@ function drawLeagueHeader(
   // Date & Organizer/Location
   ctx.fillStyle = palette.mutedText;
   ctx.font = '13px sans-serif';
-  ctx.fillText(`Tanggal: ${options.date || '-'}`, padding, 108);
+  ctx.fillText(`Tanggal: ${formatIndonesianFullDate(options.date)}`, padding, 108);
 
   ctx.font = 'bold 14px sans-serif';
   ctx.fillStyle = palette.strongText;
@@ -256,7 +260,7 @@ function drawLegendAndFooter(
   ctx.fillStyle = palette.footerText;
   ctx.font = '11px sans-serif';
   ctx.fillText(
-    `Digenerate oleh DigiSwiss-Round • ${new Date().toLocaleDateString('id-ID')}`,
+    `Digenerate oleh DigiSwiss-Round • ${formatIndonesianFullDate(new Date())}`,
     padding,
     canvasHeight - 18
   );
@@ -276,8 +280,8 @@ export function exportLeagueRoundStandingToImage(
   const tableHeaderH = 36;
   const rowH = 42;
   const totalRows = Math.max(1, data.rows.length);
-  const footerH = 46;
-  const height = headerBottom + tableHeaderH + totalRows * rowH + footerH + 16;
+  const footerH = 40;
+  const height = headerBottom + tableHeaderH + totalRows * rowH + footerH;
 
   const created = createRetinaCanvas(width, height);
   if (!created) return null;
@@ -365,7 +369,7 @@ export function exportLeagueRoundStandingToImage(
       ctx.fillText(`${row.matchWins} - ${row.matchLosses}`, padding + 662, textY);
 
       ctx.fillStyle = palette.secondaryText;
-      ctx.fillText(`${row.omw}%`, padding + 792, textY);
+      ctx.fillText(formatPercent2Decimals(row.omw), padding + 792, textY);
 
       currentY += rowH;
     });
@@ -398,11 +402,11 @@ export function exportLeagueRoundPairingToImage(
   const usedColors = collectUsedColorsFromDecks(
     data.rows.flatMap((r) => [r.p1Decks, r.p2Decks])
   );
-  const legendH = usedColors.length > 0 ? 30 : 0;
-  const footerH = 44;
+  const legendH = usedColors.length > 0 ? 32 : 0;
+  const footerH = 40;
 
   const height =
-    headerBottom + tableHeaderH + totalRows * rowH + legendH + footerH + 16;
+    headerBottom + tableHeaderH + totalRows * rowH + legendH + footerH;
 
   const created = createRetinaCanvas(width, height);
   if (!created) return null;
@@ -603,8 +607,8 @@ export function exportLeagueTopCutBracketToImage(
       st.slots.flatMap((sl) => [sl.p1Decks, sl.p2Decks])
     )
   );
-  const legendH = usedColors.length > 0 ? 30 : 0;
-  const footerH = 44;
+  const legendH = usedColors.length > 0 ? 32 : 0;
+  const footerH = 40;
 
   const bracketBodyH =
     firstStageSlotCount * cardH + Math.max(0, firstStageSlotCount - 1) * cardGap;
@@ -612,11 +616,11 @@ export function exportLeagueTopCutBracketToImage(
   const height =
     headerBottom +
     championBannerH +
+    4 +
     stageTitleH +
     bracketBodyH +
     legendH +
-    footerH +
-    28;
+    footerH;
 
   const created = createRetinaCanvas(width, height);
   if (!created) return null;

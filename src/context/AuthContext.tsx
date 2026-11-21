@@ -3,7 +3,7 @@ import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
 import { UserProfile } from '../types';
-import { initializeBootstrapAdmin } from '../services/bootstrapService';
+import { checkBootstrapExists } from '../services/bootstrapService';
 import { getClockOffset } from '../services/authService';
 
 interface AuthContextType {
@@ -11,9 +11,12 @@ interface AuthContextType {
   userProfile: UserProfile | null;
   hasPin: boolean | null;
   loading: boolean;
+  needsAdminBootstrap: boolean;
   clockOffset: number;
   refreshProfile: () => Promise<void>;
   refreshPinStatus: () => Promise<void>;
+  markBootstrapCompleted: () => void;
+  recheckBootstrap: () => Promise<void>;
   logout: () => Promise<void>;
   adminInactivityWarning: boolean;
   adminInactivityCountdown: number;
@@ -25,9 +28,12 @@ const AuthContext = createContext<AuthContextType>({
   userProfile: null,
   hasPin: null,
   loading: true,
+  needsAdminBootstrap: false,
   clockOffset: 0,
   refreshProfile: async () => {},
   refreshPinStatus: async () => {},
+  markBootstrapCompleted: () => {},
+  recheckBootstrap: async () => {},
   logout: async () => {},
   adminInactivityWarning: false,
   adminInactivityCountdown: 60,
@@ -41,6 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [hasPin, setHasPin] = useState<boolean | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [needsAdminBootstrap, setNeedsAdminBootstrap] = useState<boolean>(false);
   const [clockOffset, setClockOffsetState] = useState<number>(0);
 
   // Status timer inaktivitas admin (30 menit total, peringatan pada menit ke-29)
@@ -60,6 +67,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.error('Galat saat keluar:', err);
     }
+  }, []);
+
+  const markBootstrapCompleted = useCallback(() => {
+    setNeedsAdminBootstrap(false);
+  }, []);
+
+  const recheckBootstrap = useCallback(async () => {
+    const check = await checkBootstrapExists(true);
+    setNeedsAdminBootstrap(!check.initialized && !check.checkFailed);
   }, []);
 
   const refreshPinStatus = useCallback(async () => {
@@ -114,7 +130,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
       events.forEach((ev) => window.addEventListener(ev, handleUserActivity, { passive: true }));
 
-      // Cek inaktivitas setiap 10 detik
+      // Cek inaktivitas setiap 5 detik
       inactivityCheckTimerRef.current = setInterval(() => {
         const inactiveMs = Date.now() - lastActivityTimeRef.current;
         const totalTimeoutMs = 30 * 60 * 1000; // 30 menit
@@ -143,20 +159,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [userProfile?.role, handleUserActivity, logout]);
 
-  // Inisialisasi awal Auth State & Bootstrap Admin Utama
+  // Inisialisasi awal Auth State & Cek Keberadaan Bootstrap Admin Utama
   useEffect(() => {
+    let isMounted = true;
+    let unsubscribeAuth: (() => void) | null = null;
     let unsubscribeProfileSnapshot: (() => void) | null = null;
     let unsubscribePinSnapshot: (() => void) | null = null;
 
     const initAuth = async () => {
       try {
-        // Cek dan jalankan inisialisasi bootstrap admin otomatis jika belum ada
-        await initializeBootstrapAdmin();
+        const bootstrapResult = await checkBootstrapExists();
+        if (isMounted) {
+          setNeedsAdminBootstrap(!bootstrapResult.initialized && !bootstrapResult.checkFailed);
+        }
       } catch (e) {
         console.warn('Bootstrap check skipped:', e);
       }
 
-      const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      if (!isMounted) return;
+
+      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
         if (unsubscribeProfileSnapshot) {
           unsubscribeProfileSnapshot();
           unsubscribeProfileSnapshot = null;
@@ -180,6 +202,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   logout();
                 } else {
                   setUserProfile(profile);
+                  setNeedsAdminBootstrap(false);
                   setClockOffsetState(getClockOffset());
                 }
               } else {
@@ -213,15 +236,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setLoading(false);
         }
       });
-
-      return () => {
-        unsubscribeAuth();
-        if (unsubscribeProfileSnapshot) unsubscribeProfileSnapshot();
-        if (unsubscribePinSnapshot) unsubscribePinSnapshot();
-      };
     };
 
     initAuth();
+
+    return () => {
+      isMounted = false;
+      if (unsubscribeAuth) unsubscribeAuth();
+      if (unsubscribeProfileSnapshot) unsubscribeProfileSnapshot();
+      if (unsubscribePinSnapshot) unsubscribePinSnapshot();
+    };
   }, [logout]);
 
   return (
@@ -231,9 +255,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         userProfile,
         hasPin,
         loading,
+        needsAdminBootstrap,
         clockOffset,
         refreshProfile,
         refreshPinStatus,
+        markBootstrapCompleted,
+        recheckBootstrap,
         logout,
         adminInactivityWarning,
         adminInactivityCountdown,

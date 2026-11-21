@@ -9,6 +9,7 @@ import { CURRENT_APP_VERSION } from '../../services/versionService';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { BottomSheet } from '../../components/common/BottomSheet';
+import { ConfirmSheet } from '../../components/common/ConfirmSheet';
 import { ChangePasswordView } from '../ChangePasswordView';
 import { formatIndonesianDateTime } from '../../utils/dateHelpers';
 import { formatAuditLogValue } from '../../utils/auditLogDisplay';
@@ -43,6 +44,8 @@ export const AdminSettingsView: React.FC = () => {
 
   const [isChangePassOpen, setIsChangePassOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [isResetOtaConfirmOpen, setIsResetOtaConfirmOpen] = useState(false);
+  const [isResettingOta, setIsResettingOta] = useState(false);
 
   const handleManualCheckUpdate = async () => {
     try {
@@ -164,11 +167,7 @@ export const AdminSettingsView: React.FC = () => {
               {isOtaActive && (
                 <Button
                   variant="danger"
-                  onClick={async () => {
-                    if (window.confirm('Kembalikan ke versi web bawaan dari APK? Aplikasi akan dimuat ulang.')) {
-                      await resetToDefault();
-                    }
-                  }}
+                  onClick={() => setIsResetOtaConfirmOpen(true)}
                   className="!min-h-[30px] !py-0.5 !px-2.5 !text-[11px]"
                 >
                   Kembali ke versi bawaan
@@ -423,6 +422,29 @@ export const AdminSettingsView: React.FC = () => {
           </div>
         </div>
       </BottomSheet>
+
+      {/* Konfirmasi Kembali ke Versi Bawaan APK */}
+      <ConfirmSheet
+        isOpen={isResetOtaConfirmOpen}
+        title="Kembali ke Versi Bawaan"
+        message="Kembalikan ke versi web bawaan dari APK? Aplikasi akan dimuat ulang."
+        confirmLabel="Ya, Kembalikan"
+        cancelLabel="Batal"
+        variant="danger"
+        isLoading={isResettingOta}
+        onCancel={() => {
+          if (!isResettingOta) setIsResetOtaConfirmOpen(false);
+        }}
+        onConfirm={async () => {
+          setIsResettingOta(true);
+          try {
+            await resetToDefault();
+          } finally {
+            setIsResettingOta(false);
+            setIsResetOtaConfirmOpen(false);
+          }
+        }}
+      />
     </div>
   );
 };

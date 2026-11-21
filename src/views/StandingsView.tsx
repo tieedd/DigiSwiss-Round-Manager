@@ -32,6 +32,8 @@ import {
 import { getSessionTournament, setSessionTournament } from '../utils/sessionStore';
 import { LeagueSeasonBadge } from '../components/tournaments/LeagueSeasonBadge';
 import { formatSeasonLabel, isLeagueTournament } from '../utils/seasonLogic';
+import { formatPercent2Decimals } from '../utils/exportFormatLogic';
+import { LeagueCumulativeView } from './LeagueCumulativeView';
 
 export const StandingsView: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
@@ -43,6 +45,7 @@ export const StandingsView: React.FC = () => {
   const [loadingTournaments, setLoadingTournaments] = useState(true);
   const [loadingPlayers, setLoadingPlayers] = useState(false);
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
+  const [activeMode, setActiveMode] = useState<'tournament' | 'league_cumulative'>('tournament');
 
   // 1. Muat daftar turnamen
   const fetchTournaments = async () => {
@@ -157,32 +160,64 @@ export const StandingsView: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-section-title text-dark-text font-semibold flex items-center gap-2">
-            <Trophy className="text-accent" size={20} />
-            Klasemen Turnamen
-          </h2>
-          <p className="text-caption text-dark-muted">
-            Papan peringkat real-time dan metrik tie-breaker resmi
-          </p>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center gap-1 text-[11px] font-mono text-status-green bg-status-green/10 border border-status-green/20 px-2 py-1 rounded-full">
-            <span className="w-1.5 h-1.5 rounded-full bg-status-green animate-pulse" />
-            <span>Live</span>
-          </div>
-          <Button
-            variant="secondary"
-            className="!min-h-[36px] !px-2.5 !text-caption"
-            onClick={fetchTournaments}
-            icon={<RefreshCw size={15} className={loadingTournaments ? 'animate-spin' : ''} />}
-          />
-        </div>
+      {/* Segmented Switcher Mode Klasemen */}
+      <div className="grid grid-cols-2 gap-1.5 p-1 rounded-btn bg-dark-surface border border-dark-border">
+        <button
+          type="button"
+          onClick={() => setActiveMode('tournament')}
+          className={`min-h-[38px] rounded-btn text-caption font-semibold transition-colors flex items-center justify-center gap-1.5 ${
+            activeMode === 'tournament'
+              ? 'bg-accent text-dark-bg shadow-sm'
+              : 'text-dark-muted hover:text-dark-text'
+          }`}
+        >
+          <Trophy size={14} />
+          <span>Klasemen Turnamen</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveMode('league_cumulative')}
+          className={`min-h-[38px] rounded-btn text-caption font-semibold transition-colors flex items-center justify-center gap-1.5 ${
+            activeMode === 'league_cumulative'
+              ? 'bg-amber-400 text-slate-950 shadow-sm'
+              : 'text-dark-muted hover:text-dark-text'
+          }`}
+        >
+          <Award size={14} />
+          <span>Liga Lintas Season</span>
+        </button>
       </div>
 
-      {/* Pilihan Turnamen */}
+      {activeMode === 'league_cumulative' ? (
+        <LeagueCumulativeView />
+      ) : (
+        <>
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-section-title text-dark-text font-semibold flex items-center gap-2">
+                <Trophy className="text-accent" size={20} />
+                Klasemen Turnamen
+              </h2>
+              <p className="text-caption text-dark-muted">
+                Papan peringkat real-time dan metrik tie-breaker resmi
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1 text-[11px] font-mono text-status-green bg-status-green/10 border border-status-green/20 px-2 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-status-green animate-pulse" />
+                <span>Live</span>
+              </div>
+              <Button
+                variant="secondary"
+                className="!min-h-[36px] !px-2.5 !text-caption"
+                onClick={fetchTournaments}
+                icon={<RefreshCw size={15} className={loadingTournaments ? 'animate-spin' : ''} />}
+              />
+            </div>
+          </div>
+
+          {/* Pilihan Turnamen */}
       {loadingTournaments ? (
         <Card variant="surface" className="text-center py-6 text-caption text-dark-muted">
           Memuat daftar turnamen...
@@ -396,7 +431,7 @@ export const StandingsView: React.FC = () => {
                             1. OMW%
                           </span>
                           <span className="font-mono font-bold text-accent text-body">
-                            {s.omw}%
+                            {formatPercent2Decimals(s.omw)}
                           </span>
                         </div>
                         <div>
@@ -404,7 +439,7 @@ export const StandingsView: React.FC = () => {
                             2. GW%
                           </span>
                           <span className="font-mono font-bold text-dark-text text-body">
-                            {s.gw}%
+                            {formatPercent2Decimals(s.gw)}
                           </span>
                         </div>
                         <div>
@@ -412,7 +447,7 @@ export const StandingsView: React.FC = () => {
                             3. OGW%
                           </span>
                           <span className="font-mono font-bold text-dark-text text-body">
-                            {s.ogw}%
+                            {formatPercent2Decimals(s.ogw)}
                           </span>
                         </div>
                       </div>
@@ -447,6 +482,8 @@ export const StandingsView: React.FC = () => {
             </div>
           </Card>
         </div>
+      )}
+        </>
       )}
     </div>
   );

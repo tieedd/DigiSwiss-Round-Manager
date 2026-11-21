@@ -18,7 +18,8 @@ import {
   isLeagueTournament,
   TournamentTypeFilter
 } from '../utils/seasonLogic';
-import { Swords, Search, KeyRound, Calendar, MapPin, RefreshCw, Ticket } from 'lucide-react';
+import { Swords, Search, KeyRound, Calendar, MapPin, RefreshCw, Ticket, Award } from 'lucide-react';
+import { LeagueCumulativeView } from './LeagueCumulativeView';
 
 export const TournamentsView: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
@@ -40,6 +41,7 @@ export const TournamentsView: React.FC = () => {
   // League Invite Join Sheet & Post-Join 2-Deck Prompt
   const [isLeagueInviteOpen, setIsLeagueInviteOpen] = useState(false);
   const [postJoinDeckTournament, setPostJoinDeckTournament] = useState<Tournament | null>(null);
+  const [isLeagueCumulativeOpen, setIsLeagueCumulativeOpen] = useState(false);
 
   const fetchTournaments = async () => {
     setLoading(true);
@@ -116,6 +118,15 @@ export const TournamentsView: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          <Button
+            variant="secondary"
+            className="!min-h-[36px] !px-2.5 !text-caption"
+            onClick={() => setIsLeagueCumulativeOpen(true)}
+            icon={<Award size={15} className="text-amber-400" />}
+            title="Poin Liga Lintas Season"
+          >
+            Poin Liga
+          </Button>
           <Button
             variant="secondary"
             className="!min-h-[36px] !px-2.5 !text-caption"
@@ -346,6 +357,17 @@ export const TournamentsView: React.FC = () => {
         }}
         onTournamentUpdated={fetchTournaments}
       />
+
+      {/* BottomSheet Poin Liga Lintas Season */}
+      <BottomSheet
+        isOpen={isLeagueCumulativeOpen}
+        onClose={() => setIsLeagueCumulativeOpen(false)}
+        title="Poin Liga Lintas Season"
+      >
+        <div className="py-1">
+          <LeagueCumulativeView compact />
+        </div>
+      </BottomSheet>
     </div>
   );
 };

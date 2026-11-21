@@ -317,11 +317,11 @@ test('FINAL RECORD 4: Ekspor CSV & Teks (Peringkat Akhir pakai Total, Klasemen S
     isLeague: true,
   });
   // Bagian 1: Peringkat Akhir pakai Total (14 pts, 5 W, 0 L)
-  assert.ok(csv.includes('"1","JuaraLiga","Akun Terdaftar","Gallantmon","Merah","MirageGaogamon","Biru","14","5","0","6","0","66.7%","100%","60%","Juara"'));
+  assert.ok(csv.includes('"1","JuaraLiga","Akun Terdaftar","Gallantmon","Merah","MirageGaogamon","Biru","14","5","0","6","0","66.70%","100.00%","60.00%","Juara"'));
   // Bagian 2: Klasemen Swiss pakai swissPoints=9 dan swissWins-swissLosses=3-0
-  assert.ok(csv.includes('"2","JuaraLiga","9","3-0","66.7%"'));
+  assert.ok(csv.includes('"2","JuaraLiga","9","3-0","66.70%"'));
   // Fallback data lama tanpa swiss*
-  assert.ok(csv.includes('"1","DataLama","9","3-0","60%"'));
+  assert.ok(csv.includes('"1","DataLama","9","3-0","60.00%"'));
 
   const text = generateStandingsText({
     tournamentName: 'Liga Banjarmasin',
@@ -332,8 +332,8 @@ test('FINAL RECORD 4: Ekspor CSV & Teks (Peringkat Akhir pakai Total, Klasemen S
     seasonLabel: 'SEASON 1 NOVEMBER 2026',
   });
   assert.ok(text.includes('🥇 JuaraLiga            [Juara] | Poin: 14 | W-L: 5-0'));
-  assert.ok(text.includes('#2 JuaraLiga            | Poin:  9 | W-L: 3-0 | OMW: 66.7%'));
-  assert.ok(text.includes('#1 DataLama             | Poin:  9 | W-L: 3-0 | OMW: 60%'));
+  assert.ok(text.includes('#2 JuaraLiga            | Poin:  9 | W-L: 3-0 | OMW: 66.70%'));
+  assert.ok(text.includes('#1 DataLama             | Poin:  9 | W-L: 3-0 | OMW: 60.00%'));
 
   // Statistik otomatis memakai total W-L
   const stats = calculatePlayerStats([participations[0]]);

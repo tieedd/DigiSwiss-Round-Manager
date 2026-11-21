@@ -22,6 +22,7 @@ import {
   generateStandingsText
 } from '../../utils/deckExportLogic';
 import { exportStandingsToImage } from '../../utils/canvasExport';
+import { formatPercent2Decimals } from '../../utils/exportFormatLogic';
 import { DeckColorDots } from '../../components/common/DeckColorDots';
 import { DeckRegistrationModal } from './DeckRegistrationModal';
 import { LeagueDeckModal } from './LeagueDeckModal';
@@ -221,7 +222,8 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
     if (participations.length === 0) return;
     const csvContent = generateStandingsCsv(tournament.name, participations, {
       seasonLabel,
-      isLeague
+      isLeague,
+      hasTopCut: Boolean(tournament.topCut)
     });
     const fileName = buildTournamentExportFileName(tournament, 'csv');
     const res = await saveFileNative(fileName, 'text/csv', csvContent);
@@ -243,7 +245,8 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
       organizerName: tournament.organizerName,
       location: tournament.location,
       seasonLabel,
-      isLeague
+      isLeague,
+      hasTopCut: Boolean(tournament.topCut)
     });
     const copyRes = await copyTextNative(textContent);
     if (copyRes.ok) {
@@ -273,7 +276,8 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
       organizerName: tournament.organizerName,
       location: tournament.location,
       seasonLabel,
-      isLeague
+      isLeague,
+      hasTopCut: Boolean(tournament.topCut)
     });
     if (!dataUrl) return;
     const fileName = buildTournamentExportFileName(tournament, 'png');
@@ -521,7 +525,7 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
                             )}
                           </div>
                           <span className="text-caption text-dark-muted font-mono block">
-                            Poin: <strong className="text-accent">{p.points}</strong> • Match: {p.wins}W - {p.losses}L • OMW: {p.omw}%
+                            Poin: <strong className="text-accent">{p.points}</strong> • Match: {p.wins}W - {p.losses}L • OMW: {formatPercent2Decimals(p.omw)}
                             {p.swissRank !== undefined && tournament.topCut ? ` • Swiss #${p.swissRank}` : ''}
                           </span>
                           {(() => {

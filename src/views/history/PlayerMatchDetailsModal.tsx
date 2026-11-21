@@ -11,6 +11,7 @@ import { FinalStandingsCard } from './FinalStandingsCard';
 import { MatchGamesBreakdown } from '../../components/rounds/MatchGamesBreakdown';
 import { isLeagueParticipation } from '../../utils/leagueFinalDecksLogic';
 import { formatFinalRecordBreakdown } from '../../utils/finalRecordLogic';
+import { formatPercent2Decimals } from '../../utils/exportFormatLogic';
 import { useVisibleViewportHeight } from '../../utils/useVisibleViewportHeight';
 import {
   X,
@@ -151,10 +152,10 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
 
             <div className="text-right">
               <span className="text-[11px] font-mono text-dark-muted block">
-                OMW: {participation.omw}%
+                OMW: {formatPercent2Decimals(participation.omw)}
               </span>
               <span className="text-[11px] font-mono text-dark-muted block">
-                GW: {participation.gw}%
+                GW: {formatPercent2Decimals(participation.gw)}
               </span>
             </div>
           </div>

@@ -204,3 +204,12 @@ export interface AuditLog {
   newValue?: string | null;
   createdAt: number;
 }
+
+export interface TournamentAnnouncement {
+  id: string;
+  message: string;
+  authorId: string;
+  authorName: string;
+  createdAt: number;
+  updatedAt: number;
+}

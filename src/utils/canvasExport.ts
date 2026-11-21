@@ -9,6 +9,11 @@ import {
 import { getSwissStandingRecord } from './finalRecordLogic.ts';
 import { getExportPalette } from './exportTheme.ts';
 import { getCurrentTheme, type AppTheme } from './themeLogic.ts';
+import {
+  formatIndonesianFullDate,
+  formatPercent2Decimals,
+  TOP_CUT_EXPORT_NOTE,
+} from './exportFormatLogic.ts';
 
 export interface ExportStandingsImageOptions {
   tournamentName: string;
@@ -19,6 +24,7 @@ export interface ExportStandingsImageOptions {
   location?: string;
   seasonLabel?: string | null;
   isLeague?: boolean;
+  hasTopCut?: boolean;
   theme?: AppTheme;
 }
 
@@ -92,6 +98,7 @@ export function exportStandingsToImage(
   let locName: string | undefined;
   let seasonLabel: string | null | undefined;
   let isLeague = false;
+  let explicitHasTopCut: boolean | undefined;
   let resolvedTheme: AppTheme;
 
   if (typeof nameOrOptions === 'object' && nameOrOptions !== null) {
@@ -103,6 +110,7 @@ export function exportStandingsToImage(
     locName = nameOrOptions.location;
     seasonLabel = nameOrOptions.seasonLabel;
     isLeague = Boolean(nameOrOptions.isLeague || seasonLabel);
+    explicitHasTopCut = nameOrOptions.hasTopCut;
     resolvedTheme = nameOrOptions.theme ?? getCurrentTheme();
   } else {
     tName = nameOrOptions || '';
@@ -118,14 +126,24 @@ export function exportStandingsToImage(
 
   const hasSeasonBanner = Boolean(seasonLabel || isLeague);
   const totalRows = Math.min(parts.length, isLeague ? 64 : 32);
+  const hasTopCut =
+    explicitHasTopCut ??
+    parts.some(
+      (p) =>
+        Boolean(p.topCutResult) ||
+        (typeof p.topCutWins === 'number' && p.topCutWins > 0) ||
+        (typeof p.topCutLosses === 'number' && p.topCutLosses > 0)
+    );
   const hasTwoDeckRows =
     isLeague ||
     parts.slice(0, totalRows).some((p) => Array.isArray(p.decks) && p.decks.length > 0);
   const width = 1000;
   const rowHeight = hasTwoDeckRows ? 56 : 44;
   const section1LabelHeight = isLeague ? 28 : 0;
-  const headerHeight = (hasSeasonBanner ? 215 : 185) + section1LabelHeight;
+  const tableY = (hasSeasonBanner ? 176 : 150) + section1LabelHeight;
   const padding = 30;
+
+  const topCutNoteHeight = hasTopCut && totalRows > 0 ? 24 : 0;
 
   // Bagian 2 untuk Turnamen Liga: Klasemen Swiss (sebelum Top Cut)
   const swissRowHeight = 38;
@@ -135,13 +153,12 @@ export function exportStandingsToImage(
   // Ambil hanya warna deck yang ada di tabel hasil
   const usedColors = getUsedDeckColors(parts, totalRows);
   const legendHeight = usedColors.length > 0 ? 32 : 0;
-  const height =
-    headerHeight +
-    totalRows * rowHeight +
-    swissSectionHeight +
-    padding * 2 +
-    legendHeight +
-    40;
+
+  // Hitung tinggi persis tanpa ruang kosong berlebih di bawah tabel/legenda
+  const tableBottomY =
+    tableY + 36 + totalRows * rowHeight + topCutNoteHeight + swissSectionHeight;
+  const footerBaselineY = tableBottomY + legendHeight + 22;
+  const height = footerBaselineY + 18;
 
   if (isLeague) {
     canvas.width = width * 2;
@@ -172,7 +189,7 @@ export function exportStandingsToImage(
   ctx.fillStyle = palette.mutedText;
   ctx.font = '14px sans-serif';
   ctx.fillText(
-    `Tanggal: ${tDate}  |  Format: ${tFormat}  |  Total Peserta: ${parts.length} Pemain`,
+    `Tanggal: ${formatIndonesianFullDate(tDate)}  |  Format: ${tFormat}  |  Total Peserta: ${parts.length} Pemain`,
     padding,
     90
   );
@@ -209,7 +226,6 @@ export function exportStandingsToImage(
   }
 
   // Section 1 heading (untuk Turnamen Liga)
-  const tableY = (hasSeasonBanner ? 176 : 150) + section1LabelHeight;
   if (isLeague) {
     ctx.font = 'bold 13px monospace';
     ctx.fillStyle = palette.sectionHeadingPrimary;
@@ -409,13 +425,21 @@ export function exportStandingsToImage(
     // OMW%
     ctx.font = '13px monospace';
     ctx.fillStyle = palette.secondaryText;
-    ctx.fillText(`${p.omw}%`, padding + 785, textMidY);
+    ctx.fillText(formatPercent2Decimals(p.omw), padding + 785, textMidY);
 
     // GW%
-    ctx.fillText(`${p.gw}%`, padding + 865, textMidY);
+    ctx.fillText(formatPercent2Decimals(p.gw), padding + 865, textMidY);
 
     currentY += rowHeight;
   });
+
+  // Catatan penjelasan Top Cut tepat di bawah tabel Peringkat Akhir
+  if (hasTopCut && totalRows > 0) {
+    ctx.font = 'italic 11px sans-serif';
+    ctx.fillStyle = palette.mutedText;
+    ctx.fillText(TOP_CUT_EXPORT_NOTE, padding, currentY + 17);
+    currentY += 24;
+  }
 
   // Bagian 2 untuk Turnamen Liga: Klasemen Swiss (sebelum Top Cut)
   if (isLeague && totalRows > 0) {
@@ -473,9 +497,9 @@ export function exportStandingsToImage(
       ctx.fillText(`${swissRec.wins} - ${swissRec.losses}`, padding + 695, textY);
 
       ctx.fillStyle = palette.secondaryText;
-      ctx.fillText(`${p.omw}%`, padding + 785, textY);
+      ctx.fillText(formatPercent2Decimals(p.omw), padding + 785, textY);
 
-      ctx.fillText(`${p.gw}%`, padding + 865, textY);
+      ctx.fillText(formatPercent2Decimals(p.gw), padding + 865, textY);
 
       currentY += swissRowHeight;
     });
@@ -526,9 +550,9 @@ export function exportStandingsToImage(
   ctx.fillStyle = palette.footerText;
   ctx.font = '11px sans-serif';
   ctx.fillText(
-    `Digenerate oleh DigiSwiss-Round • ${new Date().toLocaleDateString('id-ID')}`,
+    `Digenerate oleh DigiSwiss-Round • ${formatIndonesianFullDate(new Date())}`,
     padding,
-    height - 20
+    footerBaselineY
   );
 
   return canvas.toDataURL('image/png');

@@ -1,7 +1,7 @@
 import type { Participation } from '../types/index.ts';
 
 export interface DeletionOperation {
-  type: 'match' | 'round' | 'player' | 'deck' | 'inviteClaim' | 'participation' | 'leagueInvite' | 'tournament';
+  type: 'match' | 'round' | 'player' | 'deck' | 'inviteClaim' | 'announcement' | 'participation' | 'leagueInvite' | 'tournament';
   id: string;
   path: string;
 }
@@ -12,6 +12,7 @@ export interface TournamentSubcollectionItems {
   players?: Array<{ id: string }>;
   decks?: Array<{ id: string }>;
   inviteClaims?: Array<{ id: string }>;
+  announcements?: Array<{ id: string }>;
   participations?: Array<{ id: string }>;
   leagueInvites?: Array<{ id: string }>;
 }
@@ -84,6 +85,17 @@ export function planTournamentDeletion(
         type: 'inviteClaim',
         id: claim.id,
         path: `tournaments/${tournamentId}/inviteClaims/${claim.id}`
+      });
+    }
+  }
+
+  // 5b. Announcements
+  if (items.announcements && items.announcements.length > 0) {
+    for (const ann of items.announcements) {
+      operations.push({
+        type: 'announcement',
+        id: ann.id,
+        path: `tournaments/${tournamentId}/announcements/${ann.id}`
       });
     }
   }

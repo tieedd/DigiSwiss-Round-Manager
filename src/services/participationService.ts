@@ -21,6 +21,7 @@ import {
   LeaguePlayerDecks
 } from '../types';
 import { isLeagueTournament } from '../utils/seasonLogic';
+import { filterFinishedLeagueTournaments } from '../utils/leagueCumulativeLogic';
 import { calculateTournamentStandings } from '../utils/standingsLogic';
 import {
   computeFinalRankingsWithTopCut,
@@ -519,5 +520,59 @@ export async function recalculateLeagueFinalRecords(
   }
 
   return { updatedCount: plan.length };
+}
+
+/**
+ * Mengambil seluruh Turnamen Liga yang berstatus 'finished' beserta dokumen
+ * participations-nya untuk perhitungan klasemen Poin Liga Lintas Season.
+ * Menggunakan query single-field agar tidak memerlukan composite index baru.
+ */
+export async function getFinishedLeagueDataForCumulative(): Promise<{
+  tournaments: Tournament[];
+  participations: Participation[];
+}> {
+  const tourneyQuery = query(
+    collection(db, 'tournaments'),
+    where('status', '==', 'finished')
+  );
+  const tourneySnap = await getDocs(tourneyQuery);
+  const rawTourneys = tourneySnap.docs.map(
+    (d) => ({ ...d.data(), id: d.id }) as Tournament
+  );
+  const leagueTournaments = filterFinishedLeagueTournaments(rawTourneys);
+
+  if (leagueTournaments.length === 0) {
+    return { tournaments: [], participations: [] };
+  }
+
+  const existingIds = new Set(leagueTournaments.map((t) => t.id));
+  const tourneyChunks = chunkBatchItems(leagueTournaments, 10);
+  const allParticipations: Participation[] = [];
+
+  for (const chunk of tourneyChunks) {
+    const snaps = await Promise.all(
+      chunk.map((t) =>
+        getDocs(
+          query(
+            collection(db, 'participations'),
+            where('tournamentId', '==', t.id)
+          )
+        )
+      )
+    );
+    for (const s of snaps) {
+      s.forEach((docSnap) => {
+        allParticipations.push(docSnap.data() as Participation);
+      });
+    }
+  }
+
+  return {
+    tournaments: leagueTournaments,
+    participations: filterParticipationsByExistingTournaments(
+      allParticipations,
+      existingIds
+    ),
+  };
 }
 

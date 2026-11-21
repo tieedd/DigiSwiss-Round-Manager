@@ -30,6 +30,7 @@ export interface DeleteTournamentResult {
   playersCount: number;
   decksCount: number;
   inviteClaimsCount: number;
+  announcementsCount: number;
   participationsCount: number;
   leagueInvitesCount: number;
 }
@@ -148,6 +149,7 @@ export async function executeCascadeTournamentDeletion(
   const playersCol = collection(db, 'tournaments', tournamentId, 'players');
   const decksCol = collection(db, 'tournaments', tournamentId, 'decks');
   const inviteClaimsCol = collection(db, 'tournaments', tournamentId, 'inviteClaims');
+  const announcementsCol = collection(db, 'tournaments', tournamentId, 'announcements');
   const participationsCol = collection(db, 'participations');
   const invitesCol = collection(db, 'leagueInvites');
 
@@ -157,6 +159,7 @@ export async function executeCascadeTournamentDeletion(
     playersSnap,
     decksSnap,
     inviteClaimsSnap,
+    announcementsSnap,
     participationsSnap,
     invitesSnap
   ] = await Promise.all([
@@ -165,6 +168,7 @@ export async function executeCascadeTournamentDeletion(
     getDocs(playersCol),
     getDocs(decksCol),
     getDocs(inviteClaimsCol),
+    getDocs(announcementsCol),
     getDocs(query(participationsCol, where('tournamentId', '==', tournamentId))),
     getDocs(query(invitesCol, where('tournamentId', '==', tournamentId)))
   ]);
@@ -174,6 +178,7 @@ export async function executeCascadeTournamentDeletion(
   const playersCount = playersSnap.size;
   const decksCount = decksSnap.size;
   const inviteClaimsCount = inviteClaimsSnap.size;
+  const announcementsCount = announcementsSnap.size;
   const participationsCount = participationsSnap.size;
   const leagueInvitesCount = invitesSnap.size;
 
@@ -184,6 +189,7 @@ export async function executeCascadeTournamentDeletion(
     players: playersSnap.docs.map((d) => ({ id: d.id })),
     decks: decksSnap.docs.map((d) => ({ id: d.id })),
     inviteClaims: inviteClaimsSnap.docs.map((d) => ({ id: d.id })),
+    announcements: announcementsSnap.docs.map((d) => ({ id: d.id })),
     participations: participationsSnap.docs.map((d) => ({ id: d.id })),
     leagueInvites: invitesSnap.docs.map((d) => ({ id: d.id }))
   });
@@ -222,6 +228,7 @@ export async function executeCascadeTournamentDeletion(
       playersCount,
       decksCount,
       inviteClaimsCount,
+      announcementsCount,
       participationsCount,
       leagueInvitesCount,
       totalDeleted: totalOperations
@@ -238,6 +245,7 @@ export async function executeCascadeTournamentDeletion(
     playersCount,
     decksCount,
     inviteClaimsCount,
+    announcementsCount,
     participationsCount,
     leagueInvitesCount
   };

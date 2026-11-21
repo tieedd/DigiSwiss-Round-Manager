@@ -33,6 +33,7 @@ import {
   setCachedStandings,
   invalidateStandingsCache
 } from '../../utils/finalStandingsLogic';
+import { formatPercent2Decimals } from '../../utils/exportFormatLogic';
 import {
   Trophy,
   Layers,
@@ -394,7 +395,7 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
                   })()}
                 </div>
                 <span className="truncate">
-                  OMW {row.omw.toFixed(1)}% &bull; GW {row.gw.toFixed(1)}% &bull; OGW {row.ogw.toFixed(1)}%
+                  OMW {formatPercent2Decimals(row.omw)} &bull; GW {formatPercent2Decimals(row.gw)} &bull; OGW {formatPercent2Decimals(row.ogw)}
                 </span>
               </div>
             </div>
