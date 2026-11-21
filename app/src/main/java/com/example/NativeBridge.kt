@@ -7,6 +7,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -16,19 +18,34 @@ import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
+import com.google.mlkit.common.MlKitException
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import com.google.mlkit.vision.common.InputImage
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import kotlin.math.max
 
 class NativeBridge(
   private val activity: Activity,
-  private val webView: WebView
+  private val webView: WebView,
+  private val onPickQrImage: () -> Unit = {}
 ) {
   var lastDownloadId: Long = -1L
   var lastDownloadedFileName: String = ""
+
+  @Volatile
+  private var pendingQrPickRequestId: String? = null
 
   fun dispatchNativeEvent(type: String, detailJson: JSONObject) {
     activity.runOnUiThread {
@@ -452,6 +469,259 @@ class NativeBridge(
   @JavascriptInterface
   fun getCurrentOtaInfo(): String {
     return OtaManager.getCurrentOtaInfo(activity).toString()
+  }
+
+  private fun dispatchQrResult(
+    requestId: String,
+    ok: Boolean,
+    text: String? = null,
+    error: String? = null
+  ) {
+    val detail = JSONObject().apply {
+      put("type", "qr-result")
+      put("requestId", requestId)
+      put("ok", ok)
+      if (ok && text != null) {
+        put("text", text)
+      }
+      if (!ok && error != null) {
+        put("error", error)
+      }
+    }
+    dispatchNativeEvent("qr-result", detail)
+  }
+
+  @JavascriptInterface
+  fun scanQrCode(requestId: String) {
+    activity.runOnUiThread {
+      try {
+        val gmsStatus = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(activity)
+        if (gmsStatus != ConnectionResult.SUCCESS) {
+          dispatchQrResult(requestId, ok = false, error = "unavailable")
+          return@runOnUiThread
+        }
+
+        val options = GmsBarcodeScannerOptions.Builder()
+          .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+          .enableAutoZoom()
+          .build()
+        val scanner = GmsBarcodeScanning.getClient(activity, options)
+
+        scanner.startScan()
+          .addOnSuccessListener { barcode ->
+            val raw = barcode.rawValue?.trim().orEmpty()
+            if (raw.isNotEmpty()) {
+              dispatchQrResult(requestId, ok = true, text = raw)
+            } else {
+              dispatchQrResult(requestId, ok = false, error = "failed")
+            }
+          }
+          .addOnCanceledListener {
+            dispatchQrResult(requestId, ok = false, error = "cancelled")
+          }
+          .addOnFailureListener { e ->
+            val msg = e.message.orEmpty()
+            val isUnavailable = (e is MlKitException && e.errorCode == MlKitException.UNAVAILABLE) ||
+              msg.contains("unavailable", ignoreCase = true) ||
+              msg.contains("Google Play services", ignoreCase = true) ||
+              msg.contains("API is not available", ignoreCase = true)
+            dispatchQrResult(
+              requestId,
+              ok = false,
+              error = if (isUnavailable) "unavailable" else "failed"
+            )
+          }
+      } catch (e: Exception) {
+        val msg = e.message.orEmpty()
+        val isUnavailable = msg.contains("unavailable", ignoreCase = true) ||
+          msg.contains("Google Play services", ignoreCase = true)
+        dispatchQrResult(
+          requestId,
+          ok = false,
+          error = if (isUnavailable) "unavailable" else "failed"
+        )
+      }
+    }
+  }
+
+  @JavascriptInterface
+  fun pickQrImage(requestId: String) {
+    activity.runOnUiThread {
+      try {
+        pendingQrPickRequestId = requestId
+        onPickQrImage()
+      } catch (_: Exception) {
+        pendingQrPickRequestId = null
+        dispatchQrResult(requestId, ok = false, error = "failed")
+      }
+    }
+  }
+
+  fun onQrImagePicked(uri: Uri?) {
+    val requestId = pendingQrPickRequestId
+    pendingQrPickRequestId = null
+    if (requestId.isNullOrEmpty()) return
+
+    if (uri == null) {
+      dispatchQrResult(requestId, ok = false, error = "cancelled")
+      return
+    }
+
+    Thread {
+      var decodedBitmap: Bitmap? = null
+      try {
+        decodedBitmap = decodeDownsampledBitmap(uri, maxDimension = 1600)
+        val inputImage = if (decodedBitmap != null) {
+          InputImage.fromBitmap(decodedBitmap, 0)
+        } else {
+          InputImage.fromFilePath(activity, uri)
+        }
+
+        val options = BarcodeScannerOptions.Builder()
+          .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+          .build()
+        val scanner = BarcodeScanning.getClient(options)
+
+        scanner.process(inputImage)
+          .addOnSuccessListener { barcodes ->
+            val raw = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }?.rawValue?.trim().orEmpty()
+            if (raw.isNotEmpty()) {
+              dispatchQrResult(requestId, ok = true, text = raw)
+            } else {
+              dispatchQrResult(requestId, ok = false, error = "no_qr")
+            }
+          }
+          .addOnFailureListener {
+            dispatchQrResult(requestId, ok = false, error = "failed")
+          }
+          .addOnCompleteListener {
+            try {
+              scanner.close()
+            } catch (_: Exception) {}
+            try {
+              decodedBitmap?.recycle()
+            } catch (_: Exception) {}
+          }
+      } catch (_: Exception) {
+        try {
+          decodedBitmap?.recycle()
+        } catch (_: Exception) {}
+        dispatchQrResult(requestId, ok = false, error = "failed")
+      }
+    }.start()
+  }
+
+  private fun decodeDownsampledBitmap(uri: Uri, maxDimension: Int): Bitmap? {
+    val resolver = activity.contentResolver
+    val bounds = BitmapFactory.Options().apply {
+      inJustDecodeBounds = true
+    }
+    resolver.openInputStream(uri)?.use { stream ->
+      BitmapFactory.decodeStream(stream, null, bounds)
+    }
+
+    val srcW = bounds.outWidth
+    val srcH = bounds.outHeight
+    if (srcW <= 0 || srcH <= 0) {
+      return null
+    }
+
+    var sampleSize = 1
+    val largest = max(srcW, srcH)
+    while (largest / sampleSize > maxDimension) {
+      sampleSize *= 2
+    }
+
+    val decodeOpts = BitmapFactory.Options().apply {
+      inSampleSize = sampleSize
+      inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
+    val sampled = resolver.openInputStream(uri)?.use { stream ->
+      BitmapFactory.decodeStream(stream, null, decodeOpts)
+    } ?: return null
+
+    val curMax = max(sampled.width, sampled.height)
+    if (curMax > maxDimension) {
+      val scale = maxDimension.toFloat() / curMax.toFloat()
+      val targetW = max(1, (sampled.width * scale).toInt())
+      val targetH = max(1, (sampled.height * scale).toInt())
+      val scaled = Bitmap.createScaledBitmap(sampled, targetW, targetH, true)
+      if (scaled !== sampled) {
+        sampled.recycle()
+      }
+      return scaled
+    }
+    return sampled
+  }
+
+  @JavascriptInterface
+  fun shareImage(fileName: String, base64Png: String, caption: String): String {
+    val result = JSONObject()
+    try {
+      val sanitizedBase = sanitizeFileName(fileName)
+      if (sanitizedBase.isEmpty()) {
+        result.put("ok", false)
+        result.put("message", "Nama file tidak valid")
+        return result.toString()
+      }
+      val finalName = if (sanitizedBase.endsWith(".png", ignoreCase = true)) {
+        sanitizedBase
+      } else {
+        "$sanitizedBase.png"
+      }
+
+      val cleanBase64 = if (base64Png.contains(",")) {
+        base64Png.substringAfter(",")
+      } else {
+        base64Png
+      }
+      val bytes = Base64.decode(cleanBase64, Base64.DEFAULT)
+      val maxBytes = 10 * 1024 * 1024
+      if (bytes.isEmpty() || bytes.size > maxBytes) {
+        result.put("ok", false)
+        result.put("message", "Ukuran gambar tidak valid atau melebihi 10MB")
+        return result.toString()
+      }
+
+      val sharedDir = File(activity.cacheDir, "shared")
+      if (!sharedDir.exists()) {
+        sharedDir.mkdirs()
+      }
+      val outFile = File(sharedDir, finalName)
+      FileOutputStream(outFile).use { fos ->
+        fos.write(bytes)
+        fos.flush()
+      }
+
+      val contentUri = FileProvider.getUriForFile(
+        activity,
+        "${activity.packageName}.fileprovider",
+        outFile
+      )
+
+      val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "image/png"
+        putExtra(Intent.EXTRA_STREAM, contentUri)
+        if (caption.trim().isNotEmpty()) {
+          putExtra(Intent.EXTRA_TEXT, caption.trim())
+        }
+        clipData = ClipData.newRawUri("", contentUri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      }
+
+      activity.runOnUiThread {
+        val chooser = Intent.createChooser(sendIntent, "Bagikan Kartu QR Undangan")
+        activity.startActivity(chooser)
+      }
+
+      result.put("ok", true)
+      result.put("message", "Membuka menu berbagi...")
+      return result.toString()
+    } catch (e: Exception) {
+      result.put("ok", false)
+      result.put("message", e.message ?: "Gagal membagikan gambar")
+      return result.toString()
+    }
   }
 
   companion object {

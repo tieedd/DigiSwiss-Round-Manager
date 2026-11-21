@@ -12,6 +12,16 @@ import {
 import { normalizeLeagueInviteInput } from '../../utils/leagueInviteLogic';
 import { formatSeasonLabel } from '../../utils/seasonLogic';
 import {
+  isQrGalleryPickerSupportedNative,
+  isQrScannerSupportedNative,
+  pickQrImageNative,
+  scanQrCodeNative,
+} from '../../services/nativeBridge';
+import {
+  mapQrBridgeErrorToIndonesianMessage,
+  validateScannedLeagueInviteText,
+} from '../../utils/qrShareLogic';
+import {
   Ticket,
   AlertCircle,
   Trophy,
@@ -19,6 +29,8 @@ import {
   MapPin,
   UserCheck,
   Search,
+  QrCode,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface LeagueInviteJoinSheetProps {
@@ -37,15 +49,20 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
   const [rawInput, setRawInput] = useState('');
   const [checking, setChecking] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [qrLoading, setQrLoading] = useState<'camera' | 'gallery' | null>(null);
   const [lookupError, setLookupError] = useState('');
   const [lookupResult, setLookupResult] =
     useState<LeagueInviteLookupResult | null>(null);
+
+  const canScanCamera = isQrScannerSupportedNative();
+  const canPickGallery = isQrGalleryPickerSupportedNative();
 
   useEffect(() => {
     if (isOpen) {
       setRawInput('');
       setChecking(false);
       setJoining(false);
+      setQrLoading(null);
       setLookupError('');
       setLookupResult(null);
     }
@@ -53,15 +70,14 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
 
   const normalizedPreview = normalizeLeagueInviteInput(rawInput);
 
-  const handleLookup = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const performLookup = async (codeOrInput: string) => {
     if (!currentUser || checking || joining) return;
 
     setChecking(true);
     setLookupError('');
     setLookupResult(null);
     try {
-      const res = await lookupLeagueInviteForPlayer(rawInput, currentUser.uid);
+      const res = await lookupLeagueInviteForPlayer(codeOrInput, currentUser.uid);
       if (!res.valid) {
         setLookupError(res.error || 'Kode undangan tidak valid.');
         setLookupResult(null);
@@ -75,6 +91,43 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
       );
     } finally {
       setChecking(false);
+    }
+  };
+
+  const handleLookup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await performLookup(rawInput);
+  };
+
+  const handleQrInputAction = async (source: 'camera' | 'gallery') => {
+    if (!currentUser || checking || joining || qrLoading !== null) return;
+    setQrLoading(source);
+    setLookupError('');
+    try {
+      const res =
+        source === 'camera'
+          ? await scanQrCodeNative()
+          : await pickQrImageNative();
+
+      if (!res.ok) {
+        setLookupError(mapQrBridgeErrorToIndonesianMessage(res.error, source));
+        return;
+      }
+
+      const validation = validateScannedLeagueInviteText(res.text);
+      if (!validation.valid) {
+        setLookupError(validation.error || 'QR ini bukan undangan DigiSwiss');
+        return;
+      }
+
+      setRawInput(validation.code);
+      setQrLoading(null);
+      await performLookup(validation.code);
+    } catch (err: any) {
+      console.error('Gagal memproses QR undangan:', err);
+      setLookupError(mapQrBridgeErrorToIndonesianMessage('failed', source));
+    } finally {
+      setQrLoading(null);
     }
   };
 
@@ -113,13 +166,15 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
   };
 
   const handleClose = () => {
-    if (checking || joining) return;
+    if (checking || joining || qrLoading !== null) return;
     onClose();
   };
 
   const previewSeasonLabel =
     lookupResult?.invite?.seasonLabel ||
     formatSeasonLabel(lookupResult?.tournament?.season);
+
+  const isBusy = checking || joining || qrLoading !== null;
 
   return (
     <BottomSheet
@@ -129,6 +184,41 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
       zIndexClass="z-[60]"
     >
       <div className="flex flex-col gap-3 py-1 pb-2">
+        {(canScanCamera || canPickGallery) && (
+          <div
+            className={`grid gap-2 ${
+              canScanCamera && canPickGallery ? 'grid-cols-2' : 'grid-cols-1'
+            }`}
+          >
+            {canScanCamera && (
+              <Button
+                variant="primary"
+                type="button"
+                isLoading={qrLoading === 'camera'}
+                disabled={isBusy || !currentUser}
+                onClick={() => handleQrInputAction('camera')}
+                icon={<QrCode size={16} />}
+                className="!min-h-[44px] !text-caption"
+              >
+                Scan QR
+              </Button>
+            )}
+            {canPickGallery && (
+              <Button
+                variant="secondary"
+                type="button"
+                isLoading={qrLoading === 'gallery'}
+                disabled={isBusy || !currentUser}
+                onClick={() => handleQrInputAction('gallery')}
+                icon={<ImageIcon size={16} />}
+                className="!min-h-[44px] !text-caption"
+              >
+                Pilih dari Galeri
+              </Button>
+            )}
+          </div>
+        )}
+
         <form onSubmit={handleLookup} className="flex flex-col gap-3">
           <Input
             label="Kode Undangan (8 Karakter / Teks QR)"
@@ -139,7 +229,7 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
               if (lookupError) setLookupError('');
               if (lookupResult) setLookupResult(null);
             }}
-            disabled={checking || joining}
+            disabled={isBusy}
             autoCapitalize="characters"
             leftIcon={<Ticket size={16} />}
             helperText={
@@ -154,7 +244,7 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
             fullWidth
             type="submit"
             isLoading={checking}
-            disabled={checking || joining || !rawInput.trim()}
+            disabled={isBusy || !rawInput.trim()}
             icon={<Search size={16} />}
           >
             Periksa Kode Undangan
@@ -236,7 +326,7 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
           variant="secondary"
           fullWidth
           type="button"
-          disabled={checking || joining}
+          disabled={isBusy}
           onClick={handleClose}
         >
           Tutup

@@ -20,6 +20,9 @@ import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -29,6 +32,7 @@ import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
   private var nativeBridge: NativeBridge? = null
+  private lateinit var pickQrImageLauncher: ActivityResultLauncher<PickVisualMediaRequest>
 
   private val downloadReceiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
@@ -73,6 +77,12 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
 
+    pickQrImageLauncher = registerForActivityResult(
+      ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+      nativeBridge?.onQrImagePicked(uri)
+    }
+
     val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       registerReceiver(downloadReceiver, filter, Context.RECEIVER_EXPORTED)
@@ -88,6 +98,11 @@ class MainActivity : ComponentActivity() {
         DigiSwissWebView(
           onBridgeCreated = { bridge ->
             nativeBridge = bridge
+          },
+          onPickQrImage = {
+            pickQrImageLauncher.launch(
+              PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            )
           }
         )
       }
@@ -106,7 +121,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DigiSwissWebView(
   modifier: Modifier = Modifier,
-  onBridgeCreated: (NativeBridge) -> Unit = {}
+  onBridgeCreated: (NativeBridge) -> Unit = {},
+  onPickQrImage: () -> Unit = {}
 ) {
   AndroidView(
     modifier = modifier.fillMaxSize(),
@@ -131,7 +147,7 @@ fun DigiSwissWebView(
           cacheMode = WebSettings.LOAD_DEFAULT
         }
 
-        val bridge = NativeBridge(activity, this)
+        val bridge = NativeBridge(activity, this, onPickQrImage)
         addJavascriptInterface(bridge, "AndroidBridge")
         onBridgeCreated(bridge)
 

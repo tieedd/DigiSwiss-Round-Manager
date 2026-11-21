@@ -105,6 +105,8 @@ dependencies {
   // implementation(libs.coil.compose)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
+  implementation(libs.play.services.code.scanner)
+  implementation(libs.mlkit.barcode.scanning)
   // implementation(libs.play.services.location)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

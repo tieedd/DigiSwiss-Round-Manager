@@ -19,6 +19,9 @@ declare global {
       markBootOk?(): string;
       resetToDefaultAssets?(): string;
       getCurrentOtaInfo?(): string;
+      scanQrCode?(requestId: string): void;
+      pickQrImage?(requestId: string): void;
+      shareImage?(fileName: string, base64Png: string, caption: string): string;
     };
   }
 }
@@ -30,7 +33,8 @@ export type NativeEventType =
   | 'install-permission-needed'
   | 'ota-download-progress'
   | 'ota-download-complete'
-  | 'ota-download-failed';
+  | 'ota-download-failed'
+  | 'qr-result';
 
 export interface NativeEventDetail {
   type: NativeEventType;
@@ -43,6 +47,9 @@ export interface NativeEventDetail {
   progress?: number;
   receivedBytes?: number;
   totalBytes?: number;
+  requestId?: string;
+  text?: string;
+  error?: string;
 }
 
 /**
@@ -465,6 +472,138 @@ export async function getCurrentOtaInfoNative(): Promise<{
   }
   return { isOta: false, nativeVersion: '1.0' };
 }
+
+const QR_BRIDGE_TIMEOUT_MS = 60_000;
+
+export interface QrBridgeResult {
+  ok: boolean;
+  text?: string;
+  error?: string;
+}
+
+export function isQrScannerSupportedNative(): boolean {
+  return (
+    isNativeBridgeAvailable() &&
+    typeof window.AndroidBridge?.scanQrCode === 'function'
+  );
+}
+
+export function isQrGalleryPickerSupportedNative(): boolean {
+  return (
+    isNativeBridgeAvailable() &&
+    typeof window.AndroidBridge?.pickQrImage === 'function'
+  );
+}
+
+export function isShareImageSupportedNative(): boolean {
+  return (
+    isNativeBridgeAvailable() &&
+    typeof window.AndroidBridge?.shareImage === 'function'
+  );
+}
+
+function createQrRequestId(prefix: string): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function invokeQrBridgeWithTimeout(
+  prefix: string,
+  invoke: (requestId: string) => void
+): Promise<QrBridgeResult> {
+  return new Promise((resolve) => {
+    const requestId = createQrRequestId(prefix);
+    let settled = false;
+    let removeListener: () => void = () => {};
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      removeListener();
+      resolve({ ok: false, error: 'timeout' });
+    }, QR_BRIDGE_TIMEOUT_MS);
+
+    removeListener = addNativeEventListener((detail) => {
+      if (settled) return;
+      if (detail.type === 'qr-result' && detail.requestId === requestId) {
+        settled = true;
+        clearTimeout(timer);
+        removeListener();
+        if (detail.ok && detail.text) {
+          resolve({ ok: true, text: detail.text });
+        } else {
+          resolve({ ok: false, error: detail.error || 'failed' });
+        }
+      }
+    });
+
+    try {
+      invoke(requestId);
+    } catch {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        removeListener();
+        resolve({ ok: false, error: 'failed' });
+      }
+    }
+  });
+}
+
+/**
+ * Memindai QR code menggunakan Google Code Scanner native (tanpa izin kamera) dengan timeout 60 detik.
+ */
+export async function scanQrCodeNative(): Promise<QrBridgeResult> {
+  if (!isQrScannerSupportedNative() || !window.AndroidBridge?.scanQrCode) {
+    return { ok: false, error: 'unsupported' };
+  }
+  const fn = window.AndroidBridge.scanQrCode.bind(window.AndroidBridge);
+  return invokeQrBridgeWithTimeout('qr_scan', fn);
+}
+
+/**
+ * Memilih gambar QR dari galeri via Photo Picker native dan men-decode via ML Kit (timeout 60 detik).
+ */
+export async function pickQrImageNative(): Promise<QrBridgeResult> {
+  if (!isQrGalleryPickerSupportedNative() || !window.AndroidBridge?.pickQrImage) {
+    return { ok: false, error: 'unsupported' };
+  }
+  const fn = window.AndroidBridge.pickQrImage.bind(window.AndroidBridge);
+  return invokeQrBridgeWithTimeout('qr_pick', fn);
+}
+
+/**
+ * Membagikan gambar PNG lewat FileProvider + ACTION_SEND chooser native.
+ */
+export async function shareImageNative(
+  fileName: string,
+  base64Png: string,
+  caption: string = ''
+): Promise<{ ok: boolean; message: string }> {
+  const safeBase = sanitizeFileName(fileName);
+  const fullName = safeBase.endsWith('.png') ? safeBase : `${safeBase}.png`;
+
+  if (!isShareImageSupportedNative() || !window.AndroidBridge?.shareImage) {
+    return {
+      ok: false,
+      message: 'Fitur berbagi gambar hanya tersedia di aplikasi Android.',
+    };
+  }
+
+  try {
+    const raw = window.AndroidBridge.shareImage(fullName, base64Png, caption);
+    const parsed = JSON.parse(raw);
+    return {
+      ok: Boolean(parsed.ok),
+      message: parsed.message || 'Membuka menu berbagi...',
+    };
+  } catch (e: any) {
+    return {
+      ok: false,
+      message: e?.message || 'Gagal membagikan gambar.',
+    };
+  }
+}
+
 
 
 

@@ -6,7 +6,11 @@ import { Button } from '../common/Button';
 import { StatusBadge } from '../common/StatusBadge';
 import { ConfirmSheet } from '../common/ConfirmSheet';
 import { useToast } from '../../context/ToastContext';
-import { copyTextNative } from '../../services/nativeBridge';
+import {
+  copyTextNative,
+  isShareImageSupportedNative,
+  shareImageNative,
+} from '../../services/nativeBridge';
 import {
   getLeagueInvitesForTournament,
   regenerateLeagueInviteCode,
@@ -16,6 +20,12 @@ import {
   formatLeagueInviteQrPayload,
   shouldShowLegacyInviteRegenerateWarning,
 } from '../../utils/leagueInviteLogic';
+import { formatSeasonLabel } from '../../utils/seasonLogic';
+import {
+  buildLeagueInviteQrFileName,
+  buildLeagueInviteShareCaption,
+} from '../../utils/qrShareLogic';
+import { renderLeagueInviteQrCardPng } from '../../utils/canvasQrShare';
 import {
   QrCode,
   Copy,
@@ -25,6 +35,7 @@ import {
   ShieldCheck,
   AlertCircle,
   AlertTriangle,
+  Share2,
 } from 'lucide-react';
 
 interface LeagueInviteQrCardProps {
@@ -43,6 +54,8 @@ export const LeagueInviteQrCard: React.FC<LeagueInviteQrCardProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copiedTarget, setCopiedTarget] = useState<'code' | 'qr' | null>(null);
   const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false);
+  const [sharingQr, setSharingQr] = useState(false);
+  const canShareImage = isShareImageSupportedNative();
 
   const loadInvites = async () => {
     setLoading(true);
@@ -156,7 +169,49 @@ export const LeagueInviteQrCard: React.FC<LeagueInviteQrCardProps> = ({
     }
   };
 
-  const quietZone = 2;
+  const handleShareQr = async () => {
+    if (!currentInvite || !currentInvite.active || sharingQr || actionLoading) {
+      return;
+    }
+    setSharingQr(true);
+    try {
+      const seasonLabel =
+        currentInvite.seasonLabel || formatSeasonLabel(tournament.season);
+      const dataUrl = renderLeagueInviteQrCardPng({
+        tournamentName: tournament.name,
+        seasonLabel,
+        organizerName: tournament.organizerName || actor.name,
+        inviteCode: currentInvite.code,
+      });
+      if (!dataUrl) {
+        showToastError('Gagal membuat gambar kartu QR.');
+        return;
+      }
+
+      const fileName = buildLeagueInviteQrFileName(
+        tournament.name,
+        seasonLabel
+      );
+      const caption = buildLeagueInviteShareCaption({
+        tournamentName: tournament.name,
+        seasonLabel,
+        organizerName: tournament.organizerName || actor.name,
+        inviteCode: currentInvite.code,
+      });
+
+      const res = await shareImageNative(fileName, dataUrl, caption);
+      if (!res.ok) {
+        showToastError(res.message || 'Gagal membagikan kartu QR.');
+      }
+    } catch (err: any) {
+      console.error('Gagal membagikan QR undangan:', err);
+      showToastError(err?.message || 'Gagal membagikan kartu QR.');
+    } finally {
+      setSharingQr(false);
+    }
+  };
+
+  const quietZone = 4;
   const svgSize = qrMatrix ? qrMatrix.count + quietZone * 2 : 0;
 
   return (
@@ -247,7 +302,7 @@ export const LeagueInviteQrCard: React.FC<LeagueInviteQrCardProps> = ({
                           y={rIdx + quietZone}
                           width={1}
                           height={1}
-                          fill="#0B0F14"
+                          fill="#000000"
                         />
                       ) : null
                     )
@@ -301,6 +356,23 @@ export const LeagueInviteQrCard: React.FC<LeagueInviteQrCardProps> = ({
                 >
                   {copiedTarget === 'qr' ? 'Teks QR Disalin' : 'Salin Teks QR'}
                 </Button>
+                {canShareImage && (
+                  <Button
+                    variant="primary"
+                    className="!min-h-[34px] !px-2.5 !text-[11px]"
+                    isLoading={sharingQr}
+                    disabled={!currentInvite.active || actionLoading || sharingQr}
+                    onClick={handleShareQr}
+                    icon={<Share2 size={13} />}
+                    title={
+                      currentInvite.active
+                        ? 'Bagikan Kartu QR sebagai gambar PNG'
+                        : 'Aktifkan kode undangan untuk membagikan QR'
+                    }
+                  >
+                    Bagikan QR
+                  </Button>
+                )}
               </div>
             </div>
           </div>
