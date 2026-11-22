@@ -13,6 +13,7 @@ import { isLeagueParticipation } from '../../utils/leagueFinalDecksLogic';
 import { formatFinalRecordBreakdown } from '../../utils/finalRecordLogic';
 import { formatPercent2Decimals } from '../../utils/exportFormatLogic';
 import { useVisibleViewportHeight } from '../../utils/useVisibleViewportHeight';
+import { useBackLayer } from '../../utils/backStack';
 import {
   X,
   Trophy,
@@ -43,6 +44,8 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
 
   const isModalVisible = isOpen && Boolean(participation);
   const { maxHeightCss } = useVisibleViewportHeight(isModalVisible);
+
+  useBackLayer(isModalVisible, onClose);
 
   useEffect(() => {
     if (!isModalVisible || typeof document === 'undefined') return;

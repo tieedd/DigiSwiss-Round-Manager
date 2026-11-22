@@ -120,26 +120,24 @@ export function extractYearMonthFromDate(
 }
 
 /**
- * Menyarankan nomor season berikutnya = nomor season tertinggi dari turnamen liga
- * milik organizer dengan nama yang sama (case-insensitive & trimmed) + 1,
- * atau 1 jika belum ada.
+ * Menghitung nomor season berikutnya = max(season.number dari SEMUA turnamen type === 'league'
+ * dengan organizerId yang sama) + 1, atau 1 jika belum ada. Nama liga tidak ikut dihitung.
  */
-export function suggestNextSeasonNumber(
-  existingTournaments: ReadonlyArray<
-    Pick<Tournament, 'name' | 'type' | 'season'>
+export function computeNextSeasonNumber(
+  organizerLeagues: ReadonlyArray<
+    Pick<Tournament, 'organizerId' | 'type' | 'season'>
   >,
-  leagueName: string
+  organizerId?: string | null
 ): number {
-  const normalizedTarget = (leagueName || '').trim().toLowerCase();
-  if (!normalizedTarget || !existingTournaments || existingTournaments.length === 0) {
+  const targetOrganizerId = (organizerId || '').trim();
+  if (!targetOrganizerId || !organizerLeagues || organizerLeagues.length === 0) {
     return 1;
   }
 
   let maxSeason = 0;
-  for (const t of existingTournaments) {
+  for (const t of organizerLeagues) {
     if (!isLeagueTournament(t)) continue;
-    const normalizedName = (t.name || '').trim().toLowerCase();
-    if (normalizedName !== normalizedTarget) continue;
+    if ((t.organizerId || '').trim() !== targetOrganizerId) continue;
 
     const seasonNum = Number(t.season?.number);
     if (Number.isInteger(seasonNum) && seasonNum > maxSeason) {
@@ -148,6 +146,56 @@ export function suggestNextSeasonNumber(
   }
 
   return maxSeason + 1;
+}
+
+export interface SeasonUniquenessCheckResult {
+  unique: boolean;
+  conflictTournament?: Pick<Tournament, 'id' | 'name' | 'season'>;
+  error?: string;
+}
+
+/**
+ * Memeriksa apakah nomor season unik terhadap turnamen liga lain milik organizer yang sama.
+ */
+export function checkUniqueLeagueSeasonNumber(params: {
+  seasonNumber: number;
+  organizerLeagues: ReadonlyArray<
+    Pick<Tournament, 'id' | 'name' | 'organizerId' | 'type' | 'season'>
+  >;
+  organizerId?: string | null;
+  excludeTournamentId?: string | null;
+}): SeasonUniquenessCheckResult {
+  const num = Number(params.seasonNumber);
+  const targetOrgId = (params.organizerId || '').trim();
+  const excludeId = (params.excludeTournamentId || '').trim();
+
+  if (!Number.isInteger(num) || num < 1) {
+    return {
+      unique: false,
+      error: 'Nomor Season harus berupa angka bulat minimal 1.',
+    };
+  }
+
+  if (!targetOrgId || !params.organizerLeagues || params.organizerLeagues.length === 0) {
+    return { unique: true };
+  }
+
+  for (const t of params.organizerLeagues) {
+    if (!isLeagueTournament(t)) continue;
+    if ((t.organizerId || '').trim() !== targetOrgId) continue;
+    if (excludeId && t.id === excludeId) continue;
+
+    if (Number(t.season?.number) === num) {
+      const conflictName = (t.name || 'Liga Lain').trim();
+      return {
+        unique: false,
+        conflictTournament: t,
+        error: `Season ${num} sudah dipakai di liga ${conflictName} milik Anda.`,
+      };
+    }
+  }
+
+  return { unique: true };
 }
 
 export interface SeasonValidationResult {

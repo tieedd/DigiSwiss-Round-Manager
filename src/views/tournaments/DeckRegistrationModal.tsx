@@ -6,6 +6,7 @@ import {
   useVisibleViewportHeight,
   scrollFocusedInputIntoView,
 } from '../../utils/useVisibleViewportHeight';
+import { useBackLayer } from '../../utils/backStack';
 import {
   OFFICIAL_DECK_COLORS,
   DECK_COLOR_STYLES,
@@ -57,6 +58,14 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
 
   const isModalVisible = isOpen && Boolean(participation);
   const { maxHeightCss } = useVisibleViewportHeight(isModalVisible);
+
+  useBackLayer(
+    isModalVisible,
+    () => {
+      if (!saving) onClose();
+    },
+    { blocked: saving }
+  );
 
   useEffect(() => {
     if (!isModalVisible || typeof document === 'undefined') return;
@@ -185,8 +194,11 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
-            className="text-dark-muted hover:text-dark-text p-1 rounded-btn hover:bg-dark-surface-high transition-colors"
+            disabled={saving}
+            onClick={() => {
+              if (!saving) onClose();
+            }}
+            className="text-dark-muted hover:text-dark-text p-1 rounded-btn hover:bg-dark-surface-high transition-colors disabled:opacity-50"
             aria-label="Tutup"
           >
             <X size={18} />

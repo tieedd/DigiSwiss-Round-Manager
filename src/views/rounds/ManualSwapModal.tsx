@@ -118,7 +118,14 @@ export const ManualSwapModal: React.FC<ManualSwapModalProps> = ({
   };
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose} title="Tukar Pairing Manual">
+    <BottomSheet
+      isOpen={isOpen}
+      onClose={() => {
+        if (!loading) onClose();
+      }}
+      closeDisabled={loading}
+      title="Tukar Pairing Manual"
+    >
       <div className="flex flex-col gap-4 py-2 pb-6">
         <p className="text-caption text-dark-muted">
           Pilih dua pemain dari meja yang berbeda untuk ditukar posisinya sebelum pertandingan dimulai.

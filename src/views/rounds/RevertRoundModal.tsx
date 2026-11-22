@@ -50,6 +50,7 @@ export const RevertRoundModal: React.FC<RevertRoundModalProps> = ({
     <BottomSheet
       isOpen={isOpen}
       onClose={() => !loading && onClose()}
+      closeDisabled={loading}
       title={`Peringatan Revert ke ${targetDisplay}`}
     >
       <div className="flex flex-col gap-4 py-2 pb-6">

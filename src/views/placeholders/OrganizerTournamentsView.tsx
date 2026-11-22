@@ -312,6 +312,7 @@ export const OrganizerTournamentsView: React.FC<OrganizerTournamentsViewProps> =
         isOpen={createSheetOpen}
         mode="create"
         tournamentType={createTournamentType}
+        organizerId={currentUser?.uid}
         existingTournaments={tournaments}
         isLoading={createLoading}
         errorMessage={createError}

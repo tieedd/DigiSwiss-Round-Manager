@@ -24,6 +24,7 @@ import {
   createTournament,
   updateTournamentDetails,
   getTournamentPlayers,
+  getOrganizerLeagueTournaments,
   registerPlayer,
   cancelRegistration,
   addManualPlayer,
@@ -33,6 +34,7 @@ import {
   dropPlayer,
   deleteTournament
 } from '../../services/tournamentService';
+import { useBackLayer } from '../../utils/backStack';
 import {
   getAllTournamentLeagueDecks,
   getPlayerLeagueDecks,
@@ -209,6 +211,7 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
   const [duplicateSheetOpen, setDuplicateSheetOpen] = useState(false);
   const [duplicateLoading, setDuplicateLoading] = useState(false);
   const [duplicateError, setDuplicateError] = useState('');
+  const [formOrganizerLeagues, setFormOrganizerLeagues] = useState<Tournament[]>([]);
 
   // Admin Delete Tournament Reauth & Progress
   const [deleteReauthOpen, setDeleteReauthOpen] = useState(false);
@@ -735,6 +738,16 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
 
   const calculatedRoundsPreview = calculateSwissRounds(acceptedPlayers.length);
 
+  useBackLayer(
+    Boolean(isOpen && (deleteLoading || deleteError)),
+    () => {
+      if (deleteLoading) return;
+      setDeleteError(null);
+      setDeleteProgress(null);
+    },
+    { blocked: deleteLoading }
+  );
+
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose} title={tournament.name}>
       <div className="flex flex-col gap-4 py-1 pb-6">
@@ -830,7 +843,13 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
               className="!min-h-[40px] !text-caption"
               onClick={() => {
                 setEditError('');
+                setFormOrganizerLeagues([]);
                 setEditSheetOpen(true);
+                if (isLeague && tournament.organizerId) {
+                  getOrganizerLeagueTournaments(tournament.organizerId)
+                    .then((list) => setFormOrganizerLeagues(list))
+                    .catch((err) => console.warn('Gagal memuat daftar liga organizer:', err));
+                }
               }}
               icon={<Pencil size={15} />}
             >
@@ -841,7 +860,13 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
               className="!min-h-[40px] !text-caption"
               onClick={() => {
                 setDuplicateError('');
+                setFormOrganizerLeagues([]);
                 setDuplicateSheetOpen(true);
+                if (isLeague && currentUser?.uid) {
+                  getOrganizerLeagueTournaments(currentUser.uid)
+                    .then((list) => setFormOrganizerLeagues(list))
+                    .catch((err) => console.warn('Gagal memuat daftar liga pelaku:', err));
+                }
               }}
               icon={<CopyPlus size={15} />}
             >
@@ -1386,9 +1411,11 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
       <BottomSheet
         isOpen={manualModalOpen}
         onClose={() => {
+          if (manualLoading) return;
           setManualDuplicateWarning(null);
           setManualModalOpen(false);
         }}
+        closeDisabled={manualLoading}
         title="Tambah Peserta Manual"
       >
         {manualDuplicateWarning ? (
@@ -1478,7 +1505,10 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
       {/* Bottom Sheet Konfirmasi Mulai Turnamen (dengan pemeriksaan preflight) */}
       <BottomSheet
         isOpen={startConfirmOpen}
-        onClose={() => setStartConfirmOpen(false)}
+        onClose={() => {
+          if (!startLoading) setStartConfirmOpen(false);
+        }}
+        closeDisabled={startLoading}
         title="Konfirmasi Mulai Turnamen"
       >
         {(() => {
@@ -1680,6 +1710,7 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
         onClose={() => {
           if (!linkLoading) setLinkModalOpen(false);
         }}
+        closeDisabled={linkLoading}
         title="Tautkan Peserta Manual ke Akun"
       >
         {selectedManualPlayer && (
@@ -1892,6 +1923,8 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
         <TournamentFormSheet
           isOpen={editSheetOpen}
           mode="edit"
+          organizerId={tournament.organizerId}
+          existingTournaments={formOrganizerLeagues}
           sourceTournament={tournament}
           isLoading={editLoading}
           errorMessage={editError}
@@ -1906,6 +1939,8 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
         <TournamentFormSheet
           isOpen={duplicateSheetOpen}
           mode="duplicate"
+          organizerId={currentUser?.uid}
+          existingTournaments={formOrganizerLeagues}
           sourceTournament={tournament}
           initialValues={buildDuplicateTournamentDraft(tournament)}
           isLoading={duplicateLoading}
@@ -1924,6 +1959,10 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
           currentUser={{
             uid: currentUser.uid,
             name: userProfile?.displayName || userProfile?.username || 'Pemain',
+          }}
+          expectedTournament={{
+            id: tournament.id,
+            name: tournament.name,
           }}
           onRegistered={async (joinedTournament) => {
             setLeagueInviteJoinOpen(false);

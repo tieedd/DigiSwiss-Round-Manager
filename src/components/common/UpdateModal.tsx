@@ -2,6 +2,7 @@ import React from 'react';
 import { useUpdate } from '../../context/UpdateContext.tsx';
 import { compareVersions } from '../../services/versionService.ts';
 import { getUpdateModeLabel } from '../../services/otaService.ts';
+import { useBackLayer } from '../../utils/backStack.ts';
 import { Button } from './Button.tsx';
 import { Sparkles, Download, RefreshCw, Zap } from 'lucide-react';
 
@@ -18,8 +19,16 @@ export const UpdateModal: React.FC = () => {
     applyOta
   } = useUpdate();
 
+  const isVisible = Boolean(
+    presentation.visible && presentation.mode !== 'none' && !isPopupDismissed
+  );
+
+  useBackLayer(isVisible, dismissPopup, {
+    blocked: isDownloading || isOtaReadyToApply,
+  });
+
   // Hanya tampil bila presentation menyatakan ada pembaruan valid dan belum ditutup di sesi ini
-  if (!presentation.visible || presentation.mode === 'none' || isPopupDismissed) {
+  if (!isVisible) {
     return null;
   }
 

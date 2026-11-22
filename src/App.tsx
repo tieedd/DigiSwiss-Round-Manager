@@ -45,6 +45,17 @@ import {
   registerDeviceToken,
   setNotifPromptDismissed,
 } from './services/pushService';
+import {
+  createRootBackController,
+  DOUBLE_BACK_EXIT_WINDOW_MS,
+  getHomeTabForRole,
+} from './utils/backStack';
+
+declare global {
+  interface Window {
+    __digiswissHandleBack?: () => boolean;
+  }
+}
 
 const MainAppContent: React.FC = () => {
   const {
@@ -70,6 +81,51 @@ const MainAppContent: React.FC = () => {
   const isAuthenticatedReady = Boolean(
     currentUser?.uid && userProfile && !userProfile.mustChangePassword && hasPin === true
   );
+  const currentHomeTab = getHomeTabForRole(userProfile?.role) as NavTabKey;
+
+  const rootBackControllerRef = React.useRef(createRootBackController());
+  const isAuthenticatedReadyRef = React.useRef(isAuthenticatedReady);
+  const activeTabRef = React.useRef<NavTabKey>(activeTab);
+  const homeTabRef = React.useRef<NavTabKey>(currentHomeTab);
+  const toastRef = React.useRef(toast);
+
+  isAuthenticatedReadyRef.current = isAuthenticatedReady;
+  activeTabRef.current = activeTab;
+  homeTabRef.current = currentHomeTab;
+  toastRef.current = toast;
+
+  useEffect(() => {
+    rootBackControllerRef.current.resetExitPrompt();
+  }, [activeTab, isAuthenticatedReady]);
+
+  useEffect(() => {
+    const handleAndroidBack = (): boolean => {
+      const decision = rootBackControllerRef.current.handle({
+        isAuthenticated: isAuthenticatedReadyRef.current,
+        activeTab: activeTabRef.current,
+        homeTab: homeTabRef.current,
+      });
+
+      if (decision.action === 'switch_to_home' && decision.nextTab) {
+        setActiveTab(decision.nextTab as NavTabKey);
+      } else if (decision.action === 'show_exit_toast' && decision.toastMessage) {
+        toastRef.current.showToast({
+          type: 'info',
+          title: decision.toastMessage,
+          durationMs: DOUBLE_BACK_EXIT_WINDOW_MS,
+        });
+      }
+
+      return decision.handled;
+    };
+
+    window.__digiswissHandleBack = handleAndroidBack;
+    return () => {
+      if (window.__digiswissHandleBack === handleAndroidBack) {
+        delete window.__digiswissHandleBack;
+      }
+    };
+  }, []);
 
   const openTournamentFromNotification = React.useCallback(
     async (tournamentId?: string, pushType?: string) => {

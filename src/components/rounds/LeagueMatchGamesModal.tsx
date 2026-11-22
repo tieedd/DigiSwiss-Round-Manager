@@ -10,6 +10,7 @@ import {
 import { Button } from '../common/Button';
 import { DeckColorDots } from '../common/DeckColorDots';
 import { useVisibleViewportHeight } from '../../utils/useVisibleViewportHeight';
+import { useBackLayer } from '../../utils/backStack';
 import {
   DraftMatchGame,
   createInitialDraftGames,
@@ -54,8 +55,16 @@ export const LeagueMatchGamesModal: React.FC<LeagueMatchGamesModalProps> = ({
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const isVisible = isOpen && Boolean(match);
+  const isVisible = isOpen && Boolean(match && match.p1Decks && match.p2Decks);
   const { maxHeightCss } = useVisibleViewportHeight(isVisible);
+
+  useBackLayer(
+    isVisible,
+    () => {
+      if (!saving) onClose();
+    },
+    { blocked: saving }
+  );
 
   useEffect(() => {
     if (!isVisible || typeof document === 'undefined') return;

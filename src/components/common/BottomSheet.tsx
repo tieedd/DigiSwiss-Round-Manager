@@ -1,11 +1,13 @@
 import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
+import { useBackLayer } from '../../utils/backStack';
 
 interface BottomSheetProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   zIndexClass?: string;
+  closeDisabled?: boolean;
   children: React.ReactNode;
 }
 
@@ -14,8 +16,16 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
   onClose,
   title,
   zIndexClass = 'z-50',
+  closeDisabled = false,
   children,
 }) => {
+  const handleSafeClose = () => {
+    if (closeDisabled) return;
+    onClose();
+  };
+
+  useBackLayer(isOpen, handleSafeClose, { blocked: closeDisabled });
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -34,7 +44,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/60 transition-opacity duration-200"
-        onClick={onClose}
+        onClick={handleSafeClose}
       />
 
       {/* Sheet Content */}
@@ -46,8 +56,9 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
           <h3 className="text-section-title text-dark-text font-semibold">{title}</h3>
           <button
             type="button"
-            onClick={onClose}
-            className="p-1 text-dark-muted hover:text-dark-text min-h-[44px] min-w-[44px] flex items-center justify-center -mr-2"
+            disabled={closeDisabled}
+            onClick={handleSafeClose}
+            className="p-1 text-dark-muted hover:text-dark-text min-h-[44px] min-w-[44px] flex items-center justify-center -mr-2 disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label="Tutup"
           >
             <X size={20} className="stroke-[1.5]" />

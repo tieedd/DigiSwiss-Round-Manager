@@ -500,10 +500,12 @@ export const AdminUsersView: React.FC<{ onNavigateHome?: () => void }> = ({ onNa
       <BottomSheet
         isOpen={roleChangeModalOpen}
         onClose={() => {
+          if (actionLoading) return;
           setRoleChangeModalOpen(false);
           setTargetUser(null);
           setAdminPassword('');
         }}
+        closeDisabled={actionLoading}
         title="Konfirmasi Perubahan Peran"
       >
         {targetUser && (
@@ -579,10 +581,12 @@ export const AdminUsersView: React.FC<{ onNavigateHome?: () => void }> = ({ onNa
       <BottomSheet
         isOpen={statusToggleModalOpen}
         onClose={() => {
+          if (actionLoading) return;
           setStatusToggleModalOpen(false);
           setTargetUser(null);
           setAdminPassword('');
         }}
+        closeDisabled={actionLoading}
         title={targetStatus ? 'Aktifkan Akun' : 'Nonaktifkan Akun'}
       >
         {targetUser && (
@@ -663,6 +667,7 @@ export const AdminUsersView: React.FC<{ onNavigateHome?: () => void }> = ({ onNa
       <BottomSheet
         isOpen={resetCodeModalOpen}
         onClose={handleCloseResetCodeModal}
+        closeDisabled={resetCodeLoading}
         title="Kode Reset Password"
       >
         {resetTargetUser && (

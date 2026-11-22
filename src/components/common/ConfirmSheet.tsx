@@ -38,6 +38,7 @@ export const ConfirmSheet: React.FC<ConfirmSheetProps> = ({
       onClose={handleClose}
       title={title}
       zIndexClass={zIndexClass}
+      closeDisabled={isLoading}
     >
       <div className="flex flex-col gap-4 py-1">
         <div className="text-body text-dark-text leading-relaxed">{message}</div>

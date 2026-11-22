@@ -1,6 +1,11 @@
-import { sanitizeFileName, isAllowedApkUrl } from '../utils/nativeHelpers.ts';
+import {
+  sanitizeFileName,
+  isAllowedApkUrl,
+  parseRendererGoneStatsJson,
+  type RendererGoneStats,
+} from '../utils/nativeHelpers.ts';
 
-export { sanitizeFileName, isAllowedApkUrl };
+export { sanitizeFileName, isAllowedApkUrl, type RendererGoneStats };
 
 declare global {
   interface Window {
@@ -26,6 +31,7 @@ declare global {
       getNotificationPermissionState?(): void;
       requestNotificationPermission?(): void;
       markPushWebReady?(): void;
+      getRendererGoneStats?(): string;
     };
   }
 }
@@ -786,6 +792,25 @@ export function getFcmTokenNative(): Promise<{ ok: boolean; token?: string; erro
     }
   });
 }
+
+/**
+ * Mengambil statistik diagnostik renderer WebView (jumlah dimatikan sistem, alasan, waktu terakhir).
+ */
+export function getRendererGoneStatsNative(): RendererGoneStats {
+  if (
+    isNativeBridgeAvailable() &&
+    window.AndroidBridge &&
+    typeof window.AndroidBridge.getRendererGoneStats === 'function'
+  ) {
+    try {
+      return parseRendererGoneStatsJson(window.AndroidBridge.getRendererGoneStats());
+    } catch {
+      return { count: 0, lastReason: '', lastAt: 0 };
+    }
+  }
+  return { count: 0, lastReason: '', lastAt: 0 };
+}
+
 
 
 

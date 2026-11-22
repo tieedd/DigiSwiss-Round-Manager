@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { shouldShowNextRoundPause } from '../utils/roundPauseLogic.ts';
-import { isAllowedApkUrl, sanitizeFileName } from '../utils/nativeHelpers.ts';
+import {
+  formatRendererDiagnosticsLine,
+  isAllowedApkUrl,
+  parseRendererGoneStatsJson,
+  sanitizeFileName,
+} from '../utils/nativeHelpers.ts';
+import { formatIndonesianDateTime } from '../utils/dateHelpers.ts';
 
 test('Tahap 10 TES JEDA RONDE: shouldShowNextRoundPause mengembalikan true hanya bila semua terkonfirmasi, bukan ronde terakhir, dan ronde berikutnya belum ada', () => {
   const allConfirmed = [
@@ -191,3 +197,42 @@ test('Tahap 10 TES LOGIKA TOAST: Siklus hidup toast (satu toast per waktu, jeda 
   assert.equal(currentToast, null);
   assert.equal(timerActive, false);
 });
+
+test('GELOMBANG 2 DIAGNOSTIK RENDERER: parseRendererGoneStatsJson dan formatRendererDiagnosticsLine', () => {
+  assert.deepEqual(parseRendererGoneStatsJson(null), {
+    count: 0,
+    lastReason: '',
+    lastAt: 0,
+  });
+  assert.deepEqual(parseRendererGoneStatsJson('{invalid'), {
+    count: 0,
+    lastReason: '',
+    lastAt: 0,
+  });
+  assert.deepEqual(
+    parseRendererGoneStatsJson(
+      JSON.stringify({ count: 3, lastReason: 'killed_by_system', lastAt: 1732243200000 })
+    ),
+    { count: 3, lastReason: 'killed_by_system', lastAt: 1732243200000 }
+  );
+
+  // Saat belum pernah terjadi -> terakhir belum pernah
+  assert.equal(
+    formatRendererDiagnosticsLine(
+      { count: 0, lastReason: '', lastAt: 0 },
+      formatIndonesianDateTime
+    ),
+    'Diagnostik tampilan: renderer dimatikan sistem 0 kali, terakhir belum pernah'
+  );
+
+  // Saat sudah terjadi -> menampilkan jumlah dan timestamp terformat
+  const ts = 1732243200000;
+  assert.equal(
+    formatRendererDiagnosticsLine(
+      { count: 2, lastReason: 'crash', lastAt: ts },
+      formatIndonesianDateTime
+    ),
+    `Diagnostik tampilan: renderer dimatikan sistem 2 kali, terakhir ${formatIndonesianDateTime(ts)}`
+  );
+});
+

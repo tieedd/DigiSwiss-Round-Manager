@@ -320,6 +320,86 @@ test('Otorisasi server per tipe event menegakkan active == true dan peran/kepemi
     }),
     false
   );
+
+  // Pemain manual tertaut (m_1 -> uid u1) harus lolos otorisasi SCORE_PENDING & SCORE_DISPUTED
+  const manualMatch = {
+    id: 'm_manual',
+    round: 1,
+    table: 2,
+    p1Id: 'm_1',
+    p2Id: 'u2',
+    p1Name: 'Tamu Tertaut',
+    p2Name: 'Budi',
+    p1Score: 2,
+    p2Score: 0,
+    status: 'awaiting',
+    reportedBy: 'u1',
+  };
+  const manualPlayers = [
+    { id: 'm_1', uid: 'u1', manual: true, name: 'Tamu Tertaut', status: 'accepted' },
+    { id: 'u2', uid: 'u2', manual: false, name: 'Budi', status: 'accepted' },
+  ];
+
+  assert.equal(
+    isAuthorizedForPushType({
+      pushType: PUSH_EVENT_TYPES.SCORE_PENDING,
+      callerUid: 'u1',
+      callerUser: { active: true, role: 'player' },
+      tournament: tourney,
+      match: manualMatch,
+      players: manualPlayers,
+    }),
+    true
+  );
+  assert.equal(
+    isAuthorizedForPushType({
+      pushType: PUSH_EVENT_TYPES.SCORE_DISPUTED,
+      callerUid: 'u1',
+      callerUser: { active: true, role: 'player' },
+      tournament: tourney,
+      match: manualMatch,
+      players: manualPlayers,
+    }),
+    true
+  );
+  assert.equal(
+    isAuthorizedForPushType({
+      pushType: PUSH_EVENT_TYPES.SCORE_PENDING,
+      callerUid: 'u_stranger',
+      callerUser: { active: true, role: 'player' },
+      tournament: tourney,
+      match: manualMatch,
+      players: manualPlayers,
+    }),
+    false
+  );
+
+  // Resolusi penerima SCORE_PENDING saat pemain manual tertaut melapor atau dilawan
+  const planFromLinkedReporter = resolveNotificationPlan({
+    pushType: PUSH_EVENT_TYPES.SCORE_PENDING,
+    callerUid: 'u1',
+    callerName: 'Tamu Tertaut',
+    tournamentId: 't1',
+    tournament: tourney,
+    players: manualPlayers,
+    match: manualMatch,
+  });
+  assert.equal(planFromLinkedReporter.length, 1);
+  assert.equal(planFromLinkedReporter[0].recipientUid, 'u2');
+  assert.match(planFromLinkedReporter[0].body, /Tamu Tertaut melaporkan skor Meja 2 \(2-0\)/);
+
+  const planToLinkedOpponent = resolveNotificationPlan({
+    pushType: PUSH_EVENT_TYPES.SCORE_PENDING,
+    callerUid: 'u2',
+    callerName: 'Budi',
+    tournamentId: 't1',
+    tournament: tourney,
+    players: manualPlayers,
+    match: { ...manualMatch, p1Score: 1, p2Score: 2, reportedBy: 'u2' },
+  });
+  assert.equal(planToLinkedOpponent.length, 1);
+  assert.equal(planToLinkedOpponent[0].recipientUid, 'u1');
+  assert.match(planToLinkedOpponent[0].body, /Budi melaporkan skor Meja 2 \(1-2\)/);
 });
 
 test('Rate limiter membatasi maksimal 10 permintaan per menit per pemanggil + tipe + turnamen', () => {

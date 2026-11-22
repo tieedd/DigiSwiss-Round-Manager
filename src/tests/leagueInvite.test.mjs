@@ -12,6 +12,7 @@ import {
   validateLeagueInviteForRegistration,
   buildLeagueInviteClaimPayload,
   buildLeaguePlayerPayload,
+  checkInviteMatchesTournament,
   executeTwoStepLeagueRegistration,
   shouldShowLegacyInviteRegenerateWarning,
 } from '../utils/leagueInviteLogic.ts';
@@ -260,3 +261,39 @@ test('INVITE 10: firestore.rules menegakkan inviteClaims dan melarang inviteCode
   assert.match(rulesText, /exists\(\/databases\/\$\(database\)\/documents\/tournaments\/\$\(tid\)\/inviteClaims\/\$\(pid\)\)/);
   assert.match(rulesText, /allow update: if false;/);
 });
+
+test('INVITE 11: checkInviteMatchesTournament memeriksa kecocokan turnamen yang dibuka vs hasil lookup', () => {
+  // Tanpa expectedTournament (akses global dari daftar turnamen) -> selalu cocok
+  assert.deepEqual(
+    checkInviteMatchesTournament(null, { id: 'liga_b', name: 'Liga Beta' }),
+    { matches: true }
+  );
+  assert.deepEqual(
+    checkInviteMatchesTournament(undefined, { id: 'liga_b', name: 'Liga Beta' }),
+    { matches: true }
+  );
+
+  // Lookup belum/tidak punya turnamen -> tidak memicu mismatch
+  assert.deepEqual(
+    checkInviteMatchesTournament({ id: 'liga_a', name: 'Liga Alfa' }, null),
+    { matches: true }
+  );
+
+  // ID sama -> cocok
+  assert.deepEqual(
+    checkInviteMatchesTournament(
+      { id: 'liga_a', name: 'Liga Alfa' },
+      { id: 'liga_a', name: 'Liga Alfa' }
+    ),
+    { matches: true }
+  );
+
+  // ID berbeda -> tolak dengan pesan spesifik
+  const mismatch = checkInviteMatchesTournament(
+    { id: 'liga_a', name: 'Liga Alfa' },
+    { id: 'liga_b', name: 'Liga Beta' }
+  );
+  assert.equal(mismatch.matches, false);
+  assert.equal(mismatch.error, 'Kode ini milik liga Liga Beta, bukan Liga Alfa.');
+});
+

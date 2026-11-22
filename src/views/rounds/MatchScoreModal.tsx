@@ -76,7 +76,14 @@ export const MatchScoreModal: React.FC<MatchScoreModalProps> = ({
   };
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose} title={`Meja ${match.table} - Input Skor`}>
+    <BottomSheet
+      isOpen={isOpen}
+      onClose={() => {
+        if (!loading) onClose();
+      }}
+      closeDisabled={loading}
+      title={`Meja ${match.table} - Input Skor`}
+    >
       <div className="flex flex-col gap-4 py-2 pb-6">
         <div className="flex items-center justify-between text-caption text-dark-muted px-1">
           <span>Format: <strong className="text-dark-text">{format}</strong></span>

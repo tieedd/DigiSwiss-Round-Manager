@@ -39,6 +39,40 @@ import java.net.URI
 import java.net.URL
 import kotlin.math.max
 
+object RendererDiagnostics {
+  private const val PREFS_NAME = "digiswiss_renderer_diagnostics"
+  private const val KEY_COUNT = "renderer_gone_count"
+  private const val KEY_LAST_REASON = "renderer_gone_last_reason"
+  private const val KEY_LAST_AT = "renderer_gone_last_at"
+
+  fun recordRendererGone(
+    context: Context,
+    didCrash: Boolean,
+    timestampMs: Long = System.currentTimeMillis()
+  ) {
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val nextCount = prefs.getInt(KEY_COUNT, 0) + 1
+    val reason = if (didCrash) "crash" else "killed_by_system"
+    prefs.edit()
+      .putInt(KEY_COUNT, nextCount)
+      .putString(KEY_LAST_REASON, reason)
+      .putLong(KEY_LAST_AT, timestampMs)
+      .apply()
+  }
+
+  fun getStatsJson(context: Context): JSONObject {
+    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val count = prefs.getInt(KEY_COUNT, 0).coerceAtLeast(0)
+    val lastReason = prefs.getString(KEY_LAST_REASON, "").orEmpty()
+    val lastAt = prefs.getLong(KEY_LAST_AT, 0L).coerceAtLeast(0L)
+    return JSONObject().apply {
+      put("count", count)
+      put("lastReason", lastReason)
+      put("lastAt", lastAt)
+    }
+  }
+}
+
 class NativeBridge(
   private val activity: Activity,
   private val webView: WebView,
@@ -595,8 +629,17 @@ class NativeBridge(
               dispatchQrResult(requestId, ok = false, error = "no_qr")
             }
           }
-          .addOnFailureListener {
-            dispatchQrResult(requestId, ok = false, error = "failed")
+          .addOnFailureListener { e ->
+            val msg = e.message.orEmpty()
+            val isUnavailable = (e is MlKitException && e.errorCode == MlKitException.UNAVAILABLE) ||
+              msg.contains("unavailable", ignoreCase = true) ||
+              msg.contains("Waiting for the barcode module", ignoreCase = true) ||
+              msg.contains("Google Play services", ignoreCase = true)
+            dispatchQrResult(
+              requestId,
+              ok = false,
+              error = if (isUnavailable) "unavailable" else "failed"
+            )
           }
           .addOnCompleteListener {
             try {
@@ -688,7 +731,11 @@ class NativeBridge(
       }
 
       val sharedDir = File(activity.cacheDir, "shared")
-      if (!sharedDir.exists()) {
+      if (sharedDir.exists()) {
+        sharedDir.listFiles()?.forEach { oldFile ->
+          oldFile.deleteRecursively()
+        }
+      } else {
         sharedDir.mkdirs()
       }
       val outFile = File(sharedDir, finalName)
@@ -870,6 +917,19 @@ class NativeBridge(
   @JavascriptInterface
   fun markPushWebReady() {
     PushRuntimeState.markWebReadyAndFlush()
+  }
+
+  @JavascriptInterface
+  fun getRendererGoneStats(): String {
+    return try {
+      RendererDiagnostics.getStatsJson(activity).toString()
+    } catch (_: Exception) {
+      JSONObject().apply {
+        put("count", 0)
+        put("lastReason", "")
+        put("lastAt", 0L)
+      }.toString()
+    }
   }
 
   companion object {

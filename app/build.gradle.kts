@@ -19,6 +19,10 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    ndk {
+      abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+    }
   }
 
   // Do not remove or modify these signingConfigs. They are necessary for building, installing,
@@ -53,6 +57,16 @@ android {
       // AI Studio.
       signingConfig = signingConfigs.getByName("debugConfig")
     }
+    create("optimized") {
+      initWith(getByName("release"))
+      isMinifyEnabled = true
+      isShrinkResources = true
+      isDebuggable = false
+      signingConfig = signingConfigs.getByName("debugConfig")
+    }
+  }
+  androidResources {
+    localeFilters += listOf("id", "en")
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
@@ -79,17 +93,10 @@ secrets {
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
 
-// Some unused dependencies are commented out below instead of being removed.
-// This makes it easy to add them back in the future if needed.
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.firebase.bom))
-  // implementation(libs.accompanist.permissions)
   implementation(libs.androidx.activity.compose)
-  // implementation(libs.androidx.camera.camera2)
-  // implementation(libs.androidx.camera.core)
-  // implementation(libs.androidx.camera.lifecycle)
-  // implementation(libs.androidx.camera.view)
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material.icons.extended)
   implementation(libs.androidx.compose.material3)
@@ -97,18 +104,14 @@ dependencies {
   implementation(libs.androidx.compose.ui.graphics)
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.core.ktx)
-  // implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
-  // implementation(libs.androidx.navigation.compose)
-  // implementation(libs.coil.compose)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.play.services.code.scanner)
-  implementation(libs.mlkit.barcode.scanning)
+  implementation(libs.play.services.mlkit.barcode.scanning)
   implementation(libs.firebase.messaging)
-  // implementation(libs.play.services.location)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)
@@ -123,3 +126,110 @@ dependencies {
   debugImplementation(libs.androidx.compose.ui.test.manifest)
   debugImplementation(libs.androidx.compose.ui.tooling)
 }
+
+abstract class EnsureWebAssetsTask : org.gradle.api.DefaultTask() {
+  @get:org.gradle.api.tasks.Internal
+  abstract val projectRootDir: org.gradle.api.file.DirectoryProperty
+
+  @get:org.gradle.api.tasks.Internal
+  abstract val assetIndexFile: org.gradle.api.file.RegularFileProperty
+
+  @get:org.gradle.api.tasks.Internal
+  abstract val viteBinaryFile: org.gradle.api.file.RegularFileProperty
+
+  @get:org.gradle.api.tasks.Internal
+  abstract val lockFile: org.gradle.api.file.RegularFileProperty
+
+  @get:org.gradle.api.tasks.Internal
+  abstract val webInputs: org.gradle.api.file.ConfigurableFileCollection
+
+  @get:javax.inject.Inject
+  abstract val execOperations: org.gradle.process.ExecOperations
+
+  private fun resolveNpmExecutable(): String {
+    val isWindows = System.getProperty("os.name").lowercase().contains("win")
+    val exeName = if (isWindows) "npm.cmd" else "npm"
+    val pathEnv = System.getenv("PATH").orEmpty()
+    for (dir in pathEnv.split(File.pathSeparatorChar)) {
+      if (dir.isBlank()) continue
+      val candidate = File(dir, exeName)
+      if (candidate.isFile && candidate.canExecute()) {
+        return candidate.absolutePath
+      }
+    }
+    if (!isWindows) {
+      for (fallback in listOf("/usr/local/bin/npm", "/usr/bin/npm")) {
+        val candidate = File(fallback)
+        if (candidate.isFile && candidate.canExecute()) {
+          return candidate.absolutePath
+        }
+      }
+    }
+    return exeName
+  }
+
+  @org.gradle.api.tasks.TaskAction
+  fun ensureAssets() {
+    val rootDir = projectRootDir.get().asFile
+    val indexFile = assetIndexFile.get().asFile
+    val hasIndex = indexFile.exists() && indexFile.length() > 0L
+
+    var needsBuild = !hasIndex
+    if (!needsBuild) {
+      val indexMtime = indexFile.lastModified()
+      for (file in webInputs.files) {
+        if (file.isFile && file.lastModified() > indexMtime) {
+          needsBuild = true
+          break
+        }
+      }
+    }
+
+    if (!needsBuild) {
+      return
+    }
+
+    val npmCmd = resolveNpmExecutable()
+    if (!viteBinaryFile.get().asFile.exists()) {
+      val installSubCmd = if (lockFile.get().asFile.exists()) "ci" else "install"
+      logger.lifecycle("Installing web dependencies via $npmCmd $installSubCmd...")
+      execOperations.exec {
+        workingDir = rootDir
+        commandLine(npmCmd, installSubCmd)
+      }
+    }
+
+    logger.lifecycle("Building web assets into app/src/main/assets/dist via $npmCmd run build...")
+    execOperations.exec {
+      workingDir = rootDir
+      commandLine(npmCmd, "run", "build")
+    }
+
+    if (!indexFile.exists()) {
+      throw org.gradle.api.GradleException(
+        "Web build finished but ${indexFile.absolutePath} is still missing."
+      )
+    }
+  }
+}
+
+val ensureWebAssets = tasks.register<EnsureWebAssetsTask>("ensureWebAssets") {
+  projectRootDir.set(rootProject.layout.projectDirectory)
+  assetIndexFile.set(layout.projectDirectory.file("src/main/assets/dist/index.html"))
+  viteBinaryFile.set(rootProject.layout.projectDirectory.file("node_modules/.bin/vite"))
+  lockFile.set(rootProject.layout.projectDirectory.file("package-lock.json"))
+  webInputs.from(
+    rootProject.fileTree("src"),
+    rootProject.layout.projectDirectory.file("index.html"),
+    rootProject.layout.projectDirectory.file("package.json"),
+    rootProject.layout.projectDirectory.file("vite.config.ts"),
+    rootProject.layout.projectDirectory.file("tailwind.config.js"),
+    rootProject.layout.projectDirectory.file("postcss.config.js"),
+    rootProject.layout.projectDirectory.file("tsconfig.json")
+  )
+}
+
+tasks.named("preBuild") {
+  dependsOn(ensureWebAssets)
+}
+

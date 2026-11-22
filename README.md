@@ -152,14 +152,19 @@ Hasil build akan terkompilasi di folder `dist/` dan otomatis disinkronkan ke `ap
 ### 4. Membangun APK Android Lokal:
 Di root direktori proyek:
 ```bash
-# Linux / macOS
+# APK Debug
 gradle :app:assembleDebug
 
-# Atau jika di lingkungan Gradle lokal
-./gradlew assembleDebug
+# APK Optimized (lebih kecil dengan R8 minify & resource shrinking)
+gradle assembleOptimized
+
+# Atau jika menggunakan wrapper lokal
+./gradlew assembleOptimized
 ```
 File APK debug akan dihasilkan pada direktori:
 `app/build/outputs/apk/debug/app-debug.apk`.
+File APK teroptimasi akan dihasilkan pada direktori:
+`app/build/outputs/apk/optimized/` (`app-optimized.apk`).
 
 ---
 

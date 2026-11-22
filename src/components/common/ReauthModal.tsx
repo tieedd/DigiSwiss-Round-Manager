@@ -47,13 +47,14 @@ export const ReauthModal: React.FC<ReauthModalProps> = ({
   };
 
   const handleCancel = () => {
+    if (loading) return;
     setPassword('');
     setError('');
     onClose();
   };
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={handleCancel} title={actionTitle}>
+    <BottomSheet isOpen={isOpen} onClose={handleCancel} title={actionTitle} closeDisabled={loading}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-3 py-1">
         <div className="flex items-start gap-2.5 p-3 rounded-btn bg-status-yellow/10 border border-status-yellow/30 text-caption text-status-yellow">
           <ShieldCheck size={18} className="flex-shrink-0 mt-0.5 stroke-[1.5]" />

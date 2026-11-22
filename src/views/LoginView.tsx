@@ -533,6 +533,7 @@ export const LoginView: React.FC = () => {
       <BottomSheet
         isOpen={forgotOpen}
         onClose={handleCloseForgotSheet}
+        closeDisabled={resetLoading}
         title="Lupa Password"
       >
         {resetSuccess ? (

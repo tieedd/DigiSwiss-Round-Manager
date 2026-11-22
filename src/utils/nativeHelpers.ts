@@ -71,3 +71,44 @@ export function sanitizeFileName(name: string | null | undefined): string {
     .replace(/^_+|_+$/g, '');
   return sanitized.length > 0 ? sanitized : 'file';
 }
+
+export interface RendererGoneStats {
+  count: number;
+  lastReason: string;
+  lastAt: number;
+}
+
+export function parseRendererGoneStatsJson(raw: string | null | undefined): RendererGoneStats {
+  if (!raw || typeof raw !== 'string') {
+    return { count: 0, lastReason: '', lastAt: 0 };
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    const rawCount = Number(parsed?.count);
+    const rawAt = Number(parsed?.lastAt);
+    return {
+      count: Number.isFinite(rawCount) && rawCount > 0 ? Math.floor(rawCount) : 0,
+      lastReason: typeof parsed?.lastReason === 'string' ? parsed.lastReason : '',
+      lastAt: Number.isFinite(rawAt) && rawAt > 0 ? Math.floor(rawAt) : 0,
+    };
+  } catch {
+    return { count: 0, lastReason: '', lastAt: 0 };
+  }
+}
+
+export function formatRendererDiagnosticsLine(
+  stats: RendererGoneStats | null | undefined,
+  formatDateTimeFn: (ts: number) => string
+): string {
+  const count =
+    stats && Number.isFinite(stats.count) && stats.count > 0
+      ? Math.floor(stats.count)
+      : 0;
+  const lastAt =
+    stats && Number.isFinite(stats.lastAt) && stats.lastAt > 0
+      ? Math.floor(stats.lastAt)
+      : 0;
+  const waktu = count > 0 && lastAt > 0 ? formatDateTimeFn(lastAt) : 'belum pernah';
+  return `Diagnostik tampilan: renderer dimatikan sistem ${count} kali, terakhir ${waktu}`;
+}
+

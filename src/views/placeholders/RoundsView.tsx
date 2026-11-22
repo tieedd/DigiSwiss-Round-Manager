@@ -1626,6 +1626,7 @@ export const RoundsView: React.FC = () => {
       <BottomSheet
         isOpen={finishConfirmModalOpen}
         onClose={() => !finishingTournament && setFinishConfirmModalOpen(false)}
+        closeDisabled={finishingTournament}
         title="Akhiri Turnamen"
       >
         <div className="flex flex-col gap-4 py-2 pb-6">
@@ -1675,6 +1676,7 @@ export const RoundsView: React.FC = () => {
       <BottomSheet
         isOpen={roundExportTarget !== null}
         onClose={() => !exportingRound && setRoundExportTarget(null)}
+        closeDisabled={exportingRound}
         title={
           roundExportTarget === 'standing'
             ? `Ekspor Standing Saat Ini (Ronde ${activeRound})`

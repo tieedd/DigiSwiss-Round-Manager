@@ -11,6 +11,7 @@ function copyToAndroidAssets() {
       const srcDir = path.resolve(__dirname, 'dist');
       const destDir = path.resolve(__dirname, 'app/src/main/assets/dist');
       if (fs.existsSync(srcDir)) {
+        fs.rmSync(destDir, { recursive: true, force: true });
         fs.mkdirSync(destDir, { recursive: true });
         fs.cpSync(srcDir, destDir, { recursive: true });
         console.log('Successfully copied dist to app/src/main/assets/dist');

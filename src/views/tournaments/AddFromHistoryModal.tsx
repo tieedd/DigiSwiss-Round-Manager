@@ -130,7 +130,14 @@ export const AddFromHistoryModal: React.FC<AddFromHistoryModalProps> = ({
     selectableCandidates.length > 0 && selectedIds.size === selectableCandidates.length;
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose} title="Tambah Peserta dari Histori">
+    <BottomSheet
+      isOpen={isOpen}
+      onClose={() => {
+        if (!saving) onClose();
+      }}
+      closeDisabled={saving}
+      title="Tambah Peserta dari Histori"
+    >
       <div className="flex flex-col gap-3 py-2 pb-6 max-h-[75vh]">
         <p className="text-caption text-dark-muted px-1">
           Pilih pemain yang pernah mengikuti turnamen Anda sebelumnya untuk langsung didaftarkan ke turnamen ini.

@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildTournamentExportFileName,
+  checkUniqueLeagueSeasonNumber,
+  computeNextSeasonNumber,
   extractYearMonthFromDate,
   filterTournamentsByType,
   formatSeasonLabel,
@@ -12,7 +14,6 @@ import {
   isLeagueTournament,
   isRoundTimerEnabledForTournament,
   isTopCutMandatoryForTournament,
-  suggestNextSeasonNumber,
   validateSeasonInput,
 } from '../utils/seasonLogic.ts';
 import {
@@ -64,24 +65,57 @@ test('LIGA 1: formatSeasonLabel menampilkan semua 12 bulan bahasa Indonesia huru
   assert.equal(formatSeasonLabel({ number: 1, month: 1, year: 1999 }), null);
 });
 
-test('LIGA 2: suggestNextSeasonNumber menyarankan max season + 1 untuk nama liga sama (case-insensitive)', () => {
+test('LIGA 2: computeNextSeasonNumber per organizer (tanpa lihat nama liga) dan checkUniqueLeagueSeasonNumber', () => {
   const existing = [
-    { name: 'Digimon Weekly Jakarta', type: 'regular' },
-    { name: 'Arcanum League', type: 'league', season: { number: 1, month: 9, year: 2026 } },
-    { name: '  arcanum league ', type: 'league', season: { number: 3, month: 11, year: 2026 } },
-    { name: 'Bandung League', type: 'league', season: { number: 5, month: 10, year: 2026 } },
+    { id: 'reg_a', organizerId: 'orgA', name: 'Digimon Weekly Jakarta', type: 'regular' },
+    { id: 'lg_a1', organizerId: 'orgA', name: 'Arcanum League', type: 'league', season: { number: 1, month: 9, year: 2026 } },
+    { id: 'lg_a3', organizerId: 'orgA', name: 'Nama Liga Berbeda', type: 'league', season: { number: 3, month: 11, year: 2026 } },
+    { id: 'lg_b5', organizerId: 'orgB', name: 'Bandung League', type: 'league', season: { number: 5, month: 10, year: 2026 } },
   ];
 
-  // Nama liga belum ada -> 1
-  assert.equal(suggestNextSeasonNumber([], 'Arcanum League'), 1);
-  assert.equal(suggestNextSeasonNumber(existing, 'Surabaya League'), 1);
-  assert.equal(suggestNextSeasonNumber(existing, '   '), 1);
+  // Belum ada liga milik organizer -> 1
+  assert.equal(computeNextSeasonNumber([], 'orgA'), 1);
+  assert.equal(computeNextSeasonNumber(existing, 'orgC'), 1);
+  assert.equal(computeNextSeasonNumber(existing, ''), 1);
 
-  // Nama liga sama (mengabaikan kapitalisasi & spasi) -> 3 + 1 = 4
-  assert.equal(suggestNextSeasonNumber(existing, 'ARCANUM LEAGUE'), 4);
+  // Nama liga berbeda pada organizer yang sama tetap dihitung, gap (1, 3) -> max + 1 = 4
+  assert.equal(computeNextSeasonNumber(existing, 'orgA'), 4);
+  assert.equal(computeNextSeasonNumber(existing, 'orgB'), 6);
 
-  // Mengabaikan turnamen reguler meskipun namanya sama
-  assert.equal(suggestNextSeasonNumber(existing, 'Digimon Weekly Jakarta'), 1);
+  // Jika season tertinggi dihapus (tersisa 1 & 2) -> max + 1 = 3
+  const afterDelete = [
+    { id: 'lg_a1', organizerId: 'orgA', name: 'Liga A', type: 'league', season: { number: 1, month: 9, year: 2026 } },
+    { id: 'lg_a2', organizerId: 'orgA', name: 'Liga B', type: 'league', season: { number: 2, month: 10, year: 2026 } },
+  ];
+  assert.equal(computeNextSeasonNumber(afterDelete, 'orgA'), 3);
+
+  // Unik terhadap liga LAIN milik organizer yang sama
+  const dupRes = checkUniqueLeagueSeasonNumber({
+    seasonNumber: 3,
+    organizerLeagues: existing,
+    organizerId: 'orgA',
+  });
+  assert.equal(dupRes.unique, false);
+  assert.equal(dupRes.error, 'Season 3 sudah dipakai di liga Nama Liga Berbeda milik Anda.');
+
+  // Mengabaikan diri sendiri saat edit dan mengabaikan liga organizer lain
+  assert.equal(
+    checkUniqueLeagueSeasonNumber({
+      seasonNumber: 3,
+      organizerLeagues: existing,
+      organizerId: 'orgA',
+      excludeTournamentId: 'lg_a3',
+    }).unique,
+    true
+  );
+  assert.equal(
+    checkUniqueLeagueSeasonNumber({
+      seasonNumber: 5,
+      organizerLeagues: existing,
+      organizerId: 'orgA',
+    }).unique,
+    true
+  );
 });
 
 test('LIGA 3: validateSeasonInput dan extractYearMonthFromDate', () => {
@@ -221,15 +255,17 @@ test('LIGA 5: nama berkas ekspor dan konten ekspor CSV/Teks menyertakan Season L
   assert.ok(text.includes('HASIL AKHIR TURNAMEN: JAKARTA DIGIMON LEAGUE'));
 });
 
-test('LIGA 6: edit & duplikat Turnamen Liga (format terkunci BO3, edit Season, duplikat Season + 1)', () => {
+test('LIGA 6: edit & duplikat Turnamen Liga (format terkunci BO3, nomor season terkunci di luar registration, duplikat Season + 1)', () => {
   const regLeaguePerms = getEditableFieldsForStatus('registration', 'league');
   assert.equal(regLeaguePerms.canEditFormat, false);
   assert.equal(regLeaguePerms.isFormatLocked, true);
   assert.equal(regLeaguePerms.canEditSeason, true);
+  assert.equal(regLeaguePerms.canEditSeasonNumber, true);
 
   const runningLeaguePerms = getEditableFieldsForStatus('running', 'league');
   assert.equal(runningLeaguePerms.canEditFormat, false);
   assert.equal(runningLeaguePerms.canEditSeason, true);
+  assert.equal(runningLeaguePerms.canEditSeasonNumber, false);
 
   // Validasi menolak Liga jika format bukan BO3 atau season tidak valid
   assert.equal(
@@ -244,7 +280,30 @@ test('LIGA 6: edit & duplikat Turnamen Liga (format terkunci BO3, edit Season, d
     false
   );
 
-  // Edit Turnamen Liga finalized: ubah Season + nama memicu audit diff dan participation sync
+  // Edit Turnamen Liga saat registration: nomor season boleh berubah
+  const regLeague = {
+    id: 'lg_reg',
+    name: 'Jakarta League',
+    date: '2026-10-15',
+    location: 'Jakarta',
+    format: 'BO3',
+    type: 'league',
+    season: { number: 2, month: 10, year: 2026 },
+    status: 'registration',
+    finalized: false,
+  };
+  const regEditPlan = computeTournamentChanges(regLeague, {
+    name: 'Jakarta League',
+    date: '2026-11-15',
+    location: 'Jakarta',
+    format: 'BO3',
+    type: 'league',
+    season: { number: 4, month: 11, year: 2026 },
+  });
+  assert.equal(regEditPlan.valid, true);
+  assert.deepEqual(regEditPlan.updates.season, { number: 4, month: 11, year: 2026 });
+
+  // Edit Turnamen Liga finalized: nomor season terkunci di 2, bulan/tahun & nama tetap bisa berubah dan sinkron ke participations
   const currentLeague = {
     id: 'lg_1',
     name: 'Jakarta League',
@@ -263,18 +322,18 @@ test('LIGA 6: edit & duplikat Turnamen Liga (format terkunci BO3, edit Season, d
     location: 'Jakarta',
     format: 'BO1', // dicoba ubah ke BO1 -> harus tetap terkunci BO3
     type: 'league',
-    season: { number: 3, month: 11, year: 2026 },
+    season: { number: 3, month: 11, year: 2026 }, // dicoba ubah ke 3 saat finished -> nomor tetap terkunci 2
   });
 
   assert.equal(editPlan.valid, true);
   assert.equal(editPlan.hasChanges, true);
   assert.equal(editPlan.updates.format, undefined);
-  assert.deepEqual(editPlan.updates.season, { number: 3, month: 11, year: 2026 });
+  assert.deepEqual(editPlan.updates.season, { number: 2, month: 11, year: 2026 });
   assert.equal(editPlan.needsParticipationSync, true);
 
   const diffSummary = formatAuditDiffSummary(editPlan.changes);
   assert.match(diffSummary.oldValue, /Season: SEASON 2 OKTOBER 2026/);
-  assert.match(diffSummary.newValue, /Season: SEASON 3 NOVEMBER 2026/);
+  assert.match(diffSummary.newValue, /Season: SEASON 2 NOVEMBER 2026/);
 
   // Duplikat Liga: season.number otomatis +1, bulan & tahun mengikuti tanggal hari ini
   const draft = buildDuplicateTournamentDraft(currentLeague, '2026-12-03');

@@ -9,7 +9,10 @@ import {
   registerPlayerWithLeagueInvite,
   LeagueInviteLookupResult,
 } from '../../services/leagueInviteService';
-import { normalizeLeagueInviteInput } from '../../utils/leagueInviteLogic';
+import {
+  checkInviteMatchesTournament,
+  normalizeLeagueInviteInput,
+} from '../../utils/leagueInviteLogic';
 import { formatSeasonLabel } from '../../utils/seasonLogic';
 import {
   isQrGalleryPickerSupportedNative,
@@ -37,6 +40,7 @@ interface LeagueInviteJoinSheetProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: { uid: string; name: string } | null;
+  expectedTournament?: { id: string; name: string };
   onRegistered: (tournament: Tournament) => void;
 }
 
@@ -44,6 +48,7 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
   isOpen,
   onClose,
   currentUser,
+  expectedTournament,
   onRegistered,
 }) => {
   const [rawInput, setRawInput] = useState('');
@@ -78,7 +83,25 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
     setLookupResult(null);
     try {
       const res = await lookupLeagueInviteForPlayer(codeOrInput, currentUser.uid);
-      if (!res.valid) {
+      const lookupTarget = res.tournament
+        ? {
+            id: res.tournament.id,
+            name: res.invite?.tournamentName || res.tournament.name,
+          }
+        : res.invite?.tournamentId
+        ? {
+            id: res.invite.tournamentId,
+            name: res.invite.tournamentName || 'Liga Lain',
+          }
+        : null;
+      const matchCheck = checkInviteMatchesTournament(expectedTournament, lookupTarget);
+      if (!matchCheck.matches) {
+        setLookupError(
+          matchCheck.error ||
+            `Kode ini milik liga ${lookupTarget?.name || 'lain'}, bukan ${expectedTournament?.name}.`
+        );
+        setLookupResult(null);
+      } else if (!res.valid) {
         setLookupError(res.error || 'Kode undangan tidak valid.');
         setLookupResult(null);
       } else {
@@ -141,6 +164,15 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
       return;
     }
 
+    const joinMatchCheck = checkInviteMatchesTournament(expectedTournament, {
+      id: lookupResult.tournament.id,
+      name: lookupResult.invite?.tournamentName || lookupResult.tournament.name,
+    });
+    if (!joinMatchCheck.matches) {
+      setLookupError(joinMatchCheck.error || 'Kode undangan tidak cocok dengan turnamen ini.');
+      return;
+    }
+
     setJoining(true);
     setLookupError('');
     try {
@@ -182,6 +214,7 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
       onClose={handleClose}
       title="Masukkan Kode Undangan Liga"
       zIndexClass="z-[60]"
+      closeDisabled={isBusy}
     >
       <div className="flex flex-col gap-3 py-1 pb-2">
         {(canScanCamera || canPickGallery) && (
@@ -258,7 +291,9 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
           </div>
         )}
 
-        {lookupResult?.valid && lookupResult.tournament && (
+        {lookupResult?.valid &&
+          lookupResult.tournament &&
+          checkInviteMatchesTournament(expectedTournament, lookupResult.tournament).matches && (
           <Card
             variant="surface-high"
             className="flex flex-col gap-2.5 border-amber-400/40 bg-amber-500/5"

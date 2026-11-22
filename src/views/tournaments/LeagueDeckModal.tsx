@@ -11,6 +11,7 @@ import {
   useVisibleViewportHeight,
   scrollFocusedInputIntoView,
 } from '../../utils/useVisibleViewportHeight';
+import { useBackLayer } from '../../utils/backStack';
 import {
   OFFICIAL_DECK_COLORS,
   DECK_COLOR_STYLES,
@@ -80,6 +81,14 @@ export const LeagueDeckModal: React.FC<LeagueDeckModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const { maxHeightCss } = useVisibleViewportHeight(isOpen);
+
+  useBackLayer(
+    isOpen,
+    () => {
+      if (!saving) onClose();
+    },
+    { blocked: saving }
+  );
 
   useEffect(() => {
     if (!isOpen || typeof document === 'undefined') return;

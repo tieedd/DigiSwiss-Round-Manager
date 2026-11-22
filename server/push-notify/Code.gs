@@ -81,13 +81,19 @@ function handlePush_(req, e) {
     match.id = matchId;
   }
 
+  let players = null;
+  if (pushType === PUSH_EVENT_TYPES.SCORE_PENDING || pushType === PUSH_EVENT_TYPES.SCORE_DISPUTED) {
+    players = fsList_('tournaments/' + tournamentId + '/players');
+  }
+
   // (c) Otorisasi per tipe
   if (!isAuthorizedForPushType({
     pushType: pushType,
     callerUid: callerUid,
     callerUser: callerUser,
     tournament: tournament,
-    match: match
+    match: match,
+    players: players
   })) {
     return fail_('forbidden', 'Anda tidak berwenang memicu notifikasi ini.');
   }
@@ -113,7 +119,9 @@ function handlePush_(req, e) {
     }
   }
 
-  const players = fsList_('tournaments/' + tournamentId + '/players');
+  if (!players) {
+    players = fsList_('tournaments/' + tournamentId + '/players');
+  }
   let matches = [];
   if (pushType === PUSH_EVENT_TYPES.ROUND_STARTED) {
     matches = fsList_('tournaments/' + tournamentId + '/matches');

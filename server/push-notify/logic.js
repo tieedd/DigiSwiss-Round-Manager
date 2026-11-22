@@ -125,7 +125,16 @@ function isAuthorizedForPushType(params) {
     pushType === PUSH_EVENT_TYPES.SCORE_DISPUTED
   ) {
     if (!match) return false;
-    return match.p1Id === callerUid || match.p2Id === callerUid;
+    if (match.p1Id === callerUid || match.p2Id === callerUid) {
+      return true;
+    }
+    var playerLookup = params.playerLookup || buildPlayerUidLookup(params.players);
+    var p1Entry = match.p1Id ? playerLookup[match.p1Id] : null;
+    var p2Entry = match.p2Id ? playerLookup[match.p2Id] : null;
+    return Boolean(
+      (p1Entry && p1Entry.uid === callerUid) ||
+      (p2Entry && p2Entry.uid === callerUid)
+    );
   }
 
   return false;
@@ -259,16 +268,28 @@ function resolveNotificationPlan(params) {
     if (match.status !== 'awaiting') return items;
 
     var reporterId = match.reportedBy || callerUid;
-    var opponentPid = reporterId === match.p1Id ? match.p2Id : match.p1Id;
+    var lookupPending = buildPlayerUidLookup(players);
+    var p1Pending = match.p1Id ? lookupPending[match.p1Id] : null;
+    var p2Pending = match.p2Id ? lookupPending[match.p2Id] : null;
+    var isReporterP1 =
+      reporterId === match.p1Id ||
+      Boolean(p1Pending && p1Pending.uid === reporterId);
+    var isReporterP2 =
+      reporterId === match.p2Id ||
+      Boolean(p2Pending && p2Pending.uid === reporterId);
+    var opponentPid = isReporterP1
+      ? match.p2Id
+      : isReporterP2
+      ? match.p1Id
+      : match.p1Id;
     if (!opponentPid) return items;
 
-    var lookupPending = buildPlayerUidLookup(players);
     var opponentInfo = lookupPending[opponentPid];
     var opponentUid = opponentInfo ? opponentInfo.uid : (opponentPid.indexOf('m_') === 0 ? '' : opponentPid);
     if (!opponentUid) return items;
 
     var reporterName = sanitizePlayerName(
-      reporterId === match.p1Id ? match.p1Name : match.p2Name,
+      isReporterP1 ? match.p1Name : match.p2Name,
       32
     );
     var pendingTitle = 'Konfirmasi Skor • ' + tourneyTitle;

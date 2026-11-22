@@ -240,3 +240,38 @@ export function shouldShowLegacyInviteRegenerateWarning(
   if (currentInvite.active !== true) return false;
   return currentInvite.inviteVersion !== LEAGUE_INVITE_CLAIMS_VERSION;
 }
+
+export interface InviteTournamentMatchResult {
+  matches: boolean;
+  error?: string;
+}
+
+/**
+ * Memeriksa apakah turnamen hasil lookup kode undangan cocok dengan turnamen yang sedang dibuka.
+ * - Jika `expectedTournament` tidak diberikan (akses global), selalu mengembalikan `{ matches: true }`.
+ * - Jika `lookupTournament` kosong/tidak memiliki `id`, mengembalikan `{ matches: true }` agar validasi lookup utama yang menangani.
+ * - Jika `id` berbeda, mengembalikan `{ matches: false, error: "Kode ini milik liga {nama}, bukan {expected.name}." }`.
+ */
+export function checkInviteMatchesTournament(
+  expectedTournament?: { id: string; name: string } | null,
+  lookupTournament?: { id?: string | null; name?: string | null } | null
+): InviteTournamentMatchResult {
+  if (!expectedTournament || !expectedTournament.id) {
+    return { matches: true };
+  }
+  if (!lookupTournament || !lookupTournament.id) {
+    return { matches: true };
+  }
+
+  if (lookupTournament.id !== expectedTournament.id) {
+    const lookupName = (lookupTournament.name || 'Liga Lain').trim();
+    const expectedName = (expectedTournament.name || 'turnamen ini').trim();
+    return {
+      matches: false,
+      error: `Kode ini milik liga ${lookupName}, bukan ${expectedName}.`,
+    };
+  }
+
+  return { matches: true };
+}
+

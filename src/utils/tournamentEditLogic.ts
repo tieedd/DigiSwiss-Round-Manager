@@ -30,6 +30,7 @@ export interface TournamentEditablePermissions {
   canEditLocation: boolean;
   canEditFormat: boolean;
   canEditSeason: boolean;
+  canEditSeasonNumber: boolean;
   isFormatLocked: boolean;
   formatLockReason: string | null;
 }
@@ -90,6 +91,7 @@ export function getEditableFieldsForStatus(
       canEditLocation: true,
       canEditFormat: false,
       canEditSeason: true,
+      canEditSeasonNumber: status === 'registration',
       isFormatLocked: true,
       formatLockReason: FORMAT_LEAGUE_LOCKED_REASON,
     };
@@ -102,6 +104,7 @@ export function getEditableFieldsForStatus(
       canEditLocation: true,
       canEditFormat: true,
       canEditSeason: false,
+      canEditSeasonNumber: false,
       isFormatLocked: false,
       formatLockReason: null,
     };
@@ -113,6 +116,7 @@ export function getEditableFieldsForStatus(
     canEditLocation: true,
     canEditFormat: false,
     canEditSeason: false,
+    canEditSeasonNumber: false,
     isFormatLocked: true,
     formatLockReason: FORMAT_LOCKED_REASON,
   };
@@ -235,12 +239,34 @@ export function computeTournamentChanges(
     current.status,
     isLeague ? 'league' : 'regular'
   );
+  const lockedSeasonNumber =
+    isLeague &&
+    !permissions.canEditSeasonNumber &&
+    typeof current.season?.number === 'number' &&
+    current.season.number >= 1
+      ? current.season.number
+      : undefined;
+
+  const effectiveSeason =
+    isLeague && (input.season || current.season)
+      ? {
+          number:
+            lockedSeasonNumber ??
+            (input.season?.number ?? current.season?.number ?? 1),
+          month: input.season?.month ?? current.season?.month ?? 1,
+          year:
+            input.season?.year ??
+            current.season?.year ??
+            new Date().getFullYear(),
+        }
+      : undefined;
+
   const effectiveInput: TournamentFormValues = isLeague
     ? {
         ...input,
         type: 'league',
         format: 'BO3',
-        season: input.season ?? current.season,
+        season: effectiveSeason,
       }
     : {
         ...input,

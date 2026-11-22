@@ -738,7 +738,10 @@ export const ProfileView: React.FC = () => {
       {/* Bottom Sheet Ubah Nama Tampilan */}
       <BottomSheet
         isOpen={isEditNameOpen}
-        onClose={() => setIsEditNameOpen(false)}
+        onClose={() => {
+          if (!nameLoading) setIsEditNameOpen(false);
+        }}
+        closeDisabled={nameLoading}
         title="Ubah Nama Tampilan"
       >
         <form onSubmit={handleSaveDisplayName} className="flex flex-col gap-3 py-1">
@@ -797,10 +800,12 @@ export const ProfileView: React.FC = () => {
       <BottomSheet
         isOpen={isVerifyPinOpen}
         onClose={() => {
+          if (verifyPinLoading) return;
           setIsVerifyPinOpen(false);
           setVerifyPinInput('');
           setVerifyPinError('');
         }}
+        closeDisabled={verifyPinLoading}
         title="Verifikasi PIN Keamanan"
       >
         <form onSubmit={handleVerifyPinSubmit} className="flex flex-col gap-4 py-2">
@@ -856,9 +861,11 @@ export const ProfileView: React.FC = () => {
       <BottomSheet
         isOpen={isChangePinOpen}
         onClose={() => {
+          if (changePinLoading) return;
           setIsChangePinOpen(false);
           resetPinForm();
         }}
+        closeDisabled={changePinLoading}
         title={pinModalMode === 'change' ? 'Ubah PIN Keamanan' : 'Reset PIN Keamanan'}
       >
         <form onSubmit={handleChangePinSubmit} className="flex flex-col gap-3 py-2">

@@ -11,11 +11,12 @@ import {
   validateTournamentFormInput,
 } from '../../utils/tournamentEditLogic';
 import {
+  checkUniqueLeagueSeasonNumber,
+  computeNextSeasonNumber,
   extractYearMonthFromDate,
   formatSeasonLabel,
   getTournamentType,
   INDONESIAN_MONTH_OPTIONS,
-  suggestNextSeasonNumber,
 } from '../../utils/seasonLogic';
 import { ArrowRight, Copy, Lock, Trophy } from 'lucide-react';
 
@@ -25,7 +26,10 @@ export interface TournamentFormSheetProps {
   isOpen: boolean;
   mode: TournamentFormMode;
   tournamentType?: TournamentType;
-  existingTournaments?: ReadonlyArray<Pick<Tournament, 'name' | 'type' | 'season'>>;
+  organizerId?: string;
+  existingTournaments?: ReadonlyArray<
+    Pick<Tournament, 'id' | 'name' | 'organizerId' | 'type' | 'season'>
+  >;
   initialValues?: Partial<TournamentFormValues>;
   sourceTournament?: Tournament | null;
   isLoading?: boolean;
@@ -39,6 +43,7 @@ export const TournamentFormSheet: React.FC<TournamentFormSheetProps> = ({
   isOpen,
   mode,
   tournamentType,
+  organizerId,
   existingTournaments = [],
   initialValues,
   sourceTournament,
@@ -54,6 +59,16 @@ export const TournamentFormSheet: React.FC<TournamentFormSheetProps> = ({
       : tournamentType || initialValues?.type || 'regular';
   const isLeague = resolvedType === 'league';
 
+  const effectiveOrganizerId =
+    (mode === 'edit'
+      ? sourceTournament?.organizerId || organizerId
+      : organizerId || sourceTournament?.organizerId) || '';
+
+  const autoNextSeasonNumber = useMemo(
+    () => computeNextSeasonNumber(existingTournaments, effectiveOrganizerId),
+    [existingTournaments, effectiveOrganizerId]
+  );
+
   const [name, setName] = useState('');
   const [date, setDate] = useState(() => getTodayDateString());
   const [location, setLocation] = useState('');
@@ -65,7 +80,6 @@ export const TournamentFormSheet: React.FC<TournamentFormSheetProps> = ({
   const [seasonYearStr, setSeasonYearStr] = useState<string>(() =>
     String(new Date().getFullYear())
   );
-  const [seasonNumberManual, setSeasonNumberManual] = useState(false);
   const [monthYearManual, setMonthYearManual] = useState(false);
 
   const [localError, setLocalError] = useState('');
@@ -109,20 +123,13 @@ export const TournamentFormSheet: React.FC<TournamentFormSheetProps> = ({
         setSeasonNumberStr(String(sourceTournament.season.number));
         setSeasonMonth(sourceTournament.season.month);
         setSeasonYearStr(String(sourceTournament.season.year));
-      } else if (initialValues?.season) {
-        setSeasonNumberStr(String(initialValues.season.number));
-        setSeasonMonth(initialValues.season.month);
-        setSeasonYearStr(String(initialValues.season.year));
       } else {
-        const suggested = suggestNextSeasonNumber(existingTournaments, initName);
-        setSeasonNumberStr(String(suggested));
-        setSeasonMonth(fromDate.month);
-        setSeasonYearStr(String(fromDate.year));
+        setSeasonNumberStr(String(autoNextSeasonNumber));
+        setSeasonMonth(initialValues?.season?.month ?? fromDate.month);
+        setSeasonYearStr(String(initialValues?.season?.year ?? fromDate.year));
       }
-      setSeasonNumberManual(mode !== 'create');
       setMonthYearManual(mode === 'edit');
     } else {
-      setSeasonNumberManual(false);
       setMonthYearManual(false);
     }
 
@@ -136,10 +143,15 @@ export const TournamentFormSheet: React.FC<TournamentFormSheetProps> = ({
     initialValues?.date,
     initialValues?.location,
     initialValues?.format,
-    initialValues?.season?.number,
     initialValues?.season?.month,
     initialValues?.season?.year,
   ]);
+
+  // Sinkronkan pratinjau nomor season otomatis saat daftar liga organizer selesai dimuat
+  useEffect(() => {
+    if (!isOpen || !isLeague || mode === 'edit') return;
+    setSeasonNumberStr(String(autoNextSeasonNumber));
+  }, [isOpen, isLeague, mode, autoNextSeasonNumber]);
 
   const parsedSeason = useMemo(() => {
     const num = Number(seasonNumberStr);
@@ -176,10 +188,6 @@ export const TournamentFormSheet: React.FC<TournamentFormSheetProps> = ({
 
   const handleNameChange = (nextName: string) => {
     setName(nextName);
-    if (isLeague && mode === 'create' && !seasonNumberManual) {
-      const suggested = suggestNextSeasonNumber(existingTournaments, nextName);
-      setSeasonNumberStr(String(suggested));
-    }
     if (localError) setLocalError('');
   };
 
@@ -213,6 +221,30 @@ export const TournamentFormSheet: React.FC<TournamentFormSheetProps> = ({
     if (!validation.valid) {
       setLocalError(validation.error || 'Data turnamen tidak valid.');
       return;
+    }
+
+    if (
+      mode === 'edit' &&
+      isLeague &&
+      permissions.canEditSeasonNumber &&
+      sourceTournament &&
+      validation.sanitized.season &&
+      validation.sanitized.season.number !== sourceTournament.season?.number &&
+      existingTournaments.length > 0
+    ) {
+      const uniq = checkUniqueLeagueSeasonNumber({
+        seasonNumber: validation.sanitized.season.number,
+        organizerLeagues: existingTournaments,
+        organizerId: effectiveOrganizerId,
+        excludeTournamentId: sourceTournament.id,
+      });
+      if (!uniq.unique) {
+        setLocalError(
+          uniq.error ||
+            `Season ${validation.sanitized.season.number} sudah dipakai di liga lain milik Anda.`
+        );
+        return;
+      }
     }
 
     if (mode === 'edit' && editPlan && !editPlan.hasChanges) {
@@ -257,6 +289,7 @@ export const TournamentFormSheet: React.FC<TournamentFormSheetProps> = ({
       }}
       title={title}
       zIndexClass={zIndexClass}
+      closeDisabled={isLoading}
     >
       <form onSubmit={handleFormSubmit} className="flex flex-col gap-3 py-1">
         {isLeague && (
@@ -328,22 +361,31 @@ export const TournamentFormSheet: React.FC<TournamentFormSheetProps> = ({
 
             <div className="grid grid-cols-3 gap-2">
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-medium text-dark-muted">
-                  Season ke-
+                <label className="text-[11px] font-medium text-dark-muted flex items-center gap-1">
+                  <span>Season ke-</span>
+                  {(mode !== 'edit' || !permissions.canEditSeasonNumber) && (
+                    <Lock size={10} className="text-amber-300" />
+                  )}
                 </label>
-                <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={seasonNumberStr}
-                  onChange={(e) => {
-                    setSeasonNumberManual(true);
-                    setSeasonNumberStr(e.target.value);
-                    if (localError) setLocalError('');
-                  }}
-                  disabled={isLoading}
-                  className="w-full min-h-[42px] px-2.5 bg-dark-surface border border-dark-border rounded-btn text-caption text-dark-text font-mono focus:outline-none focus:border-accent"
-                />
+                {mode !== 'edit' ? (
+                  <div className="w-full min-h-[42px] px-2.5 bg-dark-surface/70 border border-dark-border rounded-btn text-caption text-amber-300 font-mono font-bold flex items-center">
+                    {autoNextSeasonNumber}
+                  </div>
+                ) : (
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={seasonNumberStr}
+                    onChange={(e) => {
+                      if (!permissions.canEditSeasonNumber) return;
+                      setSeasonNumberStr(e.target.value);
+                      if (localError) setLocalError('');
+                    }}
+                    disabled={isLoading || !permissions.canEditSeasonNumber}
+                    className="w-full min-h-[42px] px-2.5 bg-dark-surface border border-dark-border rounded-btn text-caption text-dark-text font-mono focus:outline-none focus:border-accent disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                )}
               </div>
 
               <div className="flex flex-col gap-1">
@@ -389,9 +431,18 @@ export const TournamentFormSheet: React.FC<TournamentFormSheetProps> = ({
               </div>
             </div>
 
-            {mode === 'create' && (
+            {mode !== 'edit' ? (
               <p className="text-[11px] text-dark-muted">
-                Nomor season disarankan otomatis dari riwayat liga bernama sama (+1). Bulan & tahun default mengikuti tanggal turnamen dan dapat diubah.
+                Season berikutnya: <strong className="text-amber-300 font-mono">{autoNextSeasonNumber}</strong> (dihitung otomatis dari semua liga organizer ini). Bulan &amp; tahun mengikuti tanggal turnamen.
+              </p>
+            ) : !permissions.canEditSeasonNumber ? (
+              <p className="text-[11px] text-status-yellow flex items-center gap-1">
+                <Lock size={11} className="flex-shrink-0" />
+                <span>Nomor season terkunci karena turnamen sudah dimulai atau selesai.</span>
+              </p>
+            ) : (
+              <p className="text-[11px] text-dark-muted">
+                Nomor season masih dapat diubah selama berstatus Pendaftaran dan harus unik di antara liga milik organizer.
               </p>
             )}
           </div>

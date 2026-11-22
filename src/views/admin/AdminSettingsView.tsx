@@ -6,6 +6,11 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useUpdate } from '../../context/UpdateContext';
 import { CURRENT_APP_VERSION } from '../../services/versionService';
+import {
+  getRendererGoneStatsNative,
+  type RendererGoneStats,
+} from '../../services/nativeBridge';
+import { formatRendererDiagnosticsLine } from '../../utils/nativeHelpers';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { BottomSheet } from '../../components/common/BottomSheet';
@@ -46,6 +51,9 @@ export const AdminSettingsView: React.FC = () => {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isResetOtaConfirmOpen, setIsResetOtaConfirmOpen] = useState(false);
   const [isResettingOta, setIsResettingOta] = useState(false);
+  const [rendererStats, setRendererStats] = useState<RendererGoneStats>(() =>
+    getRendererGoneStatsNative()
+  );
 
   const handleManualCheckUpdate = async () => {
     try {
@@ -87,6 +95,19 @@ export const AdminSettingsView: React.FC = () => {
 
   useEffect(() => {
     fetchAuditLogs();
+  }, []);
+
+  useEffect(() => {
+    const refreshStats = () => {
+      setRendererStats(getRendererGoneStatsNative());
+    };
+    refreshStats();
+    window.addEventListener('focus', refreshStats);
+    document.addEventListener('visibilitychange', refreshStats);
+    return () => {
+      window.removeEventListener('focus', refreshStats);
+      document.removeEventListener('visibilitychange', refreshStats);
+    };
   }, []);
 
   // Paginasi Log Keamanan (20 item per halaman)
@@ -151,6 +172,11 @@ export const AdminSettingsView: React.FC = () => {
               <span>Batas Sesi Inaktivitas:</span>
             </span>
             <span className="font-mono text-dark-text">30 Menit (Peringatan di menit ke-29)</span>
+          </div>
+          <div className="pt-1 border-t border-dark-border/60 text-dark-muted">
+            <span className="break-words [overflow-wrap:anywhere]">
+              {formatRendererDiagnosticsLine(rendererStats, formatIndonesianDateTime)}
+            </span>
           </div>
           <div className="flex items-center justify-between pt-1 border-t border-dark-border/60 flex-wrap gap-2">
             <span className="text-dark-muted">Pembaruan Sistem:</span>

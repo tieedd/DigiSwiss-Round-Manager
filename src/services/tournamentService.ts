@@ -25,8 +25,12 @@ import {
   TournamentFormValues
 } from '../utils/tournamentEditLogic';
 import {
+  checkUniqueLeagueSeasonNumber,
+  computeNextSeasonNumber,
+  extractYearMonthFromDate,
   formatSeasonLabel,
   getMinParticipantsToStart,
+  isLeagueTournament,
   validateSeasonInput
 } from '../utils/seasonLogic';
 import {
@@ -48,6 +52,44 @@ export interface CreateTournamentParams {
   format: TournamentFormat;
   type?: TournamentType;
   season?: TournamentSeason;
+  organizerId?: string;
+}
+
+/**
+ * Mengambil seluruh Turnamen Liga milik organizer tertentu dari Firestore
+ * untuk perhitungan dan validasi nomor season yang akurat.
+ */
+export async function getOrganizerLeagueTournaments(organizerId: string): Promise<Tournament[]> {
+  const cleanOrgId = (organizerId || '').trim();
+  if (!cleanOrgId) return [];
+
+  const tournamentsCol = collection(db, 'tournaments');
+  let list: Tournament[] = [];
+
+  try {
+    const q = query(
+      tournamentsCol,
+      where('organizerId', '==', cleanOrgId),
+      where('type', '==', 'league')
+    );
+    const snap = await getDocs(q);
+    list = snap.docs.map((d) => ({ ...(d.data() as Tournament), id: d.id }));
+  } catch (err: any) {
+    if (err?.code === 'failed-precondition') {
+      const fallbackQ = query(
+        tournamentsCol,
+        where('organizerId', '==', cleanOrgId)
+      );
+      const snap = await getDocs(fallbackQ);
+      list = snap.docs
+        .map((d) => ({ ...(d.data() as Tournament), id: d.id }))
+        .filter((t) => isLeagueTournament(t));
+    } else {
+      throw err;
+    }
+  }
+
+  return list;
 }
 
 /**
@@ -61,6 +103,7 @@ export async function createTournament(
   const cleanLocation = params.location.trim();
   const isLeague = params.type === 'league';
   const effectiveFormat: TournamentFormat = isLeague ? 'BO3' : params.format;
+  const targetOrganizerId = (params.organizerId || organizer.uid || '').trim();
 
   if (!cleanName) throw new Error(isLeague ? 'Nama liga wajib diisi.' : 'Nama turnamen wajib diisi.');
   if (!params.date) throw new Error('Tanggal turnamen wajib diisi.');
@@ -69,11 +112,26 @@ export async function createTournament(
 
   let validatedSeason: TournamentSeason | undefined;
   if (isLeague) {
-    const seasonRes = validateSeasonInput(params.season);
+    const fallbackDateParts = extractYearMonthFromDate(params.date);
+    const candidateSeason: Partial<TournamentSeason> = {
+      number: params.season?.number && params.season.number >= 1 ? params.season.number : 1,
+      month: params.season?.month ?? fallbackDateParts.month,
+      year: params.season?.year ?? fallbackDateParts.year,
+    };
+    const seasonRes = validateSeasonInput(candidateSeason);
     if (!seasonRes.valid || !seasonRes.sanitized) {
       throw new Error(seasonRes.error || 'Data Season Liga tidak valid.');
     }
-    validatedSeason = seasonRes.sanitized;
+
+    // Hitung ulang nomor season dari data segar Firestore milik organizer terkait
+    const freshLeagues = await getOrganizerLeagueTournaments(targetOrganizerId);
+    const recalculatedNumber = computeNextSeasonNumber(freshLeagues, targetOrganizerId);
+
+    validatedSeason = {
+      number: recalculatedNumber,
+      month: seasonRes.sanitized.month,
+      year: seasonRes.sanitized.year,
+    };
   }
 
   const joinCode = generateJoinCode();
@@ -91,7 +149,7 @@ export async function createTournament(
       ? { type: 'league' as const, season: validatedSeason }
       : {}),
     status: 'registration',
-    organizerId: organizer.uid,
+    organizerId: targetOrganizerId,
     organizerName: organizer.name,
     joinCode,
     createdAt: now,
@@ -146,6 +204,29 @@ export async function updateTournamentDetails(
       changes: [],
       syncedParticipationsCount: 0,
     };
+  }
+
+  // Validasi keunikan nomor season terhadap liga lain milik organizer turnamen (bukan uid admin pelaku)
+  if (
+    isLeagueTournament(currentTournament) &&
+    currentTournament.status === 'registration' &&
+    plan.updates.season &&
+    plan.updates.season.number !== currentTournament.season?.number
+  ) {
+    const targetOrganizerId = currentTournament.organizerId;
+    const freshLeagues = await getOrganizerLeagueTournaments(targetOrganizerId);
+    const uniqueness = checkUniqueLeagueSeasonNumber({
+      seasonNumber: plan.updates.season.number,
+      organizerLeagues: freshLeagues,
+      organizerId: targetOrganizerId,
+      excludeTournamentId: currentTournament.id,
+    });
+    if (!uniqueness.unique) {
+      throw new Error(
+        uniqueness.error ||
+          `Season ${plan.updates.season.number} sudah dipakai di liga lain milik Anda.`
+      );
+    }
   }
 
   const tournamentRef = doc(db, 'tournaments', currentTournament.id);
