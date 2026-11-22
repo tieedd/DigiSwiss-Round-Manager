@@ -271,22 +271,42 @@ jobs:
             echo "::warning::Keystore sementara dipakai. Isi secret DEBUG_KEYSTORE_BASE64 agar update APK tidak perlu uninstall."
           fi
 
+      # 9b. google-services.json (konfigurasi Firebase untuk notifikasi push).
+      #     Isi secret GOOGLE_SERVICES_JSON dengan seluruh isi berkas JSON dari Firebase Console.
+      #     Langkah ini menulis ulang berkas tiap build, jadi tidak hilang walau push dari AI Studio
+      #     menghapusnya dari repo. Build berhenti bila berkas tidak ada atau salah proyek.
+      - name: Siapkan google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          set -eu
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+            echo "google-services.json ditulis dari secret."
+          fi
+          test -f app/google-services.json || { echo "::error::app/google-services.json tidak ada. Isi secret GOOGLE_SERVICES_JSON."; exit 1; }
+          python3 -c "import json; d=json.load(open('app/google-services.json')); assert d['project_info']['project_id']=='digiswiss-round', 'project_id salah'; print('google-services.json valid untuk', d['project_info']['project_id'])"
+
       # 10. Gradle 9.3.1 sesuai gradle-wrapper.properties (gradlew tidak ada di repo)
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
 
-      # 11. Bangun APK debug
+      # 11. Bangun APK optimized (R8 + penghapusan resource, kunci tanda tangan sama dengan debug)
       - name: Bangun APK dengan Gradle
-        run: gradle assembleDebug --stacktrace
+        run: gradle assembleOptimized --stacktrace
 
       # 12. Beri nama file APK dan hitung checksum
       - name: Siapkan file APK
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk "DigiSwiss-Round-v${APP_VERSION}.apk"
+          set -eu
+          APK_SRC=$(find app/build/outputs/apk/optimized -maxdepth 1 -name '*.apk' | head -n1)
+          test -n "$APK_SRC" || { echo "::error::APK optimized tidak ditemukan"; ls -R app/build/outputs/apk || true; exit 1; }
+          cp "$APK_SRC" "DigiSwiss-Round-v${APP_VERSION}.apk"
           ls -lh "DigiSwiss-Round-v${APP_VERSION}.apk"
           echo "APK_SHA256=$(sha256sum "DigiSwiss-Round-v${APP_VERSION}.apk" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "APK_SIZE=$(du -h "DigiSwiss-Round-v${APP_VERSION}.apk" | cut -f1)" >> "$GITHUB_ENV"
 
       # 13. Susun catatan rilis dari pesan commit sejak rilis sebelumnya
       - name: Susun catatan rilis
@@ -308,6 +328,8 @@ jobs:
             echo
             echo "**Cara pasang:** unduh file .apk di bagian Assets, buka di HP Android,"
             echo "lalu aktifkan \"Pasang dari sumber tidak dikenal\" jika diminta."
+            echo
+            echo "**Ukuran APK:** ${APK_SIZE}"
             echo
             echo "SHA-256 APK: \`${APK_SHA256}\`"
             echo "SHA-256 paket web (OTA): \`${OTA_SHA256}\`"
