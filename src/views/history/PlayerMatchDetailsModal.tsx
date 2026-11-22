@@ -22,6 +22,7 @@ import {
   Layers,
   Award,
   CheckCircle2,
+  XCircle,
   AlertCircle
 } from 'lucide-react';
 
@@ -125,11 +126,11 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
               <div
                 className={`w-9 h-9 rounded-full flex items-center justify-center font-mono font-bold text-body flex-shrink-0 ${
                   participation.rank === 1
-                    ? 'bg-accent text-dark-bg'
+                    ? 'bg-accent-solid text-[#0B0F14]'
                     : participation.rank === 2
-                    ? 'bg-accent/80 text-dark-bg'
+                    ? 'bg-dark-surface-high text-accent border border-accent/50'
                     : participation.rank === 3
-                    ? 'bg-accent/60 text-dark-bg'
+                    ? 'bg-dark-surface-high text-dark-text border border-accent/30'
                     : 'bg-dark-surface text-dark-muted border border-dark-border'
                 }`}
               >
@@ -195,7 +196,7 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
             onClick={() => setActiveTab('standings')}
             className={`flex-1 py-1.5 text-caption font-semibold rounded-btn transition-colors text-center ${
               activeTab === 'standings'
-                ? 'bg-accent text-dark-bg shadow-sm'
+                ? 'bg-accent-solid text-[#0B0F14] shadow-sm'
                 : 'text-dark-muted hover:text-dark-text'
             }`}
           >
@@ -206,7 +207,7 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
             onClick={() => setActiveTab('matches')}
             className={`flex-1 py-1.5 text-caption font-semibold rounded-btn transition-colors text-center ${
               activeTab === 'matches'
-                ? 'bg-accent text-dark-bg shadow-sm'
+                ? 'bg-accent-solid text-[#0B0F14] shadow-sm'
                 : 'text-dark-muted hover:text-dark-text'
             }`}
           >
@@ -278,13 +279,19 @@ export const PlayerMatchDetailsModal: React.FC<PlayerMatchDetailsModalProps> = (
                         {/* Skor & Status */}
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <span
-                            className={`font-mono font-bold text-caption px-2 py-0.5 rounded ${
+                            className={`inline-flex items-center gap-1 font-mono font-bold text-caption px-2 py-0.5 rounded ${
                               isWin
                                 ? 'bg-status-green/15 text-status-green border border-status-green/30'
                                 : 'bg-status-red/15 text-status-red border border-status-red/30'
                             }`}
                           >
-                            {isBye ? '1 - 0' : `${myScore} - ${oppScore}`}
+                            {isWin ? (
+                              <CheckCircle2 size={12} className="flex-shrink-0" />
+                            ) : (
+                              <XCircle size={12} className="flex-shrink-0" />
+                            )}
+                            <span>{isWin ? 'Menang' : 'Kalah'}</span>
+                            <span>{isBye ? '1 - 0' : `${myScore} - ${oppScore}`}</span>
                           </span>
                         </div>
                       </div>

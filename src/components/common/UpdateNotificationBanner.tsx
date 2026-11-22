@@ -114,7 +114,7 @@ export const UpdateNotificationBanner: React.FC = () => {
             onClick={applyOta}
             title="Muat ulang paket OTA yang telah diunduh"
             aria-label="Muat ulang aplikasi"
-            className="flex items-center gap-1 px-2.5 py-1 rounded bg-accent text-dark-bg font-semibold text-[11px] hover:bg-accent/90 transition-colors shadow-sm active:scale-95"
+            className="flex items-center gap-1 px-2.5 py-1 rounded bg-accent-solid text-[#0B0F14] font-semibold text-[11px] hover:bg-accent-hover transition-colors shadow-sm active:scale-95"
           >
             <RefreshCw size={12} />
             <span>Muat Ulang</span>
@@ -126,7 +126,7 @@ export const UpdateNotificationBanner: React.FC = () => {
             disabled={isDownloading}
             title="Update aplikasi ke versi terbaru"
             aria-label="Update aplikasi"
-            className={`flex items-center gap-1 px-2.5 py-1 rounded bg-accent text-dark-bg font-semibold text-[11px] hover:bg-accent/90 transition-colors shadow-sm active:scale-95 ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded bg-accent-solid text-[#0B0F14] font-semibold text-[11px] hover:bg-accent-hover transition-colors shadow-sm active:scale-95 ${
               isDownloading ? 'opacity-70 cursor-not-allowed' : ''
             }`}
           >

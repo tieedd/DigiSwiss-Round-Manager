@@ -270,7 +270,7 @@ test('LIGA FINAL 4: Partisipasi reguler tidak terpengaruh dan liga dikecualikan 
   );
   assert.equal(
     formatParticipationDecksText(mixed[2], formatDeckColorsEmoji),
-    'Deck A 🔵 & Deck B 🟡'
+    'Deck A (Biru) & Deck B (Kuning)'
   );
 
   const rows = buildFinalStandingsRows(
@@ -335,7 +335,7 @@ test('LIGA FINAL 5: Ekspor CSV, Teks, dan warna legend mencakup 2 deck Liga tanp
     seasonLabel: 'SEASON 3 NOVEMBER 2026',
     isLeague: true,
   });
-  assert.ok(text.includes('Deck: WarGreymon OTK 🔴⚫ & MirageGaogamon 🔵'));
+  assert.ok(text.includes('Deck: WarGreymon OTK (Merah, Hitam) & MirageGaogamon (Biru)'));
 });
 
 test('LIGA FINAL 6: Statistik Player, Organizer, dan Admin menghitung 2 deck Liga tanpa menggandakan total turnamen atau peserta', () => {

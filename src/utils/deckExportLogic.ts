@@ -60,59 +60,69 @@ export const OFFICIAL_DECK_COLORS: readonly DeckColor[] = [
   'Putih'
 ] as const;
 
-export const DECK_COLOR_STYLES: Record<DeckColor, { bg: string; text: string; border: string; activeBg: string }> = {
-  Merah: {
-    bg: 'bg-red-500/10',
-    text: 'text-red-400',
-    border: 'border-red-500/40',
-    activeBg: 'bg-red-600 text-white border-red-500'
-  },
-  Biru: {
-    bg: 'bg-blue-500/10',
-    text: 'text-blue-400',
-    border: 'border-blue-500/40',
-    activeBg: 'bg-blue-600 text-white border-blue-500'
-  },
-  Kuning: {
-    bg: 'bg-amber-400/10',
-    text: 'text-amber-300',
-    border: 'border-amber-400/40',
-    activeBg: 'bg-amber-500 text-dark-bg font-semibold border-amber-400'
-  },
-  Hijau: {
-    bg: 'bg-emerald-500/10',
-    text: 'text-emerald-400',
-    border: 'border-emerald-500/40',
-    activeBg: 'bg-emerald-600 text-white border-emerald-500'
-  },
-  Hitam: {
-    bg: 'bg-zinc-700/30',
-    text: 'text-zinc-300',
-    border: 'border-zinc-500/40',
-    activeBg: 'bg-zinc-800 text-white border-zinc-400'
-  },
-  Ungu: {
-    bg: 'bg-purple-500/10',
-    text: 'text-purple-400',
-    border: 'border-purple-500/40',
-    activeBg: 'bg-purple-600 text-white border-purple-500'
-  },
-  Putih: {
-    bg: 'bg-neutral-200/10',
-    text: 'text-neutral-200',
-    border: 'border-neutral-300/40',
-    activeBg: 'bg-neutral-200 text-neutral-900 font-semibold border-white'
-  }
+export const DECK_COLOR_HEX: Record<DeckColor, string> = {
+  Merah: '#EB1B0C',
+  Biru: '#41AFFD',
+  Kuning: '#FFEB19',
+  Hijau: '#218470',
+  Hitam: '#18181B',
+  Ungu: '#610FBE',
+  Putih: '#F8FAFC'
 };
 
-export const DECK_COLOR_HEX: Record<DeckColor, string> = {
-  Merah: '#EF4444',
-  Biru: '#3B82F6',
-  Kuning: '#FACC15',
-  Hijau: '#10B981',
-  Hitam: '#18181B',
-  Ungu: '#A855F7',
-  Putih: '#F8FAFC'
+export const DECK_COLOR_ACTIVE_TEXT: Record<DeckColor, string> = {
+  Merah: '#FFFFFF',
+  Biru: '#111827',
+  Kuning: '#111827',
+  Hijau: '#FFFFFF',
+  Hitam: '#FFFFFF',
+  Ungu: '#FFFFFF',
+  Putih: '#111827'
+};
+
+export const DECK_COLOR_STYLES: Record<DeckColor, { bg: string; text: string; border: string; activeBg: string }> = {
+  Merah: {
+    bg: 'bg-dark-surface-high',
+    text: 'text-dark-text',
+    border: 'border-dark-border',
+    activeBg: 'font-semibold shadow-sm'
+  },
+  Biru: {
+    bg: 'bg-dark-surface-high',
+    text: 'text-dark-text',
+    border: 'border-dark-border',
+    activeBg: 'font-semibold shadow-sm'
+  },
+  Kuning: {
+    bg: 'bg-dark-surface-high',
+    text: 'text-dark-text',
+    border: 'border-dark-border',
+    activeBg: 'font-semibold shadow-sm'
+  },
+  Hijau: {
+    bg: 'bg-dark-surface-high',
+    text: 'text-dark-text',
+    border: 'border-dark-border',
+    activeBg: 'font-semibold shadow-sm'
+  },
+  Hitam: {
+    bg: 'bg-dark-surface-high',
+    text: 'text-dark-text',
+    border: 'border-dark-border',
+    activeBg: 'font-semibold shadow-sm'
+  },
+  Ungu: {
+    bg: 'bg-dark-surface-high',
+    text: 'text-dark-text',
+    border: 'border-dark-border',
+    activeBg: 'font-semibold shadow-sm'
+  },
+  Putih: {
+    bg: 'bg-dark-surface-high',
+    text: 'text-dark-text',
+    border: 'border-dark-border',
+    activeBg: 'font-semibold shadow-sm'
+  }
 };
 
 export const DECK_COLOR_EMOJI: Record<DeckColor, string> = {
@@ -127,10 +137,10 @@ export const DECK_COLOR_EMOJI: Record<DeckColor, string> = {
 
 export function formatDeckColorsEmoji(colors?: string[] | null): string {
   if (!colors || !Array.isArray(colors) || colors.length === 0) return '';
-  return colors
-    .map((c) => DECK_COLOR_EMOJI[c as DeckColor] || '')
-    .filter(Boolean)
-    .join('');
+  const validColors = colors
+    .map((c) => (typeof c === 'string' ? c.trim() : ''))
+    .filter((c) => OFFICIAL_DECK_COLORS.includes(c as DeckColor));
+  return validColors.length > 0 ? `(${validColors.join(', ')})` : '';
 }
 
 export function getDeckColorLabel(colors?: string[] | null): string {

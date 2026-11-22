@@ -205,7 +205,7 @@ export const LeagueCumulativeView: React.FC<LeagueCumulativeViewProps> = ({
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <h2 className="text-section-title text-dark-text font-semibold flex items-center gap-2">
-              <Award className="text-amber-400" size={20} />
+              <Award className="text-accent" size={20} />
               Poin Liga Lintas Season
             </h2>
             <p className="text-caption text-dark-muted">
@@ -278,10 +278,10 @@ export const LeagueCumulativeView: React.FC<LeagueCumulativeViewProps> = ({
           {summary && (
             <>
               {/* Ringkasan & Daftar Season */}
-              <Card variant="surface-high" className="p-3 flex flex-col gap-2.5 border-amber-400/25">
+              <Card variant="surface-high" className="p-3 flex flex-col gap-2.5 border-accent/25">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-accent/15 text-accent border border-accent/40">
                       LIGA
                     </span>
                     <span className="text-body font-semibold text-dark-text truncate">
@@ -290,7 +290,7 @@ export const LeagueCumulativeView: React.FC<LeagueCumulativeViewProps> = ({
                   </div>
                   <div className="flex items-center gap-3 text-[11px] font-mono text-dark-muted">
                     <span className="flex items-center gap-1">
-                      <Layers size={12} className="text-amber-400" />
+                      <Layers size={12} className="text-accent" />
                       <strong className="text-dark-text">{summary.tournaments.length}</strong> Season
                     </span>
                     <span className="flex items-center gap-1">
@@ -310,7 +310,7 @@ export const LeagueCumulativeView: React.FC<LeagueCumulativeViewProps> = ({
                         className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-dark-bg/70 border border-dark-border text-dark-muted"
                         title={`${t.name} • ${formatIndonesianFullDate(t.date)}`}
                       >
-                        <Calendar size={10} className="text-amber-400 flex-shrink-0" />
+                        <Calendar size={10} className="text-accent flex-shrink-0" />
                         <span className="text-dark-text font-semibold">{sLabel}</span>
                         <span>• {formatIndonesianFullDate(t.date)}</span>
                       </span>
@@ -385,7 +385,7 @@ export const LeagueCumulativeView: React.FC<LeagueCumulativeViewProps> = ({
                         key={row.playerKey}
                         variant="surface"
                         className={`p-3 flex flex-col gap-2 ${
-                          isTop3 ? 'border-l-4 border-l-amber-400' : ''
+                          isTop3 ? 'border-l-4 border-l-accent' : ''
                         } ${isMe ? 'border-accent/60 bg-accent/5' : ''}`}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -393,11 +393,11 @@ export const LeagueCumulativeView: React.FC<LeagueCumulativeViewProps> = ({
                             <div
                               className={`w-8 h-8 rounded-full flex items-center justify-center font-mono font-bold text-caption flex-shrink-0 ${
                                 row.rank === 1
-                                  ? 'bg-amber-400 text-slate-950 shadow-sm'
+                                  ? 'bg-accent-solid text-[#0B0F14] shadow-sm'
                                   : row.rank === 2
-                                  ? 'bg-amber-400/80 text-slate-950'
+                                  ? 'bg-dark-surface-high text-accent border border-accent/50'
                                   : row.rank === 3
-                                  ? 'bg-amber-400/60 text-slate-950'
+                                  ? 'bg-dark-surface-high text-dark-text border border-accent/30'
                                   : 'bg-dark-surface-high text-dark-muted border border-dark-border'
                               }`}
                             >
@@ -424,7 +424,7 @@ export const LeagueCumulativeView: React.FC<LeagueCumulativeViewProps> = ({
                           </div>
 
                           <div className="text-right flex-shrink-0">
-                            <span className="font-mono text-xl font-bold text-amber-400 block leading-none">
+                            <span className="font-mono text-xl font-bold text-accent block leading-none">
                               {row.totalPoints}
                             </span>
                             <span className="text-[10px] font-mono text-dark-muted uppercase">

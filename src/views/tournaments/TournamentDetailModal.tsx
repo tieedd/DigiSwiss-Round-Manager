@@ -799,8 +799,8 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
           <div className="pt-2 border-t border-dark-border flex items-center justify-between gap-2 text-caption flex-wrap">
             {isLeague ? (
               <div className="flex items-center gap-1.5">
-                <Ticket size={14} className="text-amber-300" />
-                <span className="font-medium text-amber-300">
+                <Ticket size={14} className="text-accent" />
+                <span className="font-medium text-accent">
                   Khusus Undangan (Kode / QR)
                 </span>
               </div>
@@ -978,11 +978,11 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
         {isLeague && myPlayerRecord?.status === 'accepted' && currentUser && (
           <Card
             variant="surface"
-            className="flex flex-col gap-2.5 border-amber-400/30 bg-amber-500/5"
+            className="flex flex-col gap-2.5 border-accent/30 bg-accent/5"
           >
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
-                <Layers size={16} className="text-amber-300 flex-shrink-0" />
+                <Layers size={16} className="text-accent flex-shrink-0" />
                 <span className="text-body font-semibold text-dark-text truncate">
                   Deck Saya (Privat)
                 </span>
@@ -1028,7 +1028,7 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
                     key={i}
                     className="p-2.5 rounded-btn bg-dark-surface-high border border-dark-border flex flex-col gap-1"
                   >
-                    <span className="text-[10px] font-mono uppercase text-amber-300 font-semibold">
+                    <span className="text-[10px] font-mono uppercase text-accent font-semibold">
                       Deck {i + 1}
                     </span>
                     <span className="text-caption font-semibold text-dark-text truncate">
@@ -1290,7 +1290,7 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
                                 className="flex items-center justify-between gap-2 text-[11px]"
                               >
                                 <span className="text-dark-muted truncate">
-                                  <strong className="text-amber-300 font-mono">
+                                  <strong className="text-accent font-mono">
                                     D{dIdx + 1}:
                                   </strong>{' '}
                                   <span className="text-dark-text">{d.name}</span>

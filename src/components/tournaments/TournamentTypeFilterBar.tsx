@@ -43,7 +43,7 @@ export const TournamentTypeFilterBar: React.FC<TournamentTypeFilterBarProps> = (
             onClick={() => onChange(opt.key)}
             className={`min-h-[34px] px-2 rounded-btn text-caption font-semibold transition-colors flex items-center justify-center gap-1.5 ${
               isActive
-                ? 'bg-accent text-dark-bg shadow-sm'
+                ? 'bg-accent-solid text-[#0B0F14] shadow-sm'
                 : 'text-dark-muted hover:text-dark-text'
             }`}
           >
@@ -52,7 +52,7 @@ export const TournamentTypeFilterBar: React.FC<TournamentTypeFilterBarProps> = (
               <span
                 className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
                   isActive
-                    ? 'bg-dark-bg/20 text-dark-bg'
+                    ? 'bg-[#0B0F14]/15 text-[#0B0F14]'
                     : 'bg-dark-surface-high text-dark-muted'
                 }`}
               >

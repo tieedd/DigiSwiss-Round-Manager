@@ -74,7 +74,7 @@ test('EXPORT THEME 2: Palet gelap mempertahankan nilai warna lama yang sebelumny
   assert.equal(dark.cardFinalBg, '#17233a');
   assert.equal(dark.emptySlotBg, '#111c33');
   assert.equal(dark.emptySlotBorder, '#334155');
-  assert.equal(dark.emptySlotText, '#64748b');
+  assert.equal(dark.emptySlotText, '#94a3b8');
   assert.equal(dark.badgeBg, '#f59e0b');
   assert.equal(dark.badgeText, '#0f172a');
   assert.equal(dark.seasonText, '#fbbf24');
@@ -86,12 +86,16 @@ test('EXPORT THEME 2: Palet gelap mempertahankan nilai warna lama yang sebelumny
   assert.equal(dark.rankGoldBar, '#eab308');
   assert.equal(dark.rankSilver, '#94a3b8');
   assert.equal(dark.rankBronze, '#cd7f32');
-  assert.equal(dark.successText, '#34d399');
+  assert.equal(dark.successText, '#2DD4BF');
   assert.equal(dark.championBannerBorder, '#facc15');
   assert.equal(dark.championBannerText, '#facc15');
-  assert.deepEqual(dark.deckDotOutline, { Hitam: '#94A3B8', Putih: '#CBD5E1' });
+  assert.deepEqual(dark.deckDotOutline, {
+    Hitam: '#94A3B8',
+    Putih: '#CBD5E1',
+    default: '#94A3B8',
+  });
   assert.equal(dark.legendText, '#cbd5e1');
-  assert.equal(dark.footerText, '#64748b');
+  assert.equal(dark.footerText, '#94a3b8');
 });
 
 test('EXPORT THEME 3: Fungsi murni contrastRatio menghitung kontras WCAG secara akurat', () => {

@@ -211,7 +211,7 @@ export const AddFromHistoryModal: React.FC<AddFromHistoryModalProps> = ({
                         isRegistered
                           ? 'border-dark-border bg-dark-surface-high text-transparent'
                           : isSelected
-                          ? 'border-accent bg-accent text-[#0B0F14]'
+                          ? 'border-accent-solid bg-accent-solid text-[#0B0F14]'
                           : 'border-dark-border bg-dark-bg'
                       }`}
                     >

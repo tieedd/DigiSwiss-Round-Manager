@@ -303,11 +303,11 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
                   <div
                     className={`w-6 h-6 rounded-full flex items-center justify-center font-mono font-bold text-[11px] flex-shrink-0 ${
                       row.rank === 1
-                        ? 'bg-accent text-dark-bg'
+                        ? 'bg-accent-solid text-[#0B0F14]'
                         : row.rank === 2
-                        ? 'bg-accent/80 text-dark-bg'
+                        ? 'bg-dark-surface-high text-accent border border-accent/50'
                         : row.rank === 3
-                        ? 'bg-accent/60 text-dark-bg'
+                        ? 'bg-dark-surface-high text-dark-text border border-accent/30'
                         : 'bg-dark-surface-high text-dark-muted border border-dark-border'
                     }`}
                   >
@@ -324,9 +324,9 @@ export const FinalStandingsCard: React.FC<FinalStandingsCardProps> = ({
                         <span
                           className={`text-[9px] font-bold px-1.5 py-0.2 rounded font-mono ${
                             row.topCutResult === 'Juara'
-                              ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                              ? 'bg-accent/15 text-accent border border-accent/40'
                               : row.topCutResult === 'Runner-up'
-                              ? 'bg-accent/20 text-accent border border-accent/30'
+                              ? 'bg-accent/15 text-accent border border-accent/30'
                               : 'bg-dark-surface-high text-dark-text border border-dark-border'
                           }`}
                         >

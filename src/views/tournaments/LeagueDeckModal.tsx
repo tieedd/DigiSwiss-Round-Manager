@@ -16,6 +16,7 @@ import {
   OFFICIAL_DECK_COLORS,
   DECK_COLOR_STYLES,
   DECK_COLOR_HEX,
+  DECK_COLOR_ACTIVE_TEXT,
   formatDeckColorsEmoji,
 } from '../../utils/deckExportLogic';
 import {
@@ -207,7 +208,7 @@ export const LeagueDeckModal: React.FC<LeagueDeckModalProps> = ({
   ) => (
     <div className="p-3 rounded-card bg-dark-bg/50 border border-dark-border flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <span className="text-body font-semibold text-amber-300">
+        <span className="text-body font-semibold text-accent">
           Deck {slot}
         </span>
         {colorsVal.length > 0 && <DeckColorDots colors={colorsVal} size="sm" />}
@@ -285,6 +286,7 @@ export const LeagueDeckModal: React.FC<LeagueDeckModalProps> = ({
             const isSelected = colorsVal.includes(color);
             const style = DECK_COLOR_STYLES[color];
             const hex = DECK_COLOR_HEX[color];
+            const activeTextColor = DECK_COLOR_ACTIVE_TEXT[color];
 
             return (
               <button
@@ -292,22 +294,26 @@ export const LeagueDeckModal: React.FC<LeagueDeckModalProps> = ({
                 type="button"
                 disabled={saving}
                 onClick={() => toggleColor(slot, color)}
+                style={
+                  isSelected
+                    ? {
+                        backgroundColor: hex,
+                        color: activeTextColor,
+                        borderColor: 'var(--c-dot-outline, rgba(232, 237, 243, 0.65))',
+                      }
+                    : undefined
+                }
                 className={`px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border transition-all ${
                   isSelected
                     ? style.activeBg
-                    : `${style.bg} ${style.text} ${style.border} hover:opacity-80`
+                    : `${style.bg} ${style.text} ${style.border} hover:border-accent/60`
                 }`}
               >
                 <span
-                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  className="w-3 h-3 rounded-full flex-shrink-0"
                   style={{
                     backgroundColor: hex,
-                    boxShadow:
-                      color === 'Hitam'
-                        ? '0 0 0 1px #94A3B8'
-                        : color === 'Putih'
-                        ? '0 0 0 1px #CBD5E1'
-                        : undefined,
+                    boxShadow: 'inset 0 0 0 1.5px var(--c-dot-outline, rgba(232, 237, 243, 0.65))',
                   }}
                 />
                 <span>{color}</span>
@@ -337,7 +343,7 @@ export const LeagueDeckModal: React.FC<LeagueDeckModalProps> = ({
         {/* Modal Header (tetap di atas) */}
         <div className="shrink-0 flex items-center justify-between p-4 border-b border-dark-border">
           <div className="flex items-center gap-2 min-w-0">
-            <Layers className="text-amber-300 flex-shrink-0" size={20} />
+            <Layers className="text-accent flex-shrink-0" size={20} />
             <div className="min-w-0">
               <h3 className="text-body font-semibold text-dark-text truncate">
                 {isOrganizerMode
@@ -367,7 +373,7 @@ export const LeagueDeckModal: React.FC<LeagueDeckModalProps> = ({
           onSubmit={handleSubmit}
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 flex flex-col gap-3"
         >
-          <div className="p-2.5 rounded-btn bg-amber-500/10 border border-amber-400/30 text-[11px] text-amber-200 leading-relaxed">
+          <div className="p-2.5 rounded-btn bg-accent/10 border border-accent/30 text-[11px] text-dark-text leading-relaxed">
             Isi <strong>Deck 1</strong> dan <strong>Deck 2</strong> (nama kedua deck tidak boleh sama). Kedua deck disembunyikan dari pemain lain dan hanya terbaca oleh Anda dan organizer.
           </div>
 

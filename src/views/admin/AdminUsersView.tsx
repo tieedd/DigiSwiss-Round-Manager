@@ -754,7 +754,7 @@ export const AdminUsersView: React.FC<{ onNavigateHome?: () => void }> = ({ onNa
                       onClick={() => setResetDurationMinutes(opt.value)}
                       className={`min-h-[40px] px-2.5 py-1.5 rounded-btn border text-caption font-medium transition-colors ${
                         resetDurationMinutes === opt.value
-                          ? 'bg-accent text-[#0B0F14] border-accent font-semibold'
+                          ? 'bg-accent-solid text-[#0B0F14] border-accent-solid font-semibold'
                           : 'bg-dark-surface-high text-dark-text border-dark-border hover:border-accent/50'
                       }`}
                     >

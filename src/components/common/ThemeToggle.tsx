@@ -50,7 +50,7 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
         {/* Switch Track */}
         <div
           className={`w-12 h-7 rounded-full p-0.5 flex items-center transition-colors duration-150 ${
-            isDark ? 'bg-dark-surface-high border border-dark-border' : 'bg-amber-100 border border-amber-300'
+            isDark ? 'bg-dark-surface-high border border-dark-border' : 'bg-accent/15 border border-accent/40'
           }`}
         >
           {/* Switch Knob with 150ms transform transition */}
@@ -58,7 +58,7 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
             className={`w-6 h-6 rounded-full flex items-center justify-center shadow-sm transition-transform duration-150 transform ${
               isDark
                 ? 'translate-x-0 bg-dark-surface text-accent'
-                : 'translate-x-5 bg-white text-amber-600'
+                : 'translate-x-5 bg-dark-surface text-accent'
             }`}
           >
             {isDark ? (

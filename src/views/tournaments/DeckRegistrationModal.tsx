@@ -11,6 +11,7 @@ import {
   OFFICIAL_DECK_COLORS,
   DECK_COLOR_STYLES,
   DECK_COLOR_HEX,
+  DECK_COLOR_ACTIVE_TEXT,
   formatDeckColorsEmoji,
   validateDeckSubmission
 } from '../../utils/deckExportLogic';
@@ -306,28 +307,33 @@ export const DeckRegistrationModal: React.FC<DeckRegistrationModalProps> = ({
                 const isSelected = selectedColors.includes(color);
                 const style = DECK_COLOR_STYLES[color];
                 const hex = DECK_COLOR_HEX[color];
+                const activeTextColor = DECK_COLOR_ACTIVE_TEXT[color];
 
                 return (
                   <button
                     key={color}
                     type="button"
                     onClick={() => toggleColor(color)}
+                    style={
+                      isSelected
+                        ? {
+                            backgroundColor: hex,
+                            color: activeTextColor,
+                            borderColor: 'var(--c-dot-outline, rgba(232, 237, 243, 0.65))'
+                          }
+                        : undefined
+                    }
                     className={`px-3 py-1.5 rounded-full text-caption font-medium flex items-center gap-1.5 border transition-all ${
                       isSelected
                         ? style.activeBg
-                        : `${style.bg} ${style.text} ${style.border} hover:opacity-80`
+                        : `${style.bg} ${style.text} ${style.border} hover:border-accent/60`
                     }`}
                   >
                     <span
-                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      className="w-3.5 h-3.5 rounded-full flex-shrink-0"
                       style={{
                         backgroundColor: hex,
-                        boxShadow:
-                          color === 'Hitam'
-                            ? '0 0 0 1px #94A3B8'
-                            : color === 'Putih'
-                            ? '0 0 0 1px #CBD5E1'
-                            : undefined
+                        boxShadow: 'inset 0 0 0 1.5px var(--c-dot-outline, rgba(232, 237, 243, 0.65))'
                       }}
                     />
                     <span>{color}</span>

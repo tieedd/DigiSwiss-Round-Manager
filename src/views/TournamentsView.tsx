@@ -122,7 +122,7 @@ export const TournamentsView: React.FC = () => {
             variant="secondary"
             className="!min-h-[36px] !px-2.5 !text-caption"
             onClick={() => setIsLeagueCumulativeOpen(true)}
-            icon={<Award size={15} className="text-amber-400" />}
+            icon={<Award size={15} className="text-accent" />}
             title="Poin Liga Lintas Season"
           >
             Poin Liga
@@ -147,11 +147,11 @@ export const TournamentsView: React.FC = () => {
       {/* Kartu Pendaftaran Turnamen Liga via Kode Undangan */}
       <Card
         variant="surface"
-        className="flex items-center justify-between gap-3 border-amber-400/30 bg-amber-500/5"
+        className="flex items-center justify-between gap-3 border-accent/30 bg-accent/5"
       >
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40">
+            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-accent/15 text-accent border border-accent/40">
               LIGA
             </span>
             <span className="text-body font-semibold text-dark-text truncate">
@@ -253,7 +253,7 @@ export const TournamentsView: React.FC = () => {
                     <span className="truncate max-w-[140px]">{t.location}</span>
                   </div>
                   {isLeague ? (
-                    <span className="font-mono text-amber-300 text-[11px] font-semibold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-400/30">
+                    <span className="font-mono text-accent text-[11px] font-semibold bg-accent/15 px-1.5 py-0.5 rounded border border-accent/40">
                       Khusus Undangan
                     </span>
                   ) : (

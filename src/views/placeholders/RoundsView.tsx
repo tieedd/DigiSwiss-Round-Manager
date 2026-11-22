@@ -983,14 +983,14 @@ export const RoundsView: React.FC = () => {
                           onClick={() => handleSelectRound(r.number)}
                           className={`min-h-[38px] px-3.5 rounded-btn text-caption font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${
                             isCurrentTab
-                              ? 'bg-accent text-dark-bg font-semibold shadow'
+                              ? 'bg-accent-solid text-[#0B0F14] font-semibold shadow'
                               : isTopCutTab
                               ? 'bg-dark-surface border border-accent/40 text-accent hover:bg-accent/10'
                               : 'bg-dark-surface border border-dark-border text-dark-muted hover:text-dark-text'
                           }`}
                         >
                           <span>{tabLabel}</span>
-                          {isLockedTab && <Lock size={12} className={isCurrentTab ? 'text-dark-bg' : 'text-dark-muted'} />}
+                          {isLockedTab && <Lock size={12} className={isCurrentTab ? 'text-[#0B0F14]' : 'text-dark-muted'} />}
                           {r.status === 'completed' && !isLockedTab && <CheckCircle2 size={13} />}
                         </button>
                       );
@@ -1026,7 +1026,7 @@ export const RoundsView: React.FC = () => {
                           variant="secondary"
                           className="!min-h-[32px] !px-2.5 !text-[11px]"
                           onClick={() => setRoundExportTarget('standing')}
-                          icon={<FileSpreadsheet size={13} className="text-emerald-400" />}
+                          icon={<FileSpreadsheet size={13} className="text-status-green" />}
                         >
                           Standing Saat Ini
                         </Button>
@@ -1034,7 +1034,7 @@ export const RoundsView: React.FC = () => {
                           variant="secondary"
                           className="!min-h-[32px] !px-2.5 !text-[11px]"
                           onClick={() => setRoundExportTarget('pairing')}
-                          icon={<Swords size={13} className="text-sky-400" />}
+                          icon={<Swords size={13} className="text-info" />}
                         >
                           Pairing Ronde {activeRound}
                         </Button>
@@ -1044,7 +1044,7 @@ export const RoundsView: React.FC = () => {
                         variant="secondary"
                         className="!min-h-[32px] !px-2.5 !text-[11px]"
                         onClick={() => setRoundExportTarget('bracket')}
-                        icon={<Trophy size={13} className="text-amber-400" />}
+                        icon={<Trophy size={13} className="text-accent" />}
                       >
                         Bracket
                       </Button>
@@ -1702,7 +1702,7 @@ export const RoundsView: React.FC = () => {
             className="!justify-start !min-h-[44px]"
             disabled={exportingRound}
             onClick={() => handleRunRoundExport('png')}
-            icon={<ImageIcon size={16} className="text-amber-400" />}
+            icon={<ImageIcon size={16} className="text-accent" />}
           >
             Gambar (PNG)
           </Button>
@@ -1713,7 +1713,7 @@ export const RoundsView: React.FC = () => {
             className="!justify-start !min-h-[44px]"
             disabled={exportingRound}
             onClick={() => handleRunRoundExport('text')}
-            icon={<FileText size={16} className="text-sky-400" />}
+            icon={<FileText size={16} className="text-info" />}
           >
             Teks Ringkasan (Salin)
           </Button>
@@ -1725,7 +1725,7 @@ export const RoundsView: React.FC = () => {
               className="!justify-start !min-h-[44px]"
               disabled={exportingRound}
               onClick={() => handleRunRoundExport('csv')}
-              icon={<FileSpreadsheet size={16} className="text-emerald-400" />}
+              icon={<FileSpreadsheet size={16} className="text-status-green" />}
             >
               Spreadsheet (CSV)
             </Button>

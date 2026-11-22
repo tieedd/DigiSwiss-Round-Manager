@@ -387,7 +387,7 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
               {showLeagueMaintenanceAction && (
                 <Button
                   variant="secondary"
-                  className="!min-h-[36px] !px-3 !text-caption border-amber-400/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+                  className="!min-h-[36px] !px-3 !text-caption border-accent/40 bg-accent/15 text-accent hover:bg-accent/25"
                   onClick={() => setSyncConfirmOpen(true)}
                   icon={<RefreshCw size={14} />}
                 >
@@ -435,7 +435,7 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
                   variant="secondary"
                   className="!min-h-[34px] !px-3 !text-[11px]"
                   onClick={handleExportImage}
-                  icon={<ImageIcon size={14} className="text-amber-400" />}
+                  icon={<ImageIcon size={14} className="text-accent" />}
                 >
                   Gambar (PNG)
                 </Button>
@@ -447,7 +447,7 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
                     copySuccess ? (
                       <Check size={14} className="text-status-green" />
                     ) : (
-                      <FileText size={14} className="text-sky-400" />
+                      <FileText size={14} className="text-info" />
                     )
                   }
                 >
@@ -457,7 +457,7 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
                   variant="secondary"
                   className="!min-h-[34px] !px-3 !text-[11px]"
                   onClick={handleExportCsv}
-                  icon={<FileSpreadsheet size={14} className="text-emerald-400" />}
+                  icon={<FileSpreadsheet size={14} className="text-status-green" />}
                 >
                   Spreadsheet (CSV)
                 </Button>
@@ -492,11 +492,11 @@ export const FinalResultsSection: React.FC<FinalResultsSectionProps> = ({
                         <div
                           className={`w-7 h-7 rounded-full flex items-center justify-center font-mono font-bold text-caption flex-shrink-0 ${
                             p.rank === 1
-                              ? 'bg-accent text-dark-bg'
+                              ? 'bg-accent-solid text-[#0B0F14]'
                               : p.rank === 2
-                              ? 'bg-accent/80 text-dark-bg'
+                              ? 'bg-dark-surface-high text-accent border border-accent/50'
                               : p.rank === 3
-                              ? 'bg-accent/60 text-dark-bg'
+                              ? 'bg-dark-surface-high text-dark-text border border-accent/30'
                               : 'bg-dark-surface-high text-dark-muted border border-dark-border'
                           }`}
                         >

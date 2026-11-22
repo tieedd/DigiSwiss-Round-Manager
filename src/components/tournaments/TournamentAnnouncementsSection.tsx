@@ -147,7 +147,7 @@ export const TournamentAnnouncementsSection: React.FC<
   return (
     <Card
       variant="surface"
-      className="flex flex-col gap-2.5 border-amber-400/25 bg-amber-500/5"
+      className="flex flex-col gap-2.5 border-accent/25 bg-accent/5"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">

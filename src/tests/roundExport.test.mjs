@@ -170,9 +170,9 @@ test('ROUND EXPORT 3: Pairing Ronde X menyembunyikan skor bila ada 1 match belum
   assert.ok(!hiddenText.includes('2 - 1'));
   assert.ok(!hiddenText.includes('1 - 2'));
   assert.ok(!hiddenText.includes('[Menang]'));
-  assert.ok(hiddenText.includes('Meja 1: Taichi (WarGreymon OTK 🔴⚫ & MirageGaogamon 🔵) VS Yamato'));
+  assert.ok(hiddenText.includes('Meja 1: Taichi (WarGreymon OTK (Merah, Hitam) & MirageGaogamon (Biru)) VS Yamato'));
   assert.ok(hiddenText.includes('Meja 2: Sora VS Koushiro'));
-  assert.ok(hiddenText.includes('Meja 3: Mimi (WarGreymon OTK 🔴⚫ & MirageGaogamon 🔵) VS BYE'));
+  assert.ok(hiddenText.includes('Meja 3: Mimi (WarGreymon OTK (Merah, Hitam) & MirageGaogamon (Biru)) VS BYE'));
 
   // Sekarang seluruh match ronde 2 confirmed -> skor & pemenang tampil
   const round2Done = round2Incomplete.map((m) =>

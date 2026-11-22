@@ -195,10 +195,10 @@ export const StatsView: React.FC = () => {
 
                   <Card variant="surface" className="p-3 flex flex-col">
                     <span className="text-[11px] font-mono text-dark-muted uppercase flex items-center gap-1">
-                      <Trophy size={12} className="text-amber-400" />
+                      <Trophy size={12} className="text-accent" />
                       <span>Juara 1</span>
                     </span>
-                    <span className="text-2xl font-bold font-mono text-amber-400 mt-1">
+                    <span className="text-2xl font-bold font-mono text-accent mt-1">
                       {playerStats.championCount}
                     </span>
                     <span className="text-[10px] text-dark-muted mt-0.5">
@@ -271,7 +271,7 @@ export const StatsView: React.FC = () => {
                               <div
                                 className={`h-2.5 rounded-full transition-all ${
                                   isRank1
-                                    ? 'bg-amber-400'
+                                    ? 'bg-accent-solid'
                                     : isTop3
                                     ? 'bg-accent/80'
                                     : 'bg-dark-muted/60'
@@ -283,7 +283,7 @@ export const StatsView: React.FC = () => {
                             </div>
                             <span
                               className={`font-mono font-bold text-caption w-10 text-right ${
-                                isRank1 ? 'text-amber-400' : isTop3 ? 'text-accent' : 'text-dark-muted'
+                                isRank1 ? 'text-accent' : isTop3 ? 'text-accent' : 'text-dark-muted'
                               }`}
                             >
                               #{item.rank}
@@ -420,7 +420,7 @@ export const StatsView: React.FC = () => {
                     <span className="text-[11px] font-mono text-dark-muted uppercase">
                       Warna Tertinggi WR
                     </span>
-                    <span className="text-caption font-bold text-emerald-400 mt-1">
+                    <span className="text-caption font-bold text-status-green mt-1">
                       {organizerStats.highestWinRateColor}
                     </span>
                     <span className="text-[10px] text-dark-muted mt-0.5">
@@ -541,8 +541,8 @@ export const StatsView: React.FC = () => {
                       </span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-amber-400 block">Admin</span>
-                      <span className="font-mono font-bold text-body text-amber-400">
+                      <span className="text-[10px] text-accent block">Admin</span>
+                      <span className="font-mono font-bold text-body text-accent">
                         {adminStats.usersByRole.admin}
                       </span>
                     </div>

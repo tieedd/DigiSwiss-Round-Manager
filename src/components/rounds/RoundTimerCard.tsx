@@ -104,9 +104,9 @@ export const RoundTimerCard: React.FC<RoundTimerCardProps> = ({
   // - Normal (putih) di atas 5 menit
   let timerTextColorClass = 'text-dark-text';
   if (category === 'warning') {
-    timerTextColorClass = 'text-amber-400';
+    timerTextColorClass = 'text-status-yellow';
   } else if (category === 'expired') {
-    timerTextColorClass = 'text-red-500 animate-pulse';
+    timerTextColorClass = 'text-status-red animate-pulse';
   }
 
   // Tombol Aksi
@@ -168,9 +168,9 @@ export const RoundTimerCard: React.FC<RoundTimerCardProps> = ({
       variant="surface-high"
       className={`p-4 flex flex-col items-center justify-center gap-3 transition-colors ${
         category === 'expired'
-          ? 'border-red-500/50 bg-red-950/20'
+          ? 'border-status-red/50 bg-status-red/10'
           : category === 'warning'
-          ? 'border-amber-400/40 bg-amber-950/10'
+          ? 'border-status-yellow/40 bg-status-yellow/10'
           : 'border-dark-border'
       }`}
     >
@@ -186,18 +186,18 @@ export const RoundTimerCard: React.FC<RoundTimerCardProps> = ({
 
         <div className="flex items-center gap-1.5">
           {timerStatus === 'running' && (
-            <span className="flex items-center gap-1 text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+            <span className="flex items-center gap-1 text-[11px] font-mono text-status-green bg-status-green/10 border border-status-green/20 px-2 py-0.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-status-green animate-ping" />
               <span>Berjalan</span>
             </span>
           )}
           {timerStatus === 'paused' && (
-            <span className="text-[11px] font-mono text-amber-300 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full">
+            <span className="text-[11px] font-mono text-status-yellow bg-status-yellow/10 border border-status-yellow/20 px-2 py-0.5 rounded-full">
               Dijeda
             </span>
           )}
           {timerStatus === 'expired' && (
-            <span className="text-[11px] font-mono text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded-full">
+            <span className="text-[11px] font-mono text-status-red bg-status-red/10 border border-status-red/20 px-2 py-0.5 rounded-full">
               Waktu Habis
             </span>
           )}
@@ -220,14 +220,14 @@ export const RoundTimerCard: React.FC<RoundTimerCardProps> = ({
         </div>
 
         {category === 'warning' && timerStatus === 'running' && (
-          <div className="flex items-center gap-1 text-[11px] font-medium text-amber-400 mt-1">
+          <div className="flex items-center gap-1 text-[11px] font-medium text-status-yellow mt-1">
             <Flame size={13} />
             <span>Sisa waktu di bawah 5 menit!</span>
           </div>
         )}
 
         {category === 'expired' && (
-          <div className="flex items-center gap-1 text-[11px] font-semibold text-red-400 mt-1">
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-status-red mt-1">
             <AlertTriangle size={13} />
             <span>Waktu ronde telah habis!</span>
           </div>

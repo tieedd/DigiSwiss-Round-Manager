@@ -217,11 +217,11 @@ export const LeagueInviteQrCard: React.FC<LeagueInviteQrCardProps> = ({
   return (
     <Card
       variant="surface"
-      className="flex flex-col gap-3 border-amber-400/30 bg-amber-500/5"
+      className="flex flex-col gap-3 border-accent/30 bg-accent/5"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <QrCode size={18} className="text-amber-300 flex-shrink-0" />
+          <QrCode size={18} className="text-accent flex-shrink-0" />
           <span className="text-body font-semibold text-dark-text truncate">
             Undangan Turnamen Liga
           </span>
@@ -316,8 +316,8 @@ export const LeagueInviteQrCard: React.FC<LeagueInviteQrCardProps> = ({
                 <span className="text-[11px] text-dark-muted block">
                   Kode Undangan (8 Karakter)
                 </span>
-                <div className="mt-1 inline-flex items-center gap-2 px-3 py-1.5 rounded-btn bg-dark-bg border border-amber-400/40">
-                  <span className="font-mono text-lg font-bold tracking-widest text-amber-300 select-all">
+                <div className="mt-1 inline-flex items-center gap-2 px-3 py-1.5 rounded-btn bg-dark-bg border border-accent/40">
+                  <span className="font-mono text-lg font-bold tracking-widest text-accent select-all">
                     {currentInvite.code}
                   </span>
                 </div>

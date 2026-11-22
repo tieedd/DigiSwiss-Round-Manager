@@ -299,15 +299,14 @@ export function exportStandingsToImage(
         ctx.fillStyle = hex;
         ctx.fill();
 
-        if (c === 'Hitam') {
-          ctx.lineWidth = 1;
-          ctx.strokeStyle = palette.deckDotOutline.Hitam;
-          ctx.stroke();
-        } else if (c === 'Putih') {
-          ctx.lineWidth = 1;
-          ctx.strokeStyle = palette.deckDotOutline.Putih;
-          ctx.stroke();
-        }
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle =
+          c === 'Hitam'
+            ? palette.deckDotOutline.Hitam
+            : c === 'Putih'
+            ? palette.deckDotOutline.Putih
+            : palette.deckDotOutline.default;
+        ctx.stroke();
 
         dotCenterX += step;
       });
@@ -525,15 +524,14 @@ export function exportStandingsToImage(
       ctx.fillStyle = hex;
       ctx.fill();
 
-      if (color === 'Hitam') {
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = palette.deckDotOutline.Hitam;
-        ctx.stroke();
-      } else if (color === 'Putih') {
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = palette.deckDotOutline.Putih;
-        ctx.stroke();
-      }
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle =
+        color === 'Hitam'
+          ? palette.deckDotOutline.Hitam
+          : color === 'Putih'
+          ? palette.deckDotOutline.Putih
+          : palette.deckDotOutline.default;
+      ctx.stroke();
 
       // Color Name
       ctx.font = '11px sans-serif';

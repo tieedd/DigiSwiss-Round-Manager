@@ -16,12 +16,12 @@ test('WARNA DECK 1: 7 warna resmi terdefinisi lengkap di DECK_COLOR_HEX dan DECK
   assert.equal(OFFICIAL_DECK_COLORS.length, 7);
 
   // HEX
-  assert.equal(DECK_COLOR_HEX.Merah, '#EF4444');
-  assert.equal(DECK_COLOR_HEX.Biru, '#3B82F6');
-  assert.equal(DECK_COLOR_HEX.Kuning, '#FACC15');
-  assert.equal(DECK_COLOR_HEX.Hijau, '#10B981');
+  assert.equal(DECK_COLOR_HEX.Merah, '#EB1B0C');
+  assert.equal(DECK_COLOR_HEX.Biru, '#41AFFD');
+  assert.equal(DECK_COLOR_HEX.Kuning, '#FFEB19');
+  assert.equal(DECK_COLOR_HEX.Hijau, '#218470');
   assert.equal(DECK_COLOR_HEX.Hitam, '#18181B');
-  assert.equal(DECK_COLOR_HEX.Ungu, '#A855F7');
+  assert.equal(DECK_COLOR_HEX.Ungu, '#610FBE');
   assert.equal(DECK_COLOR_HEX.Putih, '#F8FAFC');
 
   // EMOJI
@@ -34,10 +34,10 @@ test('WARNA DECK 1: 7 warna resmi terdefinisi lengkap di DECK_COLOR_HEX dan DECK
   assert.equal(DECK_COLOR_EMOJI.Putih, '⚪');
 });
 
-test('WARNA DECK 2: formatDeckColorsEmoji mengembalikan emoji tanpa spasi dan menangani array kosong/null', () => {
-  assert.equal(formatDeckColorsEmoji(['Hijau', 'Biru']), '🟢🔵');
-  assert.equal(formatDeckColorsEmoji(['Merah']), '🔴');
-  assert.equal(formatDeckColorsEmoji(['Merah', 'Kuning', 'Hitam']), '🔴🟡⚫');
+test('WARNA DECK 2: formatDeckColorsEmoji mengembalikan nama warna dalam tanda kurung dan menangani array kosong/null', () => {
+  assert.equal(formatDeckColorsEmoji(['Hijau', 'Biru']), '(Hijau, Biru)');
+  assert.equal(formatDeckColorsEmoji(['Merah']), '(Merah)');
+  assert.equal(formatDeckColorsEmoji(['Merah', 'Kuning', 'Hitam']), '(Merah, Kuning, Hitam)');
   assert.equal(formatDeckColorsEmoji([]), '');
   assert.equal(formatDeckColorsEmoji(null), '');
   assert.equal(formatDeckColorsEmoji(undefined), '');
@@ -78,7 +78,7 @@ test('WARNA DECK 5: getUsedDeckColors mengumpulkan warna unik yang ada pada tabe
   assert.deepEqual(used, ['Biru', 'Hijau', 'Putih']);
 });
 
-test('WARNA DECK 6: generateStandingsText tidak menggunakan tanda kurung siku [...] untuk warna dan menyertakan emoji', () => {
+test('WARNA DECK 6: generateStandingsText tidak menggunakan tanda kurung siku [...] untuk warna dan menyertakan label warna dalam kurung', () => {
   const participations = [
     {
       id: 'p1',
@@ -128,8 +128,8 @@ test('WARNA DECK 6: generateStandingsText tidak menggunakan tanda kurung siku [.
 
   const text = generateStandingsText('Kejuaraan Toko', '03/11/2026', 'BO3', participations);
 
-  // Harus memuat emoji warna tanpa kurung siku
-  assert.ok(text.includes('Ambatron FTK 🟢🔵'));
+  // Harus memuat label warna dalam tanda kurung tanpa kurung siku
+  assert.ok(text.includes('Ambatron FTK (Hijau, Biru)'));
   assert.ok(!text.includes('[Hijau/Biru]'));
   assert.ok(!text.includes('[Hijau, Biru]'));
   assert.ok(text.includes('Deck belum diisi'));
@@ -163,5 +163,5 @@ test('WARNA DECK 7: generateStandingsCsv mempertahankan format nama warna dengan
 
   const csv = generateStandingsCsv('Kejuaraan Toko', participations);
   assert.ok(csv.includes('"Hijau/Biru"'));
-  assert.ok(!csv.includes('🟢🔵'));
+  assert.ok(!csv.includes('(Hijau, Biru)'));
 });

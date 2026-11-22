@@ -251,10 +251,10 @@ export const OrganizerTournamentsView: React.FC<OrganizerTournamentsViewProps> =
           <button
             type="button"
             onClick={() => handleChooseTournamentType('league')}
-            className="w-full text-left p-3.5 rounded-card bg-amber-500/10 border border-amber-400/40 hover:border-amber-400 transition-colors flex items-center justify-between gap-3"
+            className="w-full text-left p-3.5 rounded-card bg-accent/10 border border-accent/40 hover:border-accent transition-colors flex items-center justify-between gap-3"
           >
             <div className="flex items-start gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-btn bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300 flex-shrink-0">
+              <div className="w-10 h-10 rounded-btn bg-accent/15 border border-accent/40 flex items-center justify-center text-accent flex-shrink-0">
                 <Trophy size={20} />
               </div>
               <div className="min-w-0">
@@ -262,7 +262,7 @@ export const OrganizerTournamentsView: React.FC<OrganizerTournamentsViewProps> =
                   <span className="text-body font-bold text-dark-text">
                     Turnamen Liga
                   </span>
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-accent/15 text-accent border border-accent/40">
                     SEASON
                   </span>
                 </div>
@@ -271,7 +271,7 @@ export const OrganizerTournamentsView: React.FC<OrganizerTournamentsViewProps> =
                 </p>
               </div>
             </div>
-            <ChevronRight size={18} className="text-amber-300 flex-shrink-0" />
+            <ChevronRight size={18} className="text-accent flex-shrink-0" />
           </button>
 
           <button

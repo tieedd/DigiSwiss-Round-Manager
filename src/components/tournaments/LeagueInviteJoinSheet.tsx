@@ -296,16 +296,16 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
           checkInviteMatchesTournament(expectedTournament, lookupResult.tournament).matches && (
           <Card
             variant="surface-high"
-            className="flex flex-col gap-2.5 border-amber-400/40 bg-amber-500/5"
+            className="flex flex-col gap-2.5 border-accent/40 bg-accent/5"
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-accent/15 text-accent border border-accent/40">
                     LIGA
                   </span>
                   {previewSeasonLabel && (
-                    <span className="text-[11px] font-mono font-semibold text-amber-300">
+                    <span className="text-[11px] font-mono font-bold text-accent">
                       {previewSeasonLabel}
                     </span>
                   )}
@@ -322,7 +322,7 @@ export const LeagueInviteJoinSheet: React.FC<LeagueInviteJoinSheetProps> = ({
                   </strong>
                 </p>
               </div>
-              <Trophy size={20} className="text-amber-300 flex-shrink-0" />
+              <Trophy size={20} className="text-accent flex-shrink-0" />
             </div>
 
             <div className="pt-2 border-t border-dark-border flex items-center justify-between text-caption text-dark-muted gap-2">

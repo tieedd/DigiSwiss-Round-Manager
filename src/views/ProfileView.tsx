@@ -462,9 +462,9 @@ export const ProfileView: React.FC = () => {
         </h4>
 
         {nativeNotifSupported && nativeNotifGranted === false && (
-          <Card variant="surface" className="p-3.5 border-amber-400/30 bg-amber-500/5 flex items-center justify-between gap-3">
+          <Card variant="surface" className="p-3.5 border-accent/30 bg-accent/5 flex items-center justify-between gap-3">
             <div className="flex items-start gap-2.5 min-w-0">
-              <BellOff size={18} className="text-amber-400 flex-shrink-0 mt-0.5" />
+              <BellOff size={18} className="text-accent flex-shrink-0 mt-0.5" />
               <div className="min-w-0">
                 <span className="text-body font-medium text-dark-text block">
                   Izin Notifikasi Perangkat Nonaktif
@@ -513,7 +513,7 @@ export const ProfileView: React.FC = () => {
               onClick={() => handleToggleNotifPref('enabled')}
               className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors ${
                 notifPrefs.enabled
-                  ? 'bg-accent border-accent'
+                  ? 'bg-accent-solid border-accent-solid'
                   : 'bg-dark-surface-high border-dark-border'
               } ${savingNotifKey ? 'opacity-60' : ''}`}
             >
@@ -568,7 +568,7 @@ export const ProfileView: React.FC = () => {
                     onClick={() => handleToggleNotifPref(item.key)}
                     className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full border transition-colors ${
                       checked
-                        ? 'bg-accent border-accent'
+                        ? 'bg-accent-solid border-accent-solid'
                         : 'bg-dark-surface-high border-dark-border'
                     } ${savingNotifKey ? 'opacity-60' : ''}`}
                   >

@@ -44,6 +44,7 @@ export interface ExportPalette {
   deckDotOutline: {
     Hitam: string;
     Putih: string;
+    default: string;
   };
   legendText: string;
   footerText: string;
@@ -71,7 +72,7 @@ export const DARK_EXPORT_PALETTE: ExportPalette = {
   cardFinalBorder: '#796821',
   emptySlotBg: '#111c33',
   emptySlotBorder: '#334155',
-  emptySlotText: '#64748b',
+  emptySlotText: '#94a3b8',
   badgeBg: '#f59e0b',
   badgeText: '#0f172a',
   seasonText: '#fbbf24',
@@ -86,16 +87,17 @@ export const DARK_EXPORT_PALETTE: ExportPalette = {
   rankSilver: '#94a3b8',
   rankSilverText: '#e2e8f0',
   rankBronze: '#cd7f32',
-  successText: '#34d399',
+  successText: '#2DD4BF',
   championBannerBg: '#303027',
   championBannerBorder: '#facc15',
   championBannerText: '#facc15',
   deckDotOutline: {
     Hitam: '#94A3B8',
     Putih: '#CBD5E1',
+    default: '#94A3B8',
   },
   legendText: '#cbd5e1',
-  footerText: '#64748b',
+  footerText: '#94a3b8',
 };
 
 export const LIGHT_EXPORT_PALETTE: ExportPalette = {
@@ -107,7 +109,7 @@ export const LIGHT_EXPORT_PALETTE: ExportPalette = {
   strongText: '#1E293B',
   secondaryText: '#334155',
   sectionHeaderBg: '#E2E8F0',
-  sectionHeadingPrimary: '#B45309',
+  sectionHeadingPrimary: '#A34400',
   sectionHeadingSecondary: '#0369A1',
   tableHeaderBg: '#E2E8F0',
   tableHeaderText: '#1E293B',
@@ -123,25 +125,26 @@ export const LIGHT_EXPORT_PALETTE: ExportPalette = {
   emptySlotText: '#475569',
   badgeBg: '#F59E0B',
   badgeText: '#0F172A',
-  seasonText: '#B45309',
+  seasonText: '#A34400',
   stagePillBg: '#E0F2FE',
-  accentText: '#B45309',
+  accentText: '#A34400',
   deckNameText: '#0369A1',
   winnerRowBg: '#FEF3C7',
   winnerText: '#92400E',
   loserText: '#475569',
-  rankGold: '#B45309',
+  rankGold: '#A34400',
   rankGoldBar: '#EAB308',
   rankSilver: '#64748B',
   rankSilverText: '#1E293B',
-  rankBronze: '#B45309',
-  successText: '#047857',
+  rankBronze: '#A34400',
+  successText: '#0F766E',
   championBannerBg: '#FEF3C7',
   championBannerBorder: '#D97706',
   championBannerText: '#78350F',
   deckDotOutline: {
     Hitam: '#475569',
     Putih: '#64748B',
+    default: '#475569',
   },
   legendText: '#334155',
   footerText: '#475569',

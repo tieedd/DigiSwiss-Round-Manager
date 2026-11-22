@@ -319,7 +319,7 @@ export const LoginView: React.FC = () => {
             }}
             className={`min-h-[40px] flex items-center justify-center text-body font-medium rounded-lg transition-colors ${
               tab === 'login'
-                ? 'bg-accent text-[#0B0F14] font-semibold'
+                ? 'bg-accent-solid text-[#0B0F14] font-semibold'
                 : 'text-dark-muted hover:text-dark-text'
             }`}
           >
@@ -334,7 +334,7 @@ export const LoginView: React.FC = () => {
             }}
             className={`min-h-[40px] flex items-center justify-center text-body font-medium rounded-lg transition-colors ${
               tab === 'register'
-                ? 'bg-accent text-[#0B0F14] font-semibold'
+                ? 'bg-accent-solid text-[#0B0F14] font-semibold'
                 : 'text-dark-muted hover:text-dark-text'
             }`}
           >

@@ -34,7 +34,7 @@ export const LeagueSeasonBadge: React.FC<LeagueSeasonBadgeProps> = ({
     <span className={`inline-flex items-center gap-1.5 flex-wrap ${className}`}>
       {isLeague && (
         <span
-          className={`inline-flex items-center gap-1 font-mono font-bold uppercase rounded bg-amber-500/15 text-amber-300 border border-amber-400/40 ${
+          className={`inline-flex items-center gap-1 font-mono font-bold uppercase rounded bg-accent/15 text-accent border border-accent/40 ${
             compact ? 'text-[9px] px-1.5 py-0.2' : 'text-[10px] px-1.5 py-0.5'
           }`}
         >
@@ -44,7 +44,7 @@ export const LeagueSeasonBadge: React.FC<LeagueSeasonBadgeProps> = ({
       )}
       {seasonLabel && (
         <span
-          className={`font-mono font-semibold text-amber-200 bg-amber-500/10 border border-amber-400/25 rounded ${
+          className={`font-mono font-bold bg-accent/15 text-accent border border-accent/40 rounded ${
             compact ? 'text-[10px] px-1.5 py-0.2' : 'text-[11px] px-2 py-0.5'
           }`}
         >

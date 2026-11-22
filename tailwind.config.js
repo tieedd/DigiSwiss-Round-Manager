@@ -16,15 +16,17 @@ export default {
           muted: 'rgb(var(--c-dark-muted) / <alpha-value>)',
         },
         accent: {
-          DEFAULT: '#FF8A1F',
+          DEFAULT: 'rgb(var(--c-accent) / <alpha-value>)',
+          solid: '#FF8A1F',
           hover: '#E67716',
           active: '#CC6610',
         },
-        info: '#4C9AFF',
+        info: 'rgb(var(--c-info) / <alpha-value>)',
         status: {
-          green: '#34C58B',
-          yellow: '#F5B83D',
-          red: '#F0616D',
+          /* "green" kini bermakna status sukses berwarna teal ramah buta warna */
+          green: 'rgb(var(--c-status-green) / <alpha-value>)',
+          yellow: 'rgb(var(--c-status-yellow) / <alpha-value>)',
+          red: 'rgb(var(--c-status-red) / <alpha-value>)',
         }
       },
       fontFamily: {

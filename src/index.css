@@ -10,38 +10,38 @@
   --c-dark-border: 35 44 58;       /* #232C3A */
   --c-dark-text: 232 237 243;      /* #E8EDF3 */
   --c-dark-muted: 139 151 168;     /* #8B97A8 */
+  --c-accent: 255 138 31;          /* #FF8A1F */
+  /* Catatan: "green" bermakna status sukses berwarna teal ramah buta warna */
+  --c-status-green: 45 212 191;    /* #2DD4BF */
+  --c-status-yellow: 253 224 71;   /* #FDE047 */
+  --c-status-red: 251 113 133;     /* #FB7185 */
+  --c-info: 96 165 250;            /* #60A5FA */
   --c-dot-ring: #121821;
+  --c-dot-outline: rgba(232, 237, 243, 0.65);
 }
 
 :root[data-theme="light"] {
-  /* Light theme tokens */
+  /* Light theme tokens (rasio kontras teks >= 4.5:1 di atas bg, surface, dan surface-high) */
   --c-dark-bg: 246 248 251;        /* #F6F8FB */
   --c-dark-surface: 255 255 255;   /* #FFFFFF */
   --c-dark-surface-high: 238 242 247; /* #EEF2F7 */
   --c-dark-border: 215 222 232;    /* #D7DEE8 */
   --c-dark-text: 17 24 39;         /* #111827 */
   --c-dark-muted: 91 103 120;      /* #5B6778 */
+  --c-accent: 176 74 0;            /* #B04A00 (teks aksen mode terang) */
+  /* Catatan: "green" bermakna status sukses berwarna teal ramah buta warna */
+  --c-status-green: 15 118 110;    /* #0F766E */
+  --c-status-yellow: 122 82 0;     /* #7A5200 */
+  --c-status-red: 190 18 60;       /* #BE123C */
+  --c-info: 29 78 216;             /* #1D4ED8 */
   --c-dot-ring: #FFFFFF;
+  --c-dot-outline: rgba(17, 24, 39, 0.55);
 }
 
 :root[data-theme="light"] html,
 :root[data-theme="light"] body {
   background-color: #F6F8FB;
   color: #111827;
-}
-
-/* Penyesuaian kontras teks mode terang (rasio kontras >= 4.5:1) */
-:root[data-theme="light"] .text-accent {
-  color: #C25E00 !important;
-}
-:root[data-theme="light"] .text-status-green {
-  color: #15803D !important;
-}
-:root[data-theme="light"] .text-status-yellow {
-  color: #A16207 !important;
-}
-:root[data-theme="light"] .text-status-red {
-  color: #B91C1C !important;
 }
 
 @layer base {

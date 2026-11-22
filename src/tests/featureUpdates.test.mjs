@@ -88,7 +88,7 @@ test('FEATURE 1: generateStandingsText menyertakan baris Organizer dan Lokasi', 
 
   assert.ok(textFromOptions.includes('Organizer: Bandai Card Center | Lokasi: Senayan City'));
   assert.ok(textFromOptions.includes('HASIL AKHIR TURNAMEN: DIGIMON CUP'));
-  assert.ok(textFromOptions.includes('WarGreymon OTK 🔴'));
+  assert.ok(textFromOptions.includes('WarGreymon OTK (Merah)'));
 
   // Pemanggilan dengan argumen posisional
   const textPositional = generateStandingsText(

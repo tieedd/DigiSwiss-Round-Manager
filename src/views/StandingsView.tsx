@@ -167,7 +167,7 @@ export const StandingsView: React.FC = () => {
           onClick={() => setActiveMode('tournament')}
           className={`min-h-[38px] rounded-btn text-caption font-semibold transition-colors flex items-center justify-center gap-1.5 ${
             activeMode === 'tournament'
-              ? 'bg-accent text-dark-bg shadow-sm'
+              ? 'bg-accent-solid text-[#0B0F14] shadow-sm'
               : 'text-dark-muted hover:text-dark-text'
           }`}
         >
@@ -179,7 +179,7 @@ export const StandingsView: React.FC = () => {
           onClick={() => setActiveMode('league_cumulative')}
           className={`min-h-[38px] rounded-btn text-caption font-semibold transition-colors flex items-center justify-center gap-1.5 ${
             activeMode === 'league_cumulative'
-              ? 'bg-amber-400 text-slate-950 shadow-sm'
+              ? 'bg-accent-solid text-[#0B0F14] shadow-sm'
               : 'text-dark-muted hover:text-dark-text'
           }`}
         >

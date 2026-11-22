@@ -293,8 +293,8 @@ export const TournamentFormSheet: React.FC<TournamentFormSheetProps> = ({
     >
       <form onSubmit={handleFormSubmit} className="flex flex-col gap-3 py-1">
         {isLeague && (
-          <div className="p-2.5 rounded-btn bg-amber-500/10 border border-amber-400/30 text-caption text-amber-200 flex items-start gap-2">
-            <Trophy size={15} className="flex-shrink-0 mt-0.5 text-amber-300" />
+          <div className="p-2.5 rounded-btn bg-accent/10 border border-accent/30 text-caption text-dark-text flex items-start gap-2">
+            <Trophy size={15} className="flex-shrink-0 mt-0.5 text-accent" />
             <span>
               <strong>Turnamen Liga</strong> menggunakan format terkunci{' '}
               <strong>BO3</strong>, minimal <strong>4 peserta</strong> untuk mulai,
@@ -353,7 +353,7 @@ export const TournamentFormSheet: React.FC<TournamentFormSheetProps> = ({
                 Pengaturan Season Liga
               </span>
               {seasonPreviewLabel && (
-                <span className="text-[11px] font-mono font-bold text-amber-300 bg-amber-500/15 border border-amber-400/35 px-2 py-0.5 rounded">
+                <span className="text-[11px] font-mono font-bold text-accent bg-accent/15 border border-accent/40 px-2 py-0.5 rounded">
                   {seasonPreviewLabel}
                 </span>
               )}
@@ -364,11 +364,11 @@ export const TournamentFormSheet: React.FC<TournamentFormSheetProps> = ({
                 <label className="text-[11px] font-medium text-dark-muted flex items-center gap-1">
                   <span>Season ke-</span>
                   {(mode !== 'edit' || !permissions.canEditSeasonNumber) && (
-                    <Lock size={10} className="text-amber-300" />
+                    <Lock size={10} className="text-accent" />
                   )}
                 </label>
                 {mode !== 'edit' ? (
-                  <div className="w-full min-h-[42px] px-2.5 bg-dark-surface/70 border border-dark-border rounded-btn text-caption text-amber-300 font-mono font-bold flex items-center">
+                  <div className="w-full min-h-[42px] px-2.5 bg-dark-surface/70 border border-dark-border rounded-btn text-caption text-accent font-mono font-bold flex items-center">
                     {autoNextSeasonNumber}
                   </div>
                 ) : (
@@ -433,7 +433,7 @@ export const TournamentFormSheet: React.FC<TournamentFormSheetProps> = ({
 
             {mode !== 'edit' ? (
               <p className="text-[11px] text-dark-muted">
-                Season berikutnya: <strong className="text-amber-300 font-mono">{autoNextSeasonNumber}</strong> (dihitung otomatis dari semua liga organizer ini). Bulan &amp; tahun mengikuti tanggal turnamen.
+                Season berikutnya: <strong className="text-accent font-mono">{autoNextSeasonNumber}</strong> (dihitung otomatis dari semua liga organizer ini). Bulan &amp; tahun mengikuti tanggal turnamen.
               </p>
             ) : !permissions.canEditSeasonNumber ? (
               <p className="text-[11px] text-status-yellow flex items-center gap-1">

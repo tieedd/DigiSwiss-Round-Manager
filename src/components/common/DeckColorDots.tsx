@@ -14,9 +14,9 @@ export interface DeckColorDotsProps {
 }
 
 const SIZE_MAP = {
-  sm: 12,
-  md: 14,
-  lg: 18
+  sm: 14,
+  md: 16,
+  lg: 20
 };
 
 export const DeckColorDots: React.FC<DeckColorDotsProps> = ({
@@ -40,7 +40,7 @@ export const DeckColorDots: React.FC<DeckColorDotsProps> = ({
   }
 
   const label = getDeckColorLabel(colors);
-  const sizePx = SIZE_MAP[size] || 12;
+  const sizePx = SIZE_MAP[size] || 14;
   const overlapPx = Math.max(2, Math.round(sizePx * 0.25)); // ~25% overlap
   const visibleColors = colors.slice(0, maxVisible);
   const hiddenCount = colors.length - maxVisible;
@@ -56,8 +56,6 @@ export const DeckColorDots: React.FC<DeckColorDotsProps> = ({
 
   const renderDot = (c: string, index: number, isStandalone = false) => {
     const hex = DECK_COLOR_HEX[c as DeckColor] || '#94A3B8';
-    const isHitam = c === 'Hitam';
-    const isPutih = c === 'Putih';
 
     return (
       <span
@@ -68,11 +66,8 @@ export const DeckColorDots: React.FC<DeckColorDotsProps> = ({
           height: `${sizePx}px`,
           backgroundColor: hex,
           marginLeft: !isStandalone && index > 0 ? `-${overlapPx}px` : undefined,
-          boxShadow: isHitam
-            ? '0 0 0 1.5px var(--c-dot-ring, #121821), inset 0 0 0 1px #94A3B8'
-            : isPutih
-            ? '0 0 0 1.5px var(--c-dot-ring, #121821), inset 0 0 0 1px #CBD5E1'
-            : '0 0 0 1.5px var(--c-dot-ring, #121821)',
+          boxShadow:
+            '0 0 0 1.5px var(--c-dot-ring, #121821), inset 0 0 0 1.5px var(--c-dot-outline, rgba(232, 237, 243, 0.65))',
           zIndex: visibleColors.length - index
         }}
       />
