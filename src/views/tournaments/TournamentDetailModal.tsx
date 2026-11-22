@@ -49,9 +49,13 @@ import {
 } from '../../services/participationService';
 import { copyTextNative } from '../../services/nativeBridge';
 import { useToast } from '../../context/ToastContext';
+import { getAllTournamentMatches } from '../../services/roundService';
 import {
   findAccountPlayerWithSameName,
   detectPreflightIssues,
+  busyAccountIds,
+  getEligibleLinkAccounts,
+  isEligibleLinkTarget,
 } from '../../utils/playerLinkLogic';
 import {
   buildWaitingStatusConfirmContent,
@@ -187,6 +191,9 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
   const [selectedTargetAccountId, setSelectedTargetAccountId] = useState<string>('');
   const [linkLoading, setLinkLoading] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkBusyAccountIds, setLinkBusyAccountIds] = useState<Set<string>>(() => new Set());
+  const [loadingLinkTargets, setLoadingLinkTargets] = useState(false);
+  const [linkTargetsLoadFailed, setLinkTargetsLoadFailed] = useState(false);
 
   // Start Tournament Warning / Confirmation
   const [startConfirmOpen, setStartConfirmOpen] = useState(false);
@@ -314,6 +321,10 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
       setLeagueInviteJoinOpen(false);
       setCancelLeagueConfirmOpen(false);
       setLeagueDeckModalTarget(null);
+      setLinkModalOpen(false);
+      setLinkBusyAccountIds(new Set());
+      setLoadingLinkTargets(false);
+      setLinkTargetsLoadFailed(false);
     }
   }, [isOpen, tournament?.id, canManageTournament, currentUser?.uid]);
 
@@ -419,24 +430,44 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
     }
   };
 
+  const getEligibleAccountsForLink = (busyIds: Set<string> = linkBusyAccountIds) =>
+    getEligibleLinkAccounts(players, busyIds);
+
   // Organizer: Aksi Tautkan Peserta Manual ke Akun
-  const handleOpenLinkModal = (
+  const handleOpenLinkModal = async (
     manualPlayer: TournamentPlayer,
     preferredTargetId?: string
   ) => {
     setSelectedManualPlayer(manualPlayer);
-    const eligible = players.filter(
-      (p) => !p.manual && (p.status === 'waiting' || p.status === 'accepted')
-    );
-    if (preferredTargetId) {
-      setSelectedTargetAccountId(preferredTargetId);
-    } else if (eligible.length > 0) {
-      setSelectedTargetAccountId(eligible[0].id);
-    } else {
-      setSelectedTargetAccountId('');
-    }
+    setSelectedTargetAccountId('');
     setLinkError(null);
+    setLinkTargetsLoadFailed(false);
+    setLoadingLinkTargets(true);
     setLinkModalOpen(true);
+
+    try {
+      const allMatches = await getAllTournamentMatches(tournament.id, true);
+      const busyIds = busyAccountIds(allMatches);
+      setLinkBusyAccountIds(busyIds);
+      const eligible = getEligibleAccountsForLink(busyIds);
+      if (preferredTargetId && eligible.some((acc) => acc.id === preferredTargetId)) {
+        setSelectedTargetAccountId(preferredTargetId);
+      } else if (eligible.length > 0) {
+        setSelectedTargetAccountId(eligible[0].id);
+      } else {
+        setSelectedTargetAccountId('');
+      }
+    } catch (err: any) {
+      console.error('Gagal memeriksa pertandingan turnamen:', err);
+      setLinkBusyAccountIds(new Set());
+      setSelectedTargetAccountId('');
+      setLinkTargetsLoadFailed(true);
+      setLinkError(
+        err?.message || 'Gagal memeriksa data pertandingan turnamen. Tutup lalu coba lagi.'
+      );
+    } finally {
+      setLoadingLinkTargets(false);
+    }
   };
 
   const handleConfirmLinkPlayer = async () => {
@@ -636,6 +667,9 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
       return;
     }
     setStartConfirmOpen(true);
+    getAllTournamentMatches(tournament.id, true)
+      .then((allMatches) => setLinkBusyAccountIds(busyAccountIds(allMatches)))
+      .catch((err) => console.warn('Gagal memeriksa pertandingan untuk preflight:', err));
   };
 
   const handleConfirmStartTournament = async () => {
@@ -1570,38 +1604,47 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
                         Nama Ganda Manual & Akun ({duplicatePairs.length}):
                       </span>
                       <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
-                        {duplicatePairs.map(({ manualPlayer, accountPlayer }) => (
-                          <div
-                            key={manualPlayer.id}
-                            className="p-2 rounded-btn bg-dark-surface border border-dark-border flex flex-col gap-1.5 text-caption"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-dark-text font-medium truncate">
-                                Manual: <strong>{manualPlayer.name}</strong> ↔ Akun: <strong>{accountPlayer.name}</strong> ({accountPlayer.status})
-                              </span>
+                        {duplicatePairs.map(({ manualPlayer, accountPlayer }) => {
+                          const canLinkAccount = isEligibleLinkTarget(
+                            accountPlayer,
+                            linkBusyAccountIds
+                          );
+
+                          return (
+                            <div
+                              key={manualPlayer.id}
+                              className="p-2 rounded-btn bg-dark-surface border border-dark-border flex flex-col gap-1.5 text-caption"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-dark-text font-medium truncate">
+                                  Manual: <strong>{manualPlayer.name}</strong> ↔ Akun: <strong>{accountPlayer.name}</strong> ({accountPlayer.status})
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-end gap-1.5">
+                                {canLinkAccount && (
+                                  <Button
+                                    variant="secondary"
+                                    className="!min-h-[26px] !px-2.5 !text-[11px]"
+                                    onClick={() => {
+                                      setStartConfirmOpen(false);
+                                      handleOpenLinkModal(manualPlayer, accountPlayer.id);
+                                    }}
+                                  >
+                                    Tautkan ke akun
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="danger"
+                                  className="!min-h-[26px] !px-2.5 !text-[11px]"
+                                  disabled={playerActionConfirmLoading}
+                                  onClick={() => handleOpenPlayerActionConfirm('deleteManual', manualPlayer)}
+                                >
+                                  Hapus manual
+                                </Button>
+                              </div>
                             </div>
-                            <div className="flex items-center justify-end gap-1.5">
-                              <Button
-                                variant="secondary"
-                                className="!min-h-[26px] !px-2.5 !text-[11px]"
-                                onClick={() => {
-                                  setStartConfirmOpen(false);
-                                  handleOpenLinkModal(manualPlayer, accountPlayer.id);
-                                }}
-                              >
-                                Tautkan ke akun
-                              </Button>
-                              <Button
-                                variant="danger"
-                                className="!min-h-[26px] !px-2.5 !text-[11px]"
-                                disabled={playerActionConfirmLoading}
-                                onClick={() => handleOpenPlayerActionConfirm('deleteManual', manualPlayer)}
-                              >
-                                Hapus manual
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -1723,15 +1766,33 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
             )}
 
             {(() => {
-              const eligible = players.filter(
-                (p) => !p.manual && (p.status === 'waiting' || p.status === 'accepted')
-              );
+              if (loadingLinkTargets) {
+                return (
+                  <div className="p-3 bg-dark-surface-high rounded-btn border border-dark-border text-caption text-dark-muted text-center">
+                    Memeriksa ketersediaan akun...
+                  </div>
+                );
+              }
+
+              if (linkTargetsLoadFailed) {
+                return (
+                  <Button
+                    variant="secondary"
+                    fullWidth
+                    onClick={() => setLinkModalOpen(false)}
+                  >
+                    Tutup
+                  </Button>
+                );
+              }
+
+              const eligible = getEligibleAccountsForLink();
 
               if (eligible.length === 0) {
                 return (
                   <div className="flex flex-col gap-3 text-caption">
                     <div className="p-3 bg-dark-surface-high rounded-btn border border-dark-border text-dark-muted">
-                      Belum ada akun pendaftar yang tersedia untuk ditautkan di turnamen ini. Pemain harus mendaftar ke turnamen ini terlebih dahulu agar akunnya dapat ditautkan.
+                      Tidak ada akun yang dapat ditautkan. Akun yang sudah dipasangkan di ronde tidak dapat ditautkan.
                     </div>
                     <Button
                       variant="secondary"

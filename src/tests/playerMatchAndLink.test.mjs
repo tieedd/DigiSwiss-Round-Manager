@@ -6,6 +6,11 @@ import {
   findAccountPlayerWithSameName,
   detectDuplicatePlayerNames,
   detectPreflightIssues,
+  busyAccountIds,
+  isEligibleLinkTarget,
+  getEligibleLinkAccounts,
+  validateLinkTarget,
+  findDuplicatePlayersInRound,
   planPlayerLink,
   chunkOperations,
 } from '../utils/playerLinkLogic.ts';
@@ -208,3 +213,130 @@ test('12. chunkOperations: Memotong batch dengan batas maksimal 400', () => {
   assert.equal(chunks850[1].length, 400);
   assert.equal(chunks850[2].length, 50);
 });
+
+test('13. validateLinkTarget & planPlayerLink: Target tanpa pertandingan diterima, target yang sudah punya pertandingan ditolak', () => {
+  const manualPlayer = { id: 'man_1', name: 'Taichi Manual' };
+  const cleanTarget = { id: 'acc_clean', uid: 'acc_clean', name: 'Taichi', status: 'accepted', manual: false };
+  const busyTarget = { id: 'acc_busy', uid: 'acc_busy', name: 'Yamato', status: 'accepted', manual: false };
+  const allMatches = [
+    { id: 'm1', round: 1, table: 1, p1Id: 'man_1', p1Name: 'Taichi Manual', p2Id: 'u3', p2Name: 'Sora' },
+    { id: 'm2', round: 2, table: 1, p1Id: 'u4', p1Name: 'Koushiro', p2Id: 'acc_busy', p2Name: 'Yamato' },
+  ];
+
+  // Target tanpa pertandingan diterima
+  assert.doesNotThrow(() => validateLinkTarget(manualPlayer, cleanTarget, allMatches));
+  const ops = planPlayerLink('t1', manualPlayer, cleanTarget, allMatches, { uid: 'org1', name: 'Org' });
+  assert.ok(ops.some((op) => op.type === 'update_match' && op.matchId === 'm1'));
+
+  // Target yang sudah punya pertandingan di turnamen ini ditolak (baik lewat validateLinkTarget maupun planPlayerLink)
+  assert.throws(
+    () => validateLinkTarget(manualPlayer, busyTarget, allMatches),
+    /Akun Yamato sudah memiliki pertandingan di turnamen ini, sehingga tidak bisa ditautkan\./
+  );
+  assert.throws(
+    () => planPlayerLink('t1', manualPlayer, busyTarget, allMatches, { uid: 'org1', name: 'Org' }),
+    /Akun Yamato sudah memiliki pertandingan di turnamen ini, sehingga tidak bisa ditautkan\./
+  );
+});
+
+test('14. validateLinkTarget: Target manual, dropped, dan rejected ditolak', () => {
+  const manualPlayer = { id: 'man_1', name: 'Taichi Manual' };
+
+  assert.throws(
+    () =>
+      validateLinkTarget(
+        manualPlayer,
+        { id: 'man_2', name: 'Yamato Manual', status: 'accepted', manual: true },
+        []
+      ),
+    /Tujuan tautan harus berupa akun\./
+  );
+
+  assert.throws(
+    () =>
+      validateLinkTarget(
+        manualPlayer,
+        { id: 'acc_drop', uid: 'acc_drop', name: 'Yamato', status: 'dropped', manual: false },
+        []
+      ),
+    /Akun Yamato berstatus dropped dan tidak dapat ditautkan\./
+  );
+
+  assert.throws(
+    () =>
+      validateLinkTarget(
+        manualPlayer,
+        { id: 'acc_rej', uid: 'acc_rej', name: 'Sora', status: 'rejected', manual: false },
+        []
+      ),
+    /Akun Sora berstatus rejected dan tidak dapat ditautkan\./
+  );
+});
+
+test('15. validateLinkTarget & planPlayerLink: Manual dan target berada pada ronde yang sama ditolak', () => {
+  const manualPlayer = { id: 'man_1', name: 'Taichi Manual' };
+  const targetSameRound = { id: 'acc_1', uid: 'acc_1', name: 'Taichi', status: 'accepted', manual: false };
+  const matchesSameRound = [
+    { id: 'm1', round: 1, table: 1, p1Id: 'man_1', p1Name: 'Taichi Manual', p2Id: 'u2', p2Name: 'Yamato' },
+    { id: 'm2', round: 1, table: 2, p1Id: 'acc_1', p1Name: 'Taichi', p2Id: 'u3', p2Name: 'Sora' },
+  ];
+
+  assert.throws(
+    () => validateLinkTarget(manualPlayer, targetSameRound, matchesSameRound),
+    /sudah memiliki pertandingan.*ronde yang sama.*Ronde 1.*tidak bisa ditautkan/i
+  );
+  assert.throws(
+    () => planPlayerLink('t1', manualPlayer, targetSameRound, matchesSameRound, { uid: 'org1', name: 'Org' }),
+    /sudah memiliki pertandingan.*ronde yang sama/i
+  );
+});
+
+test('16. busyAccountIds dan getEligibleLinkAccounts menyaring akun yang sudah bertanding dan status tidak valid', () => {
+  const matches = [
+    { id: 'm1', round: 1, table: 1, p1Id: 'u1', p2Id: 'u2' },
+    { id: 'm2', round: 1, table: 2, p1Id: 'u3', p2Id: null },
+  ];
+
+  const busy = busyAccountIds(matches);
+  assert.deepEqual([...busy].sort(), ['u1', 'u2', 'u3']);
+
+  const players = [
+    { id: 'u1', uid: 'u1', name: 'Busy Acc', status: 'accepted', manual: false },
+    { id: 'u4', uid: 'u4', name: 'Free Waiting', status: 'waiting', manual: false },
+    { id: 'u5', uid: 'u5', name: 'Free Accepted', status: 'accepted', manual: false },
+    { id: 'u6', uid: 'u6', name: 'Dropped Acc', status: 'dropped', manual: false },
+    { id: 'u7', uid: 'u7', name: 'Rejected Acc', status: 'rejected', manual: false },
+    { id: 'man_1', name: 'Manual 1', status: 'accepted', manual: true },
+  ];
+
+  assert.equal(isEligibleLinkTarget(players[0], busy), false);
+  assert.equal(isEligibleLinkTarget(players[1], busy), true);
+  const eligible = getEligibleLinkAccounts(players, busy);
+  assert.deepEqual(
+    eligible.map((p) => p.id),
+    ['u4', 'u5']
+  );
+});
+
+test('17. findDuplicatePlayersInRound: Mendeteksi satu pemain di dua meja pada ronde yang sama dan mengabaikan lintas ronde / arsip / BYE', () => {
+  const matches = [
+    // Ronde 1 normal: u1 main 1x, u2 BYE, u3 BYE
+    { id: 'r1_m1', round: 1, table: 1, p1Id: 'u1', p1Name: 'Taichi', p2Id: 'u4', p2Name: 'Sora' },
+    { id: 'r1_m2', round: 1, table: 2, p1Id: 'u2', p1Name: 'Yamato', p2Id: null, p2Name: 'BYE' },
+    { id: 'r1_m3', round: 1, table: 3, p1Id: 'u3', p1Name: 'Mimi', p2Id: null, p2Name: 'BYE' },
+    // Ronde 2 duplikat: u1 tampil di Meja 1 dan Meja 2
+    { id: 'r2_m1', round: 2, table: 1, p1Id: 'u1', p1Name: 'Taichi', p2Id: 'u2', p2Name: 'Yamato' },
+    { id: 'r2_m2', round: 2, table: 2, p1Id: 'u3', p1Name: 'Mimi', p2Id: 'u1', p2Name: 'Taichi' },
+    // Match arsip di Ronde 1 tidak boleh menimbulkan positif palsu
+    { id: 'r1_arch', round: 1, archived: true, table: 1, p1Id: 'u1', p1Name: 'Taichi', p2Id: 'u2', p2Name: 'Yamato' },
+  ];
+
+  const dupes = findDuplicatePlayersInRound(matches);
+  assert.equal(dupes.length, 1);
+  assert.equal(dupes[0].round, 2);
+  assert.equal(dupes[0].playerId, 'u1');
+  assert.equal(dupes[0].name, 'Taichi');
+  assert.equal(dupes[0].count, 2);
+  assert.deepEqual(dupes[0].tables, [1, 2]);
+});
+

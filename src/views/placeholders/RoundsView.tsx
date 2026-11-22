@@ -56,6 +56,7 @@ import {
   isFinalTopCutRound
 } from '../../utils/topCutLogic';
 import { getSessionTournament, setSessionTournament } from '../../utils/sessionStore';
+import { findDuplicatePlayersInRound } from '../../utils/playerLinkLogic';
 import { LeagueSeasonBadge } from '../../components/tournaments/LeagueSeasonBadge';
 import {
   formatSeasonLabel,
@@ -648,6 +649,25 @@ export const RoundsView: React.FC = () => {
       waitingMatches.length > 0
   );
 
+  const duplicateRoundWarnings = React.useMemo(() => {
+    const duplicates = findDuplicatePlayersInRound(allMatches);
+    if (duplicates.length === 0) return [];
+    const byRound = new Map<number, string[]>();
+    for (const entry of duplicates) {
+      const list = byRound.get(entry.round) || [];
+      if (!list.includes(entry.name)) {
+        list.push(entry.name);
+      }
+      byRound.set(entry.round, list);
+    }
+    return Array.from(byRound.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([round, names]) => ({
+        round,
+        namesText: names.join(', '),
+      }));
+  }, [allMatches]);
+
   const handleCopyWaitingReminder = async () => {
     if (!selectedTournament || waitingMatches.length === 0) return;
     const text = formatWaitingMatchesReminderText({
@@ -950,6 +970,23 @@ export const RoundsView: React.FC = () => {
           {/* Jika turnamen berstatus running atau finished */}
           {selectedTournament && selectedTournament.status !== 'registration' && (
             <div className="flex flex-col gap-3 mt-1">
+              {/* Banner Peringatan Pemain Ganda Dalam Satu Ronde */}
+              {duplicateRoundWarnings.length > 0 && (
+                <div
+                  role="alert"
+                  className="p-3 rounded-card bg-status-red/10 border border-status-red/30 text-caption text-status-red flex flex-col gap-1"
+                >
+                  {duplicateRoundWarnings.map((w) => (
+                    <div key={w.round} className="flex items-start gap-2 font-medium">
+                      <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+                      <span>
+                        Pemain ganda terdeteksi di Ronde {w.round}: {w.namesText}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Notifikasi Pairing / Revert Notice */}
               {pairingNotice && (
                 <div className="p-3 rounded bg-accent/10 border border-accent/30 text-caption text-accent flex items-start justify-between gap-2">
