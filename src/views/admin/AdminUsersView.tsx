@@ -69,15 +69,7 @@ export const AdminUsersView: React.FC<{ onNavigateHome?: () => void }> = ({ onNa
   const [generatedResetResult, setGeneratedResetResult] = useState<CreateResetCodeResponse | null>(null);
   const [copiedResetCode, setCopiedResetCode] = useState(false);
 
-  // Akses Gate: Hanya role 'admin' yang dapat mengakses
-  if (!canAccessAdminUsers(currentAdminProfile?.role)) {
-    return (
-      <AccessDeniedView
-        onReturn={onNavigateHome}
-        message="Halaman Kelola Pengguna hanya dapat diakses oleh Admin Sistem."
-      />
-    );
-  }
+  const hasAdminAccess = canAccessAdminUsers(currentAdminProfile?.role);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -98,8 +90,9 @@ export const AdminUsersView: React.FC<{ onNavigateHome?: () => void }> = ({ onNa
   };
 
   useEffect(() => {
+    if (!hasAdminAccess) return;
     fetchUsers();
-  }, []);
+  }, [hasAdminAccess]);
 
   // Filter pencarian berdasarkan username atau nama tampilan
   const filteredUsers = useMemo(() => {
@@ -122,6 +115,16 @@ export const AdminUsersView: React.FC<{ onNavigateHome?: () => void }> = ({ onNa
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery]);
+
+  // Akses Gate: Hanya role 'admin' yang dapat mengakses
+  if (!hasAdminAccess) {
+    return (
+      <AccessDeniedView
+        onReturn={onNavigateHome}
+        message="Halaman Kelola Pengguna hanya dapat diakses oleh Admin Sistem."
+      />
+    );
+  }
 
   // Penanganan klik dropdown peran
   const handleDropdownRoleSelect = (user: UserItem, newRole: 'player' | 'organizer') => {

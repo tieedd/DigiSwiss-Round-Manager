@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TournamentMatch, TournamentFormat } from '../../types';
 import { BottomSheet } from '../../components/common/BottomSheet';
 import { Button } from '../../components/common/Button';
@@ -22,12 +22,18 @@ export const MatchScoreModal: React.FC<MatchScoreModalProps> = ({
   roundLabel,
   onSaveScore,
 }) => {
-  if (!match) return null;
-
-  const [p1Score, setP1Score] = useState<number>(match.p1Score || 0);
-  const [p2Score, setP2Score] = useState<number>(match.p2Score || 0);
+  const [p1Score, setP1Score] = useState<number>(match?.p1Score ?? 0);
+  const [p2Score, setP2Score] = useState<number>(match?.p2Score ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    setP1Score(match?.p1Score ?? 0);
+    setP2Score(match?.p2Score ?? 0);
+    setError('');
+  }, [match?.id, match?.p1Score, match?.p2Score, isOpen]);
+
+  if (!match) return null;
 
   const isBye = match.p2Id === null;
 

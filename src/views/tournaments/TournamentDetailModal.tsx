@@ -317,6 +317,16 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
     }
   }, [isOpen, tournament?.id, canManageTournament, currentUser?.uid]);
 
+  useBackLayer(
+    Boolean(tournament && isOpen && (deleteLoading || deleteError)),
+    () => {
+      if (deleteLoading) return;
+      setDeleteError(null);
+      setDeleteProgress(null);
+    },
+    { blocked: deleteLoading }
+  );
+
   if (!tournament || !isOpen) return null;
 
   const waitingPlayers = players.filter((p) => p.status === 'waiting');
@@ -737,16 +747,6 @@ export const TournamentDetailModal: React.FC<TournamentDetailModalProps> = ({
   };
 
   const calculatedRoundsPreview = calculateSwissRounds(acceptedPlayers.length);
-
-  useBackLayer(
-    Boolean(isOpen && (deleteLoading || deleteError)),
-    () => {
-      if (deleteLoading) return;
-      setDeleteError(null);
-      setDeleteProgress(null);
-    },
-    { blocked: deleteLoading }
-  );
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose} title={tournament.name}>
